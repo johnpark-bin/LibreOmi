@@ -4,8 +4,54 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:libreomi/pages/settings_page.dart';
+import 'package:libreomi/platform/battery_optimization.dart';
 import 'package:libreomi/providers/app_provider.dart';
 import 'package:libreomi/services/settings_service.dart';
+
+/// Scripts the platform answers for [BatteryOptimization] so tests never
+/// touch a plugin channel. Shape mirrors
+/// `test/platform/battery_optimization_test.dart`'s
+/// `FakeBatteryOptimizationGateway`, kept local so the two test files stay
+/// independent.
+class _FakeBatteryOptimizationGateway implements BatteryOptimizationGateway {
+  _FakeBatteryOptimizationGateway({
+    this.ignoring,
+    this.requestResult,
+    this.failing = false,
+  });
+
+  bool? ignoring;
+  final bool? requestResult;
+
+  /// Makes both platform calls throw, standing in for a plugin channel that
+  /// is unavailable.
+  final bool failing;
+
+  int requestCalls = 0;
+
+  @override
+  Future<bool?> isIgnoring() async {
+    if (failing) {
+      throw StateError('permission_handler unavailable');
+    }
+    return ignoring;
+  }
+
+  @override
+  Future<bool?> requestIgnore() async {
+    requestCalls++;
+    if (failing) {
+      throw StateError('permission_handler unavailable');
+    }
+    if (requestResult != null) {
+      ignoring = requestResult;
+    }
+    return requestResult;
+  }
+
+  @override
+  Future<String?> manufacturer() async => null;
+}
 
 void main() {
   /// Boots SettingsService against an in-memory store and pumps the page.
@@ -14,6 +60,7 @@ void main() {
   Future<void> pumpSettingsPage(
     WidgetTester tester, {
     String? storedModel,
+    BatteryOptimization? batteryOptimizationOverride,
   }) async {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'transcription_mode': 'cloud',
@@ -24,7 +71,11 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider(
         create: (_) => AppProvider(),
-        child: const MaterialApp(home: SettingsPage()),
+        child: MaterialApp(
+          home: SettingsPage(
+            batteryOptimizationOverride: batteryOptimizationOverride,
+          ),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -78,5 +129,147 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(SettingsService.deepgramModel, 'nova-3');
+  });
+
+  group('Background reliability section', () {
+    testWidgets('shows exempt status when already ignoring optimisation', (
+      WidgetTester tester,
+    ) async {
+      final battery = BatteryOptimization(
+        _FakeBatteryOptimizationGateway(ignoring: true),
+      );
+      await pumpSettingsPage(tester, batteryOptimizationOverride: battery);
+
+      final headerFinder = find.text('Background reliability'.toUpperCase());
+      await tester.scrollUntilVisible(
+        headerFinder,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+
+      expect(headerFinder, findsOneWidget);
+      expect(find.text('Exempt from battery optimisation'), findsOneWidget);
+      expect(find.text('Request exemption'), findsNothing);
+    });
+
+    testWidgets(
+      'shows optimisation-active status and the request row when not exempt',
+      (WidgetTester tester) async {
+        final battery = BatteryOptimization(
+          _FakeBatteryOptimizationGateway(ignoring: false),
+        );
+        await pumpSettingsPage(tester, batteryOptimizationOverride: battery);
+
+        final statusFinder = find.text('Battery optimisation is active');
+        await tester.scrollUntilVisible(
+          statusFinder,
+          300,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+
+        expect(statusFinder, findsOneWidget);
+        expect(find.text('Request exemption'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'hides the request row off Android, where there is nothing to request',
+      (WidgetTester tester) async {
+        final battery = BatteryOptimization(
+          _FakeBatteryOptimizationGateway(ignoring: null),
+        );
+        await pumpSettingsPage(tester, batteryOptimizationOverride: battery);
+
+        final statusFinder = find.text('Not applicable on this platform');
+        await tester.scrollUntilVisible(
+          statusFinder,
+          300,
+          scrollable: find.byType(Scrollable).first,
+        );
+
+        expect(statusFinder, findsOneWidget);
+        expect(find.text('Request exemption'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'a failed status check says so and still offers a retry',
+      (WidgetTester tester) async {
+        final battery = BatteryOptimization(
+          _FakeBatteryOptimizationGateway(failing: true),
+        );
+        await pumpSettingsPage(tester, batteryOptimizationOverride: battery);
+
+        final statusFinder = find.text('Could not check battery optimisation');
+        await tester.scrollUntilVisible(
+          statusFinder,
+          300,
+          scrollable: find.byType(Scrollable).first,
+        );
+
+        expect(statusFinder, findsOneWidget);
+        expect(find.text('Request exemption'), findsOneWidget,
+            reason: 'a failed check must leave a way to retry');
+      },
+    );
+
+    testWidgets(
+      'a failed exemption request reports it instead of hanging',
+      (WidgetTester tester) async {
+        final gateway = _FakeBatteryOptimizationGateway(failing: true);
+        await pumpSettingsPage(
+          tester,
+          batteryOptimizationOverride: BatteryOptimization(gateway),
+        );
+
+        final requestTile = find.text('Request exemption');
+        await tester.scrollUntilVisible(
+          requestTile,
+          300,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.tap(requestTile);
+        await tester.pumpAndSettle();
+
+        expect(gateway.requestCalls, 1);
+        expect(
+          find.text('Could not open the battery optimisation dialog.'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'tapping Request exemption calls the gateway and refreshes to exempt',
+      (WidgetTester tester) async {
+        final gateway = _FakeBatteryOptimizationGateway(
+          ignoring: false,
+          requestResult: true,
+        );
+        final battery = BatteryOptimization(gateway);
+        await pumpSettingsPage(tester, batteryOptimizationOverride: battery);
+
+        final requestTile = find.text('Request exemption');
+        await tester.scrollUntilVisible(
+          requestTile,
+          300,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        expect(requestTile, findsOneWidget);
+
+        await tester.ensureVisible(requestTile);
+        await tester.pumpAndSettle();
+
+        await tester.tap(requestTile);
+        await tester.pumpAndSettle();
+
+        expect(gateway.requestCalls, 1);
+        expect(find.text('Exempt from battery optimisation'), findsOneWidget);
+        expect(find.text('Request exemption'), findsNothing);
+      },
+    );
   });
 }

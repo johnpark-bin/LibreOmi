@@ -8,9 +8,10 @@ import 'permissions.dart';
 /// The real [PermissionGateway], backed by `permission_handler` and
 /// `device_info_plus`.
 ///
-/// This is the only file in the project allowed to branch on
-/// `Platform.isAndroid` (see `AGENTS.md`): the platform split lives here so
-/// `device/`, `audio/`, `transcription/` and `intelligence/` never need it.
+/// Like `battery_optimization_gateway.dart`, this file is allowed to branch on
+/// `Platform.isAndroid` (see `AGENTS.md`): the platform split lives in
+/// `platform/` so `device/`, `audio/`, `transcription/` and `intelligence/`
+/// never need it.
 class PluginPermissionGateway implements PermissionGateway {
   int? _cachedSdkInt;
 
