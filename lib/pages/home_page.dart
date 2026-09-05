@@ -1,6 +1,8 @@
 /// Home page - device connection and live transcription
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../platform/permission_gateway.dart';
+import '../platform/permissions.dart';
 import '../providers/app_provider.dart';
 import '../services/ble_service.dart';
 import '../services/settings_service.dart';
@@ -677,6 +679,26 @@ class _DeviceTabState extends State<DeviceTab> {
   }
 
   Future<void> _startScan() async {
+    // Ask for BLE permission at the point of use (docs/04 §3): BLUETOOTH_SCAN
+    // and BLUETOOTH_CONNECT on Android 12+, ACCESS_FINE_LOCATION below that.
+    final PermissionOutcome outcome;
+    try {
+      outcome = await appPermissions.ensureBleScan();
+    } catch (e) {
+      // permission_handler throws when another request is still in flight or
+      // no activity is attached; without this the button would look dead.
+      _showPermissionError('Could not request Bluetooth permission', e);
+      return;
+    }
+    if (!mounted) return;
+    if (outcome != PermissionOutcome.granted) {
+      _showPermissionDenied(
+        'Bluetooth permission is needed to scan for your Omi device.',
+        outcome,
+      );
+      return;
+    }
+
     setState(() {
       _isScanning = true;
       _devices = [];
@@ -721,6 +743,24 @@ class _DeviceTabState extends State<DeviceTab> {
   }
 
   Future<void> _startPhoneMicRecording(AppProvider provider) async {
+    // RECORD_AUDIO is only ever needed in phone-mic mode, so it is requested
+    // here rather than at launch (docs/04 §3).
+    final PermissionOutcome outcome;
+    try {
+      outcome = await appPermissions.ensureMicrophone();
+    } catch (e) {
+      _showPermissionError('Could not request microphone permission', e);
+      return;
+    }
+    if (!mounted) return;
+    if (outcome != PermissionOutcome.granted) {
+      _showPermissionDenied(
+        'Microphone permission is needed to record with the phone microphone.',
+        outcome,
+      );
+      return;
+    }
+
     try {
       await provider.startListeningWithPhoneMic();
     } catch (e) {
@@ -732,6 +772,33 @@ class _DeviceTabState extends State<DeviceTab> {
     }
   }
 
+  /// Reports a permission request that could not even be made.
+  void _showPermissionError(String message, Object error) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$message: $error')),
+    );
+  }
+
+  /// Explains a refused permission. Once Android reports it as permanently
+  /// denied the system dialog never appears again, so the only way forward is
+  /// the app's settings page.
+  void _showPermissionDenied(String message, PermissionOutcome outcome) {
+    final isPermanent = outcome == PermissionOutcome.permanentlyDenied;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          isPermanent ? '$message Enable it in app settings.' : message,
+        ),
+        action: isPermanent
+            ? SnackBarAction(
+                label: 'Settings',
+                onPressed: () => appPermissions.openAppSettings(),
+              )
+            : null,
+      ),
+    );
+  }
 }
 
 /// Pulsing red dot indicator for active recording

@@ -1,4 +1,41 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Permission matrix: docs/04-android-platform-notes.md §3 -->
+
+    <!-- Network: Deepgram / OpenAI / on-device model download -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- Legacy BLE (API <= 30). On 31+ these are replaced by the BLUETOOTH_* runtime
+         permissions below, so they are capped to keep them off modern devices. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
+    <!-- Legacy BLE scan needed location up to API 30. On 31+ the scan declares
+         neverForLocation, so location is not requested at all. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30"/>
+
+    <!-- BLE on API >= 31. neverForLocation keeps the scan out of the location bucket. -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+
+    <!-- Phone-mic transcription mode only; requested lazily. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+
+    <!-- Runtime permission on API >= 33; covers the foreground-service notification too. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+    <!-- Foreground session service (the <service> element itself lands with LO-20). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
+
+    <!-- Partial wake lock while a session is listening. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- Haptic feedback. -->
+    <uses-permission android:name="android.permission.VIBRATE"/>
+    <!-- Keeps the BLE link alive in Doze; offered with an explanation, never silently. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+
     <application
         android:label="LibreOmi"
         android:name="${applicationName}"
