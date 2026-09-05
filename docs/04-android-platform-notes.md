@@ -161,6 +161,10 @@ with an explanation screen. Never request everything at startup.
 - Immediately after connect: `await device.requestMtu(512)`; verify the returned MTU
   is ≥ 86 (83-byte audio packet + 3-byte ATT header). If the phone refuses, show an
   error and do not start a session; truncated packets would silently corrupt audio.
+  Note that `flutter_blue_plus`' `connect()` already defaults to `mtu: 512` and issues
+  that request itself, so pass `connect(mtu: null)` and negotiate explicitly — otherwise
+  the MTU is exchanged twice per connect and the returned value is never observed
+  (`BleService.connect`, `lastMtu`).
 - `await device.requestConnectionPriority(connectionPriorityRequest: ConnectionPriority.high)`
   while streaming; reset to `balanced` when idle to save battery.
 - GATT error 133 / 257 on connect are common: retry up to 3× with 1–2 s delay; if
