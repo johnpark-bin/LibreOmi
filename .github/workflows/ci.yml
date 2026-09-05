@@ -1,0 +1,153 @@
+# CI for LibreOmi (LO-04). See docs/08-dev-workflow.md §2.
+#
+# The Flutter and JDK versions are NOT written here: they are parsed out of `mise.toml`,
+# which is the single toolchain pin for humans, agents and CI alike (docs/04 §1). Adding a
+# second copy of the version here is exactly the drift this job exists to prevent.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A new push to the same ref makes the in-flight run obsolete; the debug APK build is the
+# expensive part and there is no reason to pay for it twice.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: analyze / test / debug APK
+    runs-on: ubuntu-latest
+    # The runner image already ships the Android SDK (platform android-36, build-tools 36.0.0)
+    # and presets ANDROID_HOME, which is what `compileSdk 36` needs (docs/04 §2), so no
+    # separate SDK installation step is required.
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Read toolchain versions from mise.toml
+        id: toolchain
+        run: |
+          set -euo pipefail
+          flutter_version="$(sed -n 's/^flutter[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' mise.toml | head -n1)"
+          java_version="$(sed -n 's/^java[[:space:]]*=[[:space:]]*"temurin-\([^"]*\)".*/\1/p' mise.toml | head -n1)"
+          if [ -z "$flutter_version" ] || [ -z "$java_version" ]; then
+            echo "::error file=mise.toml::could not parse the flutter and/or temurin version out of mise.toml"
+            exit 1
+          fi
+          {
+            echo "flutter-version=$flutter_version"
+            echo "java-version=$java_version"
+            echo "started-at=$(date +%s)"
+          } >> "$GITHUB_OUTPUT"
+          echo "mise.toml pins Flutter $flutter_version and Temurin $java_version"
+
+      # AGP 8.x needs JDK 17; Gradle reads JAVA_HOME, which this action sets.
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ steps.toolchain.outputs.java-version }}
+
+      - name: Set up Flutter
+        id: flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.toolchain.outputs.flutter-version }}
+          channel: stable
+          cache: true
+          pub-cache: true
+
+      # `flutter-version: 3.47` would resolve to the newest 3.47.x and silently defeat the pin,
+      # so require that what the action installed is exactly what mise.toml asks for.
+      - name: Verify the installed Flutter matches mise.toml
+        env:
+          PINNED: ${{ steps.toolchain.outputs.flutter-version }}
+          RESOLVED: ${{ steps.flutter.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          echo "mise.toml: ${PINNED:-<empty>} / installed: ${RESOLVED:-<empty>}"
+          # Guard against the comparison passing vacuously if both values ever came back empty.
+          if [ -z "${PINNED:-}" ] || [ "${RESOLVED:-}" != "${PINNED:-}" ]; then
+            echo "::error file=mise.toml::flutter-action installed ${RESOLVED:-<empty>} but mise.toml pins ${PINNED:-<empty>}"
+            exit 1
+          fi
+          flutter --version
+
+      # Caches ~/.gradle for the debug APK build. Non-default branches read the cache that
+      # the `main` push run wrote, and do not write their own.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: flutter pub get
+        run: flutter pub get
+
+      # Upstream sources currently produce 8 warnings and 158 infos; failing on those would
+      # block every PR. Errors still fail the job. Clearing the inherited warnings is deliberately
+      # out of scope for LO-04 and has not been filed as its own backlog item yet.
+      - name: flutter analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: flutter test
+        run: flutter test
+
+      # arm64 only: the all-ABI debug APK measured ~216 MiB in LO-03, and every Omi target device is
+      # arm64. This is a compile check, not a distributable, so the APK is not uploaded.
+      - name: flutter build apk --debug
+        run: flutter build apk --debug --target-platform android-arm64
+
+      - name: Job summary
+        if: ${{ !cancelled() }}
+        # Values are passed through env rather than interpolated into the script body: on a
+        # `pull_request` run they originate from the head repository's mise.toml.
+        env:
+          PINNED_FLUTTER: ${{ steps.toolchain.outputs.flutter-version }}
+          PINNED_JAVA: ${{ steps.toolchain.outputs.java-version }}
+          STARTED_AT: ${{ steps.toolchain.outputs.started-at }}
+          RESOLVED_FLUTTER: ${{ steps.flutter.outputs.VERSION }}
+          FLUTTER_CACHE_HIT: ${{ steps.flutter.outputs.CACHE-HIT }}
+          PUB_CACHE_HIT: ${{ steps.flutter.outputs.PUB-CACHE-HIT }}
+        run: |
+          set -euo pipefail
+          apk=build/app/outputs/flutter-apk/app-debug.apk
+          elapsed=$(( $(date +%s) - ${STARTED_AT:-$(date +%s)} ))
+          {
+            echo "### Toolchain"
+            echo
+            echo "| Item | Value |"
+            echo "| --- | --- |"
+            echo "| Flutter pinned in mise.toml | \`${PINNED_FLUTTER:-unknown}\` |"
+            echo "| Flutter installed by the action | \`${RESOLVED_FLUTTER:-unknown}\` |"
+            echo "| JDK pinned in mise.toml | \`temurin-${PINNED_JAVA:-unknown}\` |"
+            echo
+            echo "### Cache"
+            echo
+            echo "| Cache | Hit |"
+            echo "| --- | --- |"
+            echo "| Flutter SDK | \`${FLUTTER_CACHE_HIT:-false}\` |"
+            echo "| pub | \`${PUB_CACHE_HIT:-false}\` |"
+            echo "| Gradle | reported by setup-gradle in its own job-summary section |"
+            echo
+            echo "### Duration"
+            echo
+            if [ -n "${STARTED_AT:-}" ]; then
+              echo "${elapsed}s from the toolchain step to here (excludes checkout and the post-job cache save)."
+            else
+              echo "not measured"
+            fi
+            echo
+            echo "### Debug APK"
+            echo
+            if [ -f "$apk" ]; then
+              echo "\`$apk\` — $(du -h "$apk" | cut -f1)"
+            else
+              echo "not built"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

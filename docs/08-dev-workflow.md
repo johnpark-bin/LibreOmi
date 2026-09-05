@@ -15,7 +15,15 @@ After public launch, issues from outside contributors may be in any language; ma
 
 ## 2. Branching and PR flow
 
-- `main` is protected; CI (`flutter analyze`, `flutter test`, debug APK build) must pass.
+- `main` is protected; CI must pass. The workflow is `.github/workflows/ci.yml` (LO-04): one
+  `ubuntu-latest` job on every pull request and every push to `main`, running `flutter pub get`
+  → `flutter analyze` → `flutter test` → `flutter build apk --debug --target-platform android-arm64`.
+  It reads the Flutter and JDK versions out of `mise.toml` instead of repeating them, so CI and a
+  local checkout cannot drift apart. Analyze runs with `--no-fatal-infos --no-fatal-warnings`:
+  errors fail the job, while the warnings and infos inherited from upstream do not. Clearing those
+  is out of scope for LO-04 and is not filed as a backlog item yet. The debug APK is a compile
+  check and is not uploaded — release
+  artifacts are LO-63.
 - One branch per backlog item: `lo-12-ble-mtu`. One PR per branch, squash-merged.
 - PR template (Korean) asks for: 목적, 변경 내용, 테스트 방법(에뮬레이터 불가 항목은 실기기 명시), 스크린샷/로그, 관련 이슈 (`Closes #n`).
 - Every PR that touches `device/`, `audio/`, `session/`, or `platform/` must include a
