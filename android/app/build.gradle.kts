@@ -34,7 +34,31 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // v1 keeps R8 off: minifying would need keep rules for the sherpa-onnx and opus JNI
+            // entry points, and a stripped native path fails silently at runtime. See docs/04 §7.
+            isMinifyEnabled = false
+            isShrinkResources = false
+            // Release deliberately keeps every ABI; per-ABI release artifacts come from
+            // `flutter build apk --split-per-abi` in LO-63, not from an abiFilters here.
         }
+    }
+}
+
+// sherpa_onnx_android ships native libraries for three ABIs, which puts an all-ABI debug APK at
+// 215.8 MiB. Development phones are arm64, so debug packages that ABI only: 109.4 MiB.
+//
+// This deliberately does NOT use `ndk { abiFilters }`. The Flutter Gradle plugin resets
+// `defaultConfig.ndk.abiFilters` to all three supported ABIs while it is being applied
+// (FlutterPlugin.configureAbiWithoutSplits), and AGP merges the defaultConfig and build-type
+// filter sets as a union, so a narrower filter on `buildTypes.debug` can never remove an ABI.
+// Per-variant packaging is the one hook that is both build-type scoped and applied after the
+// plugin. See docs/04 §7.
+androidComponents {
+    onVariants(selector().withBuildType("debug")) { variant ->
+        variant.packaging.jniLibs.excludes.addAll(
+            "**/armeabi-v7a/**",
+            "**/x86_64/**"
+        )
     }
 }
 

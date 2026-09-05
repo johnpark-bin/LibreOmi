@@ -192,13 +192,49 @@ with an explanation screen. Never request everything at startup.
 ## 7. Native libraries and APK size
 
 - `sherpa_onnx_android` bundles `libonnxruntime.so` + `libsherpa-onnx-*.so` for
-  arm64-v8a, armeabi-v7a, x86_64 (~15–20 MB per ABI uncompressed).
-- Dev builds: `ndk { abiFilters += listOf("arm64-v8a") }`.
-- Release: Android App Bundle for Play; for GitHub Releases build
-  `flutter build apk --split-per-abi` and publish arm64 + armeabi-v7a.
+  arm64-v8a, armeabi-v7a, x86_64 (~15–20 MB per ABI uncompressed). That dominates the APK.
+  Measured on clean builds at LO-10: an all-ABI debug APK is 215.8 MiB (arm64-v8a 71.7 MiB,
+  armeabi-v7a 45.5 MiB, x86_64 60.8 MiB of packaged `lib/`), and dropping the two unused ABIs
+  takes it to 109.4 MiB. Measure on a clean build only — AGP repacks `app-debug.apk`
+  incrementally, so an APK from an incremental build keeps stale bytes and reports the old size
+  even after the ABIs are gone. `--target-platform android-arm64` gets only to ~146 MiB, because
+  it narrows Flutter's own engine libraries and leaves the plugin AARs' ABIs alone.
+- **Debug builds keep arm64-v8a only, and `ndk { abiFilters }` is the wrong tool for it.**
+  The Flutter Gradle plugin resets `defaultConfig.ndk.abiFilters` to all three supported ABIs
+  while it is being applied (`FlutterPlugin.configureAbiWithoutSplits`, Flutter 3.47.2), and AGP
+  merges the `defaultConfig` and build-type filter sets as a *union*. A narrower
+  `abiFilters` on `buildTypes.debug` is therefore silently inert — LO-10 measured an unchanged
+  all-ABI APK with it in place. Putting the filter in `defaultConfig` would win, but it would
+  also pin the release APK to arm64 and collide with the `--split-per-abi` release flow below.
+  What works, per build type and after the plugin has run, is AGP's per-variant packaging hook in
+  `android/app/build.gradle.kts`:
+
+  ```kotlin
+  androidComponents {
+      onVariants(selector().withBuildType("debug")) { variant ->
+          variant.packaging.jniLibs.excludes.addAll(
+              "**/armeabi-v7a/**", "**/x86_64/**"
+          )
+      }
+  }
+  ```
+
+  Development phones are arm64; drop `armeabi-v7a` from the exclude list if an older test device
+  shows up. A debug build installed on a device whose ABI was excluded fails at runtime with
+  `UnsatisfiedLinkError` when the first native library is loaded, not at build or install time,
+  so the symptom does not point at this setting on its own. Note this trims what is *packaged*,
+  not what is built, so it shrinks the APK and the install step rather than Gradle's compile time.
+  The list only needs the ABIs Flutter itself supports (`PLATFORM_ABI_LIST` is armeabi-v7a,
+  arm64-v8a, x86_64) — x86 can never reach the APK, because the plugin's `defaultConfig` filter
+  already excludes it.
+- Release: every ABI stays in the build. Android App Bundle for Play; for GitHub Releases
+  build `flutter build apk --split-per-abi` and publish arm64 + armeabi-v7a (LO-63).
 - `opus_flutter_android` bundles libopus (small).
-- If R8 minification is enabled, add keep rules for `com.k2fsa.sherpa.onnx.**` and the
-  opus JNI class; simplest is `isMinifyEnabled = false` for v1.
+- R8 is off for v1: `buildTypes.release` sets `isMinifyEnabled = false` and
+  `isShrinkResources = false` explicitly. Turning minification on would require keep rules for
+  `com.k2fsa.sherpa.onnx.**` and the opus JNI class, and a wrongly stripped JNI entry point
+  fails at runtime rather than at build time, so it needs a device to verify. Revisit when
+  release size actually matters.
 
 ## 8. Storage paths
 
