@@ -1,0 +1,23 @@
+# Toolchain pin for LibreOmi (LO-02). See docs/04-android-platform-notes.md §1.
+#
+# `mise install` gives every human and agent working on this repo the same Flutter and JDK.
+# Flutter is pinned to a concrete stable version, never the moving "stable" alias, so a
+# fresh clone reproduces the build that was tested.
+#
+# A fresh clone must run `mise trust` once before mise will read this file.
+
+[tools]
+# Flutter 3.47.2 (stable, released 2026-08-27) ships Dart 3.13.2, which satisfies the
+# upstream pubspec constraint `^3.9.2`.
+flutter = "3.47.2"
+# AGP 8.x requires JDK 17. This tracks the latest Temurin 17 patch; mise exports JAVA_HOME
+# for it automatically, so no shell rc file is needed. After a patch bump, re-run the
+# `flutter config --jdk-dir` step in docs/04 §1 — it stores an absolute path.
+java = "temurin-17"
+
+[env]
+# Android SDK location used by the sdkmanager steps in docs/04 §1. An already-set
+# ANDROID_HOME wins, so CI images that ship their own SDK (LO-04) are left alone.
+ANDROID_HOME = "{{env.ANDROID_HOME | default(value=env.HOME ~ '/Library/Android/sdk')}}"
+# Some Android/Gradle tooling still reads the older variable name.
+ANDROID_SDK_ROOT = "{{env.ANDROID_HOME | default(value=env.HOME ~ '/Library/Android/sdk')}}"

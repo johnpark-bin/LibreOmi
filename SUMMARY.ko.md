@@ -51,9 +51,9 @@ M4 와 M5 는 M3 이후 병렬 가능. 상세 완료 기준은 `docs/06-roadmap.
 ## 4. 본인이 직접 해야 하는 일
 
 환경:
-- Flutter stable 설치 (`mise use -g flutter@stable` 또는 `brew install --cask flutter`). 현재 이 맥에는 Flutter 가 없습니다.
-- **JDK 17** 설치. 현재 JDK 25 만 있는데 Android Gradle Plugin 8.x 가 17 을 요구합니다.
-- Android SDK (platform 35, build-tools, cmdline-tools) 와 `flutter doctor --android-licenses`.
+- Flutter 3.47.2 와 JDK 17 은 `mise.toml` 에 고정되어 있습니다 — `mise trust && mise install` (LO-02 완료).
+- Android SDK (platform 36/35, build-tools, cmdline-tools 22.0) 와 라이선스 수락은 머신당 1회.
+  절차는 `docs/04-android-platform-notes.md` §1 에 있습니다.
 - **실제 Android 폰** (BLE 는 에뮬레이터 불가). 가능하면 삼성 1대 + 픽셀 1대, Android 12 이상.
 - Omi 기기 펌웨어 버전 확인 (기기 설정 페이지에 표시됨). 버튼 이벤트 값과 SD 카드 프로토콜은 omibutfree 에서 관찰된 값이라 본인 펌웨어로 재검증이 필요합니다.
 
@@ -82,7 +82,7 @@ M4 와 M5 는 M3 이후 병렬 가능. 상세 완료 기준은 `docs/06-roadmap.
 
 ## 7. 다음 행동
 
-1. Flutter / JDK 17 / Android SDK 설치, `flutter doctor` 클린.
+1. (LO-02 완료) 툴체인은 `mise.toml` 에 고정됨 — `docs/04` §1 로 머신 1회 설정 후 `mise exec -- flutter doctor` 확인.
 2. GitHub 에 `LibreOmi` 저장소 생성, 이 디렉터리 커밋, `scripts/create_issues.py` 실행.
 3. LO-01~LO-05 를 에이전트에 위임.
 4. LO-10~LO-12 는 폰을 손에 들고 직접 진행 (MTU 로그 확인이 첫 관문).

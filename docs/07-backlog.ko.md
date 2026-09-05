@@ -26,11 +26,20 @@
 **목적** 사람과 에이전트, CI 가 동일한 SDK 를 쓰게 한다.
 
 **작업**
-- `mise.toml`: `flutter = "stable"`(구체 버전으로 고정), `java = "temurin-17"`
-- `android/gradle.properties` 에 `org.gradle.java.home` 의존 없이 `JAVA_HOME` 으로 동작 확인
+- `mise.toml`: `flutter = "3.47.2"`(움직이는 `stable` 별칭이 아니라 구체 버전), `java = "temurin-17"`,
+  `[env]` 로 `ANDROID_HOME` 주입
+- 새 클론은 `mise trust` 를 한 번 실행해야 `mise.toml` 이 읽힌다
+- 머신당 1회: Android SDK(platform 36/35, build-tools 36.0.0/35.0.0, platform-tools,
+  cmdline-tools 22.0) 설치와 라이선스 수락 — 절차는 `docs/04` §1
+- `flutter config --jdk-dir` 로 Flutter 쪽 JDK 고정 (`JAVA_HOME` 만으로는 Android Studio 의
+  번들 JBR 에 밀린다)
 - `docs/`, `AGENTS.md`, `CLAUDE.md` 커밋
+- Gradle 이 `org.gradle.java.home` 없이 `JAVA_HOME` 만으로 동작하는지는 `android/` 가 생기는
+  LO-10 에서 확인한다 (이 항목에서는 검증 불가)
 
-**완료 기준** 새 클론에서 `mise install && flutter doctor` 가 오류 없이 끝난다.
+**완료 기준** `docs/04` §1 의 머신 1회 설정을 마친 뒤, 새 클론에서 `mise install` 후
+`mise exec -- flutter doctor` 의 Flutter / Android toolchain / Android licenses 가 ✓
+(Xcode 항목은 기준 아님).
 
 **참고** `docs/04-android-platform-notes.md` §1
 
@@ -68,7 +77,8 @@ Omi → Android 폰 → Deepgram → 화면에 자막. 앱은 포그라운드 �
 라벨: area:android, size:S
 **작업**
 - `flutter create --platforms=android --org org.libreomi --project-name libreomi .`
-- `minSdk 26`, `targetSdk 35`, `compileSdk 35`, Kotlin DSL
+- `minSdk 26`, `targetSdk 35`, `compileSdk 36`, Kotlin DSL (`compileSdk` 는 Flutter 3.47.2 요구값,
+  `targetSdk` 는 Play 정책값 — 템플릿 기본값 36 을 35 로 되돌려야 한다)
 - debug 빌드 `ndk.abiFilters = ["arm64-v8a"]`
 - `isMinifyEnabled = false` (v1)
 
