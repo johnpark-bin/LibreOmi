@@ -102,7 +102,7 @@ class _DeviceTabState extends State<DeviceTab> {
       builder: (context, provider, child) {
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Omi Local'),
+            title: const Text('LibreOmi'),
             backgroundColor: Colors.transparent,
             actions: [
               if (provider.batteryLevel != null)

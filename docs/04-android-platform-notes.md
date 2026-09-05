@@ -65,8 +65,9 @@ Four details are not obvious and cost time if rediscovered:
   `flutter config --jdk-dir` → Android Studio's bundled JBR → `JAVA_HOME` → `PATH`, so on a
   machine with Android Studio installed it silently picks the JBR (JDK 25 here) and ignores the
   pinned 17. Only `flutter config --jdk-dir` pins it. This is separate from Gradle, which reads
-  `JAVA_HOME` directly — that path has not been exercised yet because `android/` does not exist;
-  confirm it in LO-10 and record here whether `org.gradle.java.home` stays unnecessary.
+  `JAVA_HOME` directly. LO-03 created `android/` and built a debug APK with
+  `mise exec -- flutter build apk --debug`; Gradle picked up the mise-provided Temurin 17 from
+  `JAVA_HOME` with no extra configuration, so `org.gradle.java.home` stays unnecessary.
 - **`flutter config` is global, not per-project.** It writes `~/.config/flutter/settings` for
   every Flutter project on the machine, storing an absolute path that contains the exact JDK
   patch build. Because `java = "temurin-17"` floats within 17.x, re-run the `--jdk-dir` command
@@ -85,9 +86,29 @@ warning only and does not fail the toolchain check.
 - `compileSdk 36` — not a Play requirement but a Flutter one: Flutter 3.47.2's Gradle plugin
   compiles against 36, and `flutter doctor` fails the Android toolchain without
   `platforms;android-36` (see §1). Compiling against 36 while targeting 35 is the normal
-  Android arrangement. Note that the Flutter template also *defaults* `targetSdk` to 36, so
-  LO-10 must override it back to 35 rather than accept the generated value.
+  Android arrangement. The template does not write literals at all — it emits
+  `flutter.compileSdkVersion` / `flutter.minSdkVersion` / `flutter.targetSdkVersion`, which
+  follow whatever Flutter version is installed (`targetSdk` would drift to 36). LO-03
+  therefore pinned all three literally in `android/app/build.gradle.kts`.
 - Kotlin/Gradle from the Flutter template (Kotlin DSL `build.gradle.kts`).
+- **`android.ndk.suppressMinSdkVersionError=21` in `android/gradle.properties` is required.**
+  `opus_flutter_android` (pulled in by the pinned `opus_flutter 3.0.1`) still declares
+  `minSdk 19`, and the NDK that Flutter 3.47.2 provisions (r28c) refuses to build for
+  anything below 21, failing the whole build at configuration time with `[CXX1110] Platform
+  version 19 is unsupported by this NDK`. Suppressing it is safe here because the
+  application's own `minSdk 26` is what ends up in the merged manifest. Remove the flag if
+  `opus_flutter` is ever unpinned and updated.
+- **The same plugin also needs its `compileSdk` raised from the root Gradle file.**
+  `opus_flutter_android` compiles against android-33, while the AndroidX artifacts it depends
+  on (`androidx.core 1.13.1`, `androidx.fragment 1.7.1`, …) require 34 or later, so
+  `:opus_flutter_android:checkDebugAarMetadata` fails with 15 AAR-metadata issues. LO-03 added
+  a `subprojects { afterEvaluate { … } }` hook in `android/build.gradle.kts` that lifts that
+  one module up to `compileSdk 36`. It is deliberately scoped to `opus_flutter_android` so
+  that a second plugin needing the same treatment fails loudly instead of being fixed
+  silently. It has to be registered *before* the
+  template's `subprojects { project.evaluationDependsOn(":app") }` block — that block
+  evaluates `:app` eagerly, and a later `afterEvaluate` on an already-evaluated project
+  throws. `minSdk`/`targetSdk` are untouched; only the compile SDK moves.
 
 ## 3. Permission matrix
 

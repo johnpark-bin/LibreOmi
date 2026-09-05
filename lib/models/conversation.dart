@@ -1,4 +1,4 @@
-/// Data models for Omi Local app
+/// Data models for LibreOmi app
 
 import 'dart:convert';
 

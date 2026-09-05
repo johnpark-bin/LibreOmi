@@ -450,7 +450,7 @@ class _SettingsPageState extends State<SettingsPage> {
           Center(
             child: Column(
               children: [
-                Text('Omi Local', style: TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.bold)),
+                Text('LibreOmi', style: TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 4),
                 Text('Version 2.1.0 • Self-Hosted', style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), fontSize: 12)),
               ],
@@ -559,7 +559,7 @@ class _SettingsPageState extends State<SettingsPage> {
       // Share the file with proper origin for iPad
       await Share.shareXFiles(
         [XFile(file.path)],
-        subject: 'Omi Local Backup',
+        subject: 'LibreOmi Backup',
         sharePositionOrigin: sharePosition,
       );
     } catch (e) {
