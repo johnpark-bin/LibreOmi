@@ -1,0 +1,25 @@
+# Flutter / Dart (populated further in LO-01)
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+/build/
+/coverage/
+.flutter-plugins
+.flutter-plugins-dependencies
+**/ios/Flutter/.last_build_id
+**/android/.gradle
+**/android/local.properties
+**/android/key.properties
+*.jks
+*.keystore
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Secrets
+.env
+*.env
