@@ -4,23 +4,89 @@ Everything Android-specific that the upstream app never had to deal with.
 
 ## 1. Toolchain
 
+Pinned in `mise.toml` at the repository root; `mise install` reproduces it. The versions below
+are the ones this project was actually set up and verified with (2026-09-06).
+
 | Component | Version | Note |
 |-----------|---------|------|
-| Flutter | latest **stable** (3.3x, Dart 3.9+) | pin via `mise`/`fvm`; upstream pubspec needs Dart `^3.9.2` |
-| JDK | **17** (Temurin) | AGP 8.x requires 17; the machine currently has JDK 25, which Gradle may reject — install 17 alongside and set `org.gradle.java.home` or `JAVA_HOME` |
-| Android SDK | platform 35, build-tools 35.x, cmdline-tools, platform-tools | `flutter doctor --android-licenses` |
+| Flutter | **3.47.2** stable (Dart 3.13.2) | pinned in `mise.toml`; never the moving `stable` alias, so a fresh clone builds what was tested |
+| JDK | **Temurin 17** (`java = "temurin-17"`) | AGP 8.x requires 17. mise exports `JAVA_HOME`, which is what Gradle reads; Flutter's own tooling needs the separate `--jdk-dir` step below |
+| Android SDK | platform 36 (and 35), build-tools 36.0.0 (and 35.0.0), platform-tools, cmdline-tools 22.0 | installed under `$HOME/Library/Android/sdk`; `ANDROID_HOME` is injected by `mise.toml` |
 | Android Studio | optional | useful for the emulator and logcat, not required |
 | Physical phone | **required** | Emulators have no BLE. Android 12+ recommended (new permission model), ideally one Samsung and one Pixel |
 
-`flutter doctor` must be clean before M1 starts.
+`flutter doctor` must have Flutter, Android toolchain and Android licenses green before M1
+starts. The Xcode entry is not a gate for this project (Android is the primary target).
+
+### First-time machine setup (macOS)
+
+`mise install` covers Flutter and the JDK. The Android SDK is not a mise tool, so it is
+installed once per machine with `sdkmanager`:
+
+```bash
+mise trust                                     # once per clone, before mise reads mise.toml
+mise install                                   # flutter 3.47.2 + temurin-17
+
+brew install --cask android-commandlinetools   # bootstrap sdkmanager only
+
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+sdkmanager --sdk_root="$ANDROID_HOME" \
+    "platform-tools" \
+    "platforms;android-36" "build-tools;36.0.0" \
+    "platforms;android-35" "build-tools;35.0.0" \
+    "cmdline-tools;22.0"
+
+# Note the inner quoting: JAVA_HOME must be expanded by mise, not by your outer shell.
+mise exec -- sh -c 'flutter config --jdk-dir "$JAVA_HOME"'
+mise exec -- flutter doctor --android-licenses
+mise exec -- flutter doctor -v
+```
+
+Everything lands under `$HOME` or the Homebrew prefix; nothing is installed system-wide and no
+shell rc file is modified.
+
+Four details are not obvious and cost time if rediscovered:
+
+- **Platform 36 is required even though we ship `targetSdk 35`.** Flutter 3.47's
+  `flutter doctor` fails the Android toolchain with *"Flutter requires Android SDK 36 and the
+  Android BuildTools 28.0.3"* unless `platforms;android-36` is installed, because Flutter's
+  Gradle plugin compiles against 36 and the check looks at the highest installed platform.
+  `targetSdk` is a manifest value and needs no installed platform at all. Platform 35 and
+  build-tools 35.0.0 are kept only so that dropping back to `compileSdk 35` needs no
+  re-download; nothing currently requires them.
+- **Do not install `cmdline-tools;latest`.** Version 23.0 delegates to the new `android` CLI
+  and answers `sdkmanager --licenses` with *"The --licenses option is no longer needed"*.
+  Flutter 3.47.2 parses that output for the literal string *"All SDK package licenses
+  accepted."*, so it can only conclude *"Android license status unknown"* and the toolchain
+  never goes green (flutter/flutter#191487). `cmdline-tools;22.0` still prints the expected
+  string. Revisit this pin once a stable Flutter ships the disk-based fallback that currently
+  exists only on `master`.
+- **`JAVA_HOME` alone does not decide which JDK Flutter uses.** Flutter resolves it as
+  `flutter config --jdk-dir` → Android Studio's bundled JBR → `JAVA_HOME` → `PATH`, so on a
+  machine with Android Studio installed it silently picks the JBR (JDK 25 here) and ignores the
+  pinned 17. Only `flutter config --jdk-dir` pins it. This is separate from Gradle, which reads
+  `JAVA_HOME` directly — that path has not been exercised yet because `android/` does not exist;
+  confirm it in LO-10 and record here whether `org.gradle.java.home` stays unnecessary.
+- **`flutter config` is global, not per-project.** It writes `~/.config/flutter/settings` for
+  every Flutter project on the machine, storing an absolute path that contains the exact JDK
+  patch build. Because `java = "temurin-17"` floats within 17.x, re-run the `--jdk-dir` command
+  after a JDK patch bump, or Flutter falls back to Android Studio's JBR again.
+
+If `flutter doctor` warns about multiple `adb` binaries, it is because Homebrew's
+`android-platform-tools` cask is installed alongside the SDK's own `platform-tools`. It is a
+warning only and does not fail the toolchain check.
 
 ## 2. SDK levels
 
 - `minSdk 26` — notification channels, `AudioRecord` PCM, `foregroundServiceType`
   (API 29+, gracefully ignored below), sherpa-onnx and flutter_blue_plus both ≥ 21.
   Going lower buys almost no devices and costs permission branches.
-- `targetSdk 35`, `compileSdk 35` — Google Play requires ≥ 35 for new apps/updates since
-  Aug 2025.
+- `targetSdk 35` — Google Play requires ≥ 35 for new apps/updates since Aug 2025.
+- `compileSdk 36` — not a Play requirement but a Flutter one: Flutter 3.47.2's Gradle plugin
+  compiles against 36, and `flutter doctor` fails the Android toolchain without
+  `platforms;android-36` (see §1). Compiling against 36 while targeting 35 is the normal
+  Android arrangement. Note that the Flutter template also *defaults* `targetSdk` to 36, so
+  LO-10 must override it back to 35 rather than accept the generated value.
 - Kotlin/Gradle from the Flutter template (Kotlin DSL `build.gradle.kts`).
 
 ## 3. Permission matrix
@@ -145,10 +211,19 @@ with an explanation screen. Never request everything at startup.
 
 ## 12. Build commands (reference)
 
+All commands run through `mise exec --` so they use the pinned Flutter and JDK 17 rather than
+whatever happens to be on `PATH`. Inside a shell where mise is already activated the prefix can
+be dropped.
+
 ```bash
-flutter create --platforms=android --org org.libreomi --project-name libreomi .
-flutter pub get
-flutter run --release -d <device-id>      # BLE only works on a real phone
-flutter build apk --split-per-abi --release
-flutter build appbundle --release
+mise install                              # once per clone: flutter 3.47.2 + temurin-17
+mise exec -- flutter doctor -v            # Flutter / Android toolchain / licenses must be green
+
+mise exec -- flutter create --platforms=android --org org.libreomi --project-name libreomi .
+mise exec -- flutter pub get
+mise exec -- flutter analyze
+mise exec -- flutter test
+mise exec -- flutter run --release -d <device-id>   # BLE only works on a real phone
+mise exec -- flutter build apk --split-per-abi --release
+mise exec -- flutter build appbundle --release
 ```

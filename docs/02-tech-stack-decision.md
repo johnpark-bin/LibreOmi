@@ -47,7 +47,8 @@ device features we do not need).
 
 - **Flutter stable, Dart 3.x.** Pin the Flutter version in `.fvmrc`/`mise.toml` so
   agents and CI use the same SDK.
-- **Android minSdk 26, targetSdk 35, compileSdk 35.** See `04-android-platform-notes.md`.
+- **Android minSdk 26, targetSdk 35, compileSdk 36.** `compileSdk` follows Flutter 3.47.2's
+  Gradle plugin; `targetSdk` follows Play policy. See `04-android-platform-notes.md`.
 - **Keep `provider`.** Switching state management is churn with no user value; split
   `AppProvider` instead (`03-architecture.md`).
 - **Keep `sqflite` and the v3 schema** for the first release; migrate to `drift` only

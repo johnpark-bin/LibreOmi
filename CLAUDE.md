@@ -33,9 +33,14 @@ primary target; iOS must stay buildable. Forked from `kbdevs/omibutfree` (MIT).
 ## Commands
 
 ```bash
-mise install                 # flutter + java 17 (see mise.toml)
-flutter pub get
-flutter analyze
-flutter test
-flutter run -d <android-device-id>
+mise trust                   # once per clone, before mise reads mise.toml
+mise install                 # flutter 3.47.2 + temurin-17 (see mise.toml)
+mise exec -- flutter doctor -v
+mise exec -- flutter pub get
+mise exec -- flutter analyze
+mise exec -- flutter test
+mise exec -- flutter run -d <android-device-id>
 ```
+
+The Android SDK is not a mise tool — install it once per machine with the `sdkmanager` steps
+in `docs/04-android-platform-notes.md` §1 before the Android toolchain check goes green.
