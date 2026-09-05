@@ -1,77 +1,14 @@
 /// BLE service for Omi device connection
+library;
+
 import 'dart:async';
-import 'dart:typed_data';
+import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-// Omi device UUIDs (extracted from original app)
-const String omiServiceUuid = '19b10000-e8f2-537e-4f6c-d104768a1214';
-const String audioDataStreamCharacteristicUuid = '19b10001-e8f2-537e-4f6c-d104768a1214';
-const String audioCodecCharacteristicUuid = '19b10002-e8f2-537e-4f6c-d104768a1214';
-const String batteryServiceUuid = '180f';
-const String batteryLevelCharacteristicUuid = '2a19';
-const String settingsServiceUuid = '19b10010-e8f2-537e-4f6c-d104768a1214';
-const String settingsDimRatioCharacteristicUuid = '19b10011-e8f2-537e-4f6c-d104768a1214';
-const String settingsMicGainCharacteristicUuid = '19b10012-e8f2-537e-4f6c-d104768a1214';
-const String speakerDataStreamServiceUuid = 'cab1ab95-2ea5-4f4d-bb56-874b72cfc984';
-const String speakerDataStreamCharacteristicUuid = 'cab1ab96-2ea5-4f4d-bb56-874b72cfc984';
-const String buttonServiceUuid = '23ba7924-0000-1000-7450-346eac492e92';
-const String buttonTriggerCharacteristicUuid = '23ba7925-0000-1000-7450-346eac492e92';
+import 'ble/ble_protocol.dart';
 
-// Device Info Service
-const String deviceInformationServiceUuid = '0000180a-0000-1000-8000-00805f9b34fb';
-const String modelNumberCharacteristicUuid = '00002a24-0000-1000-8000-00805f9b34fb';
-const String firmwareRevisionCharacteristicUuid = '00002a26-0000-1000-8000-00805f9b34fb';
-const String hardwareRevisionCharacteristicUuid = '00002a27-0000-1000-8000-00805f9b34fb';
-const String manufacturerNameCharacteristicUuid = '00002a29-0000-1000-8000-00805f9b34fb';
-
-// Storage Service
-const String storageDataStreamServiceUuid = '30295780-4301-eabd-2904-2849adfeae43';
-const String storageDataStreamCharacteristicUuid = '30295781-4301-eabd-2904-2849adfeae43';
-const String storageReadControlCharacteristicUuid = '30295782-4301-eabd-2904-2849adfeae43';
-
-// Audio Codec IDs
-enum BleAudioCodec {
-  pcm8(1),
-  opus(20),
-  opusFS320(21);
-
-  final int codecId;
-  const BleAudioCodec(this.codecId);
-
-  int getFramesPerSecond() {
-    switch (this) {
-      case BleAudioCodec.pcm8:
-        return 100;
-      case BleAudioCodec.opus:
-        return 100;
-      case BleAudioCodec.opusFS320:
-        return 50;
-    }
-  }
-
-  int getFrameSize() {
-    switch (this) {
-      case BleAudioCodec.pcm8:
-        return 160;
-      case BleAudioCodec.opus:
-        return 160;
-      case BleAudioCodec.opusFS320:
-        return 320;
-    }
-  }
-
-  int getFramesLengthInBytes() {
-    switch (this) {
-      case BleAudioCodec.pcm8:
-        return 160;
-      case BleAudioCodec.opus:
-        return 80;
-      case BleAudioCodec.opusFS320:
-        return 120;
-    }
-  }
-}
+export 'ble/ble_protocol.dart';
 
 enum DeviceConnectionState {
   disconnected,
@@ -100,6 +37,21 @@ class BleService {
   BluetoothCharacteristic? _audioCharacteristic;
   StreamSubscription? _audioSubscription;
   StreamSubscription? _connectionSubscription;
+  StreamSubscription? _buttonSubscription;
+
+  // Characteristics discovered once per connection, keyed by normalized
+  // UUID. See `connect()` for the one-time service discovery call; every
+  // other method looks the characteristic up here instead of re-discovering.
+  final Map<String, BluetoothCharacteristic> _characteristics = {};
+
+  BluetoothCharacteristic? _characteristic(String uuid) =>
+      _characteristics[normalizeUuid(uuid)];
+
+  int _lastMtu = 0;
+  int get lastMtu => _lastMtu;
+
+  String? _lastError;
+  String? get lastError => _lastError;
 
   DeviceConnectionState _state = DeviceConnectionState.disconnected;
   DeviceConnectionState get state => _state;
@@ -120,13 +72,24 @@ class BleService {
   String? get connectedDeviceId => _connectedDevice?.remoteId.str;
   String? get connectedDeviceName => _connectedDevice?.platformName;
 
+  // Audio packet-length logging state (see startAudioStream / the audio
+  // notification listener). Cheap diagnostics only — see docs/04 §5.
+  // Length changes are logged at most `_maxAudioLengthLogs` times per stream
+  // so a variable-length stream can never degenerate into one log line per
+  // notification at 50-100 Hz.
+  static const int _maxAudioLengthLogs = 5;
+  static const int _audioPacketLogInterval = 1000;
+  int _audioPacketCount = 0;
+  int _audioLengthLogCount = 0;
+  int _lastLoggedAudioPacketLength = -1;
+
   /// Try to connect to a previously saved device by its remote ID
   Future<bool> connectToSavedDevice(String deviceId) async {
     if (deviceId.isEmpty) return false;
-    
+
     try {
       debugPrint('Attempting to reconnect to saved device: $deviceId');
-      
+
       // Wait for Bluetooth adapter to be ready (skip unknown state)
       await FlutterBluePlus.adapterState
           .where((state) => state != BluetoothAdapterState.unknown)
@@ -138,7 +101,7 @@ class BleService {
         debugPrint('Bluetooth is not on for auto-connect: $state');
         return false;
       }
-      
+
       // Create device from ID and try to connect
       final device = BluetoothDevice.fromId(deviceId);
       return await connect(device);
@@ -167,7 +130,7 @@ class BleService {
       }
 
       debugPrint('Starting BLE scan...');
-      
+
       await FlutterBluePlus.startScan(
         timeout: timeout,
         // Don't filter - show all devices so user can pick
@@ -183,10 +146,10 @@ class BleService {
               name: r.device.platformName,
               rssi: r.rssi,
             )).toList();
-        
+
         // Sort by signal strength
         devices.sort((a, b) => b.rssi.compareTo(a.rssi));
-        
+
         debugPrint('Found ${devices.length} devices');
         yield devices;
       }
@@ -203,11 +166,22 @@ class BleService {
 
   /// Connect to Omi device
   Future<bool> connect(BluetoothDevice device) async {
+    _lastError = null;
+    // Drop anything left over from a previous connection before we start, so
+    // a failure part-way through this method can never leave stale handles
+    // behind, and so a stale connection-state subscription is cancelled
+    // rather than silently overwritten below.
+    await _cleanupSubscriptions();
+    _lastMtu = 0;
     try {
       _state = DeviceConnectionState.connecting;
       _stateController.add(_state);
 
-      await device.connect(timeout: const Duration(seconds: 10));
+      // `mtu: null` disables the plugin's own post-connect MTU request
+      // (flutter_blue_plus defaults it to 512). We negotiate explicitly below
+      // so we can observe and gate on the result; leaving the default on
+      // would exchange MTU twice per connect.
+      await device.connect(timeout: const Duration(seconds: 10), mtu: null);
       _connectedDevice = device;
 
       // Listen for disconnection
@@ -217,50 +191,88 @@ class BleService {
         }
       });
 
-      // Discover services
+      // MTU negotiation must happen AFTER connect() and BEFORE service
+      // discovery below: the flutter_blue_plus source documents a race
+      // where an unsolicited MTU update makes a later discovery call
+      // time out.
+      //
+      // `Platform.isAndroid` is normally banned outside `platform/` per
+      // AGENTS.md, but that rule is waived in this file by the LO-12
+      // direction record — this logic moves to `platform/` in M3.
+      if (Platform.isAndroid) {
+        try {
+          _lastMtu = await device.requestMtu(512);
+        } catch (e) {
+          debugPrint('[LibreOmi/BLE] requestMtu failed: $e');
+          _lastMtu = device.mtuNow;
+        }
+        debugPrint('[LibreOmi/BLE] negotiated MTU=$_lastMtu (minimum $minimumUsableMtu)');
+
+        if (!isMtuSufficient(_lastMtu)) {
+          final message =
+              '[LibreOmi/BLE] MTU too small: negotiated=$_lastMtu, required minimum=$minimumUsableMtu';
+          debugPrint(message);
+          _lastError = message;
+          await disconnect();
+          return false;
+        }
+      } else {
+        // iOS/other platforms negotiate their own MTU and requestMtu()
+        // throws off Android. `mtuNow` may still read the platform default
+        // right after connect, so it is informational only — do not gate.
+        _lastMtu = device.mtuNow;
+        debugPrint('[LibreOmi/BLE] informational MTU=$_lastMtu (non-Android, not gated)');
+      }
+
+      // Discover services exactly once per connection; cache characteristics.
       final services = await device.discoverServices();
-      
-      // Find audio characteristic
       for (var service in services) {
-        if (service.uuid.toString().toLowerCase() == omiServiceUuid.toLowerCase()) {
-          for (var char in service.characteristics) {
-            if (char.uuid.toString().toLowerCase() == audioDataStreamCharacteristicUuid.toLowerCase()) {
-              _audioCharacteristic = char;
-              break;
-            }
-          }
+        for (var char in service.characteristics) {
+          _characteristics[normalizeUuid(char.uuid.toString())] = char;
         }
       }
 
+      _audioCharacteristic = _characteristic(audioDataStreamCharacteristicUuid);
       if (_audioCharacteristic == null) {
-        debugPrint('Audio characteristic not found');
+        const message = 'Audio characteristic not found';
+        debugPrint(message);
+        _lastError = message;
         await disconnect();
         return false;
       }
 
-      // Find and subscribe to button characteristic
-      for (var service in services) {
-        if (service.uuid.toString().toLowerCase() == buttonServiceUuid.toLowerCase()) {
-          for (var char in service.characteristics) {
-             if (char.uuid.toString().toLowerCase() == buttonTriggerCharacteristicUuid.toLowerCase()) {
-               await char.setNotifyValue(true);
-               char.onValueReceived.listen((value) {
-                 if (value.isNotEmpty) _buttonController.add(value);
-               });
-               debugPrint('Subscribed to button events');
-               break;
-             }
-          }
-        }
+      // Subscribe to button characteristic, if present.
+      final buttonCharacteristic = _characteristic(buttonTriggerCharacteristicUuid);
+      if (buttonCharacteristic != null) {
+        await buttonCharacteristic.setNotifyValue(true);
+        _buttonSubscription = buttonCharacteristic.onValueReceived.listen((value) {
+          if (value.isNotEmpty) _buttonController.add(value);
+        });
+        debugPrint('Subscribed to button events');
       }
 
       _state = DeviceConnectionState.connected;
       _stateController.add(_state);
-      
+
       debugPrint('Connected to Omi device');
       return true;
     } catch (e) {
+      // Anything after `device.connect()` can throw (service discovery has a
+      // 15 s timeout of its own, `setNotifyValue` can fail). Tear the link
+      // down completely, otherwise the GATT connection and the
+      // connection-state subscription stay alive and the next attempt
+      // overwrites the subscription without cancelling it.
       debugPrint('Failed to connect: $e');
+      // Keep a more specific reason (e.g. the MTU rejection) if one was
+      // already recorded before the throw.
+      _lastError ??= 'Failed to connect: $e';
+      await _cleanupSubscriptions();
+      try {
+        await _connectedDevice?.disconnect();
+      } catch (e) {
+        debugPrint('Error disconnecting after a failed connect: $e');
+      }
+      _connectedDevice = null;
       _state = DeviceConnectionState.disconnected;
       _stateController.add(_state);
       return false;
@@ -271,18 +283,13 @@ class BleService {
   Future<void> setMicGain(int gain) async {
     if (_connectedDevice == null) return;
     try {
-      final services = await _connectedDevice!.discoverServices();
-      for (var service in services) {
-        if (service.uuid.toString().toLowerCase() == settingsServiceUuid) {
-          for (var char in service.characteristics) {
-             if (char.uuid.toString().toLowerCase() == settingsMicGainCharacteristicUuid) {
-               await char.write([gain.clamp(0, 100)]);
-               debugPrint('Set Mic Gain to $gain');
-               return;
-             }
-          }
-        }
+      final char = _characteristic(settingsMicGainCharacteristicUuid);
+      if (char == null) {
+        debugPrint('setMicGain: mic gain characteristic not available');
+        return;
       }
+      await char.write([gain.clamp(0, 100)]);
+      debugPrint('Set Mic Gain to $gain');
     } catch (e) {
       debugPrint('Error setting mic gain: $e');
     }
@@ -292,17 +299,13 @@ class BleService {
   Future<int?> getMicGain() async {
     if (_connectedDevice == null) return null;
     try {
-      final services = await _connectedDevice!.discoverServices();
-      for (var service in services) {
-        if (service.uuid.toString().toLowerCase() == settingsServiceUuid) {
-          for (var char in service.characteristics) {
-             if (char.uuid.toString().toLowerCase() == settingsMicGainCharacteristicUuid) {
-               final value = await char.read();
-               if (value.isNotEmpty) return value[0];
-             }
-          }
-        }
+      final char = _characteristic(settingsMicGainCharacteristicUuid);
+      if (char == null) {
+        debugPrint('getMicGain: mic gain characteristic not available');
+        return null;
       }
+      final value = await char.read();
+      if (value.isNotEmpty) return value[0];
     } catch (e) {
       debugPrint('Error getting mic gain: $e');
     }
@@ -313,18 +316,13 @@ class BleService {
   Future<void> setLedDimRatio(int ratio) async {
     if (_connectedDevice == null) return;
     try {
-      final services = await _connectedDevice!.discoverServices();
-      for (var service in services) {
-        if (service.uuid.toString().toLowerCase() == settingsServiceUuid) {
-          for (var char in service.characteristics) {
-             if (char.uuid.toString().toLowerCase() == settingsDimRatioCharacteristicUuid) {
-               await char.write([ratio.clamp(0, 100)]);
-               debugPrint('Set LED Dim Ratio to $ratio');
-               return;
-             }
-          }
-        }
+      final char = _characteristic(settingsDimRatioCharacteristicUuid);
+      if (char == null) {
+        debugPrint('setLedDimRatio: LED dim ratio characteristic not available');
+        return;
       }
+      await char.write([ratio.clamp(0, 100)]);
+      debugPrint('Set LED Dim Ratio to $ratio');
     } catch (e) {
       debugPrint('Error setting LED dim ratio: $e');
     }
@@ -334,17 +332,13 @@ class BleService {
   Future<int?> getLedDimRatio() async {
     if (_connectedDevice == null) return null;
     try {
-      final services = await _connectedDevice!.discoverServices();
-      for (var service in services) {
-        if (service.uuid.toString().toLowerCase() == settingsServiceUuid) {
-          for (var char in service.characteristics) {
-             if (char.uuid.toString().toLowerCase() == settingsDimRatioCharacteristicUuid) {
-               final value = await char.read();
-               if (value.isNotEmpty) return value[0];
-             }
-          }
-        }
+      final char = _characteristic(settingsDimRatioCharacteristicUuid);
+      if (char == null) {
+        debugPrint('getLedDimRatio: LED dim ratio characteristic not available');
+        return null;
       }
+      final value = await char.read();
+      if (value.isNotEmpty) return value[0];
     } catch (e) {
       debugPrint('Error getting LED dim ratio: $e');
     }
@@ -356,21 +350,28 @@ class BleService {
   Future<void> triggerHaptic(int level) async {
     if (_connectedDevice == null) return;
     try {
-      final services = await _connectedDevice!.discoverServices();
-      for (var service in services) {
-        if (service.uuid.toString().toLowerCase() == speakerDataStreamServiceUuid) {
-          for (var char in service.characteristics) {
-             if (char.uuid.toString().toLowerCase() == speakerDataStreamCharacteristicUuid) {
-               await char.write([level & 0xFF]); 
-               debugPrint('Triggered Omi Haptic (Level $level)');
-               return;
-             }
-          }
-        }
+      final char = _characteristic(speakerDataStreamCharacteristicUuid);
+      if (char == null) {
+        debugPrint('Haptic service not found');
+        return;
       }
-      debugPrint('Haptic service not found');
+      await char.write([level & 0xFF]);
+      debugPrint('Triggered Omi Haptic (Level $level)');
     } catch (e) {
       debugPrint('Error triggering haptic: $e');
+    }
+  }
+
+  /// Applies a connection priority (Android only). Failures here must never
+  /// abort the audio stream, so they are logged and swallowed.
+  Future<void> _requestConnectionPriority(ConnectionPriority priority) async {
+    if (!Platform.isAndroid) return;
+    if (_connectedDevice == null) return;
+    try {
+      await _connectedDevice!.requestConnectionPriority(connectionPriorityRequest: priority);
+      debugPrint('[LibreOmi/BLE] connection priority set to $priority');
+    } catch (e) {
+      debugPrint('[LibreOmi/BLE] failed to set connection priority to $priority: $e');
     }
   }
 
@@ -378,14 +379,30 @@ class BleService {
   Future<void> startAudioStream() async {
     if (_audioCharacteristic == null) return;
 
+    _audioPacketCount = 0;
+    _audioLengthLogCount = 0;
+    _lastLoggedAudioPacketLength = -1;
+
     try {
       await _audioCharacteristic!.setNotifyValue(true);
       _audioSubscription = _audioCharacteristic!.onValueReceived.listen((value) {
         if (value.isNotEmpty) {
+          _audioPacketCount++;
+          if (value.length != _lastLoggedAudioPacketLength &&
+              _audioLengthLogCount < _maxAudioLengthLogs) {
+            debugPrint('[LibreOmi/BLE] audio packet length=${value.length}');
+            _lastLoggedAudioPacketLength = value.length;
+            _audioLengthLogCount++;
+          }
+          if (_audioPacketCount % _audioPacketLogInterval == 0) {
+            debugPrint(
+                '[LibreOmi/BLE] audio packets=$_audioPacketCount length=${value.length}');
+          }
           _audioController.add(Uint8List.fromList(value));
         }
       });
       debugPrint('Audio stream started');
+      unawaited(_requestConnectionPriority(ConnectionPriority.high));
     } catch (e) {
       debugPrint('Failed to start audio stream: $e');
     }
@@ -400,6 +417,7 @@ class BleService {
     } catch (e) {
       debugPrint('Error stopping audio stream: $e');
     }
+    unawaited(_requestConnectionPriority(ConnectionPriority.balanced));
   }
 
   /// Get battery level
@@ -407,18 +425,14 @@ class BleService {
     if (_connectedDevice == null) return null;
 
     try {
-      final services = await _connectedDevice!.discoverServices();
-      for (var service in services) {
-        if (service.uuid.toString().toLowerCase() == batteryServiceUuid) {
-          for (var char in service.characteristics) {
-            if (char.uuid.toString().toLowerCase() == batteryLevelCharacteristicUuid) {
-              final value = await char.read();
-              if (value.isNotEmpty) {
-                return value[0];
-              }
-            }
-          }
-        }
+      final char = _characteristic(batteryLevelCharacteristicUuid);
+      if (char == null) {
+        debugPrint('getBatteryLevel: battery characteristic not available');
+        return null;
+      }
+      final value = await char.read();
+      if (value.isNotEmpty) {
+        return value[0];
       }
     } catch (e) {
       debugPrint('Failed to read battery: $e');
@@ -426,27 +440,55 @@ class BleService {
     return null;
   }
 
+  /// Cancels all live subscriptions and clears cached connection state.
+  /// Idempotent: safe to call from both `disconnect()` and
+  /// `_onDisconnected()`, even if both run for the same disconnect event.
+  ///
+  /// Every field is detached synchronously before the first `await`, so a
+  /// second disconnect event arriving while the cancels are still in flight
+  /// finds nothing left to clean up and cannot double-cancel.
+  Future<void> _cleanupSubscriptions() async {
+    final audio = _audioSubscription;
+    final button = _buttonSubscription;
+    final storage = _storageSubscription;
+    final connection = _connectionSubscription;
+    _audioSubscription = null;
+    _buttonSubscription = null;
+    _storageSubscription = null;
+    _connectionSubscription = null;
+    _characteristics.clear();
+    _audioCharacteristic = null;
+    _storageCharacteristic = null;
+    // `_lastMtu` is deliberately NOT reset here: after a connection is
+    // refused for a too-small MTU the caller still wants to read the
+    // negotiated value. It is reset at the start of the next `connect()`.
+
+    await audio?.cancel();
+    await button?.cancel();
+    await storage?.cancel();
+    await connection?.cancel();
+  }
+
   /// Disconnect from device
   Future<void> disconnect() async {
-    await stopAudioStream();
-    await _connectionSubscription?.cancel();
-    _connectionSubscription = null;
-    
+    await _cleanupSubscriptions();
+
     try {
       await _connectedDevice?.disconnect();
     } catch (e) {
       debugPrint('Error disconnecting: $e');
     }
-    
+
     _connectedDevice = null;
-    _audioCharacteristic = null;
     _state = DeviceConnectionState.disconnected;
     _stateController.add(_state);
   }
 
   void _onDisconnected() {
+    // Note: does not call device.disconnect() — this handler runs in
+    // response to a disconnect that already happened.
+    unawaited(_cleanupSubscriptions());
     _connectedDevice = null;
-    _audioCharacteristic = null;
     _state = DeviceConnectionState.disconnected;
     _stateController.add(_state);
     debugPrint('Device disconnected');
@@ -458,26 +500,20 @@ class BleService {
     Map<String, String> deviceInfo = {};
 
     try {
-      final services = await _connectedDevice!.discoverServices();
-      for (var service in services) {
-        if (service.uuid.toString().toLowerCase() == deviceInformationServiceUuid) {
-           for (var char in service.characteristics) {
-             final uuid = char.uuid.toString().toLowerCase();
-             if (uuid == modelNumberCharacteristicUuid) {
-               final val = await char.read();
-               if (val.isNotEmpty) deviceInfo['Model'] = String.fromCharCodes(val);
-             } else if (uuid == firmwareRevisionCharacteristicUuid) {
-               final val = await char.read();
-               if (val.isNotEmpty) deviceInfo['Firmware'] = String.fromCharCodes(val);
-             } else if (uuid == hardwareRevisionCharacteristicUuid) {
-               final val = await char.read();
-               if (val.isNotEmpty) deviceInfo['Hardware'] = String.fromCharCodes(val);
-             } else if (uuid == manufacturerNameCharacteristicUuid) {
-               final val = await char.read();
-               if (val.isNotEmpty) deviceInfo['Manufacturer'] = String.fromCharCodes(val);
-             }
-           }
+      final entries = {
+        'Model': modelNumberCharacteristicUuid,
+        'Firmware': firmwareRevisionCharacteristicUuid,
+        'Hardware': hardwareRevisionCharacteristicUuid,
+        'Manufacturer': manufacturerNameCharacteristicUuid,
+      };
+      for (final entry in entries.entries) {
+        final char = _characteristic(entry.value);
+        if (char == null) {
+          debugPrint('getDeviceInfo: ${entry.key} characteristic not available');
+          continue;
         }
+        final val = await char.read();
+        if (val.isNotEmpty) deviceInfo[entry.key] = String.fromCharCodes(val);
       }
     } catch (e) {
       debugPrint('Error getting device info: $e');
@@ -490,26 +526,22 @@ class BleService {
   /// Get audio codec from the Omi device
   Future<BleAudioCodec> getAudioCodec() async {
     if (_connectedDevice == null) return BleAudioCodec.pcm8;
-    
+
     try {
-      final services = await _connectedDevice!.discoverServices();
-      for (var service in services) {
-        if (service.uuid.toString().toLowerCase() == omiServiceUuid.toLowerCase()) {
-          for (var char in service.characteristics) {
-            if (char.uuid.toString().toLowerCase() == audioCodecCharacteristicUuid.toLowerCase()) {
-              final codecValue = await char.read();
-              if (codecValue.isNotEmpty) {
-                final codecId = codecValue[0];
-                switch (codecId) {
-                  case 1: return BleAudioCodec.pcm8;
-                  case 20: return BleAudioCodec.opus;
-                  case 21: return BleAudioCodec.opusFS320;
-                  default: return BleAudioCodec.pcm8;
-                }
-              }
-            }
-          }
+      final char = _characteristic(audioCodecCharacteristicUuid);
+      if (char == null) {
+        debugPrint('getAudioCodec: audio codec characteristic not available');
+        return BleAudioCodec.pcm8;
+      }
+      final codecValue = await char.read();
+      if (codecValue.isNotEmpty) {
+        final codecId = codecValue[0];
+        final codec = codecFromId(codecId);
+        if (codec == null) {
+          debugPrint('getAudioCodec: unknown codec id=$codecId, defaulting to pcm8');
+          return BleAudioCodec.pcm8;
         }
+        return codec;
       }
     } catch (e) {
       debugPrint('Error reading audio codec: $e');
@@ -523,49 +555,20 @@ class BleService {
       debugPrint('getStorageList: No connected device');
       return [];
     }
-    
+
     try {
-      final services = await _connectedDevice!.discoverServices();
-      debugPrint('getStorageList: Discovered ${services.length} services');
-      
-      // Log all service UUIDs to help debug
-      for (var service in services) {
-        debugPrint('  Service: ${service.uuid}');
+      final char = _characteristic(storageReadControlCharacteristicUuid);
+      if (char == null) {
+        debugPrint('getStorageList: Storage service not found on this device');
+        return [];
       }
-      
-      for (var service in services) {
-        if (service.uuid.toString().toLowerCase() == storageDataStreamServiceUuid.toLowerCase()) {
-          debugPrint('getStorageList: Found storage service!');
-          for (var char in service.characteristics) {
-            debugPrint('  Characteristic: ${char.uuid}');
-            if (char.uuid.toString().toLowerCase() == storageReadControlCharacteristicUuid.toLowerCase()) {
-              debugPrint('getStorageList: Found storage control characteristic, reading...');
-              final storageValue = await char.read();
-              debugPrint('getStorageList: Read ${storageValue.length} bytes');
-              
-              List<int> storageLengths = [];
-              if (storageValue.isNotEmpty) {
-                int totalEntries = (storageValue.length / 4).toInt();
-                debugPrint('Storage list: $totalEntries items');
-                
-                for (int i = 0; i < totalEntries; i++) {
-                  int baseIndex = i * 4;
-                  var result = ((storageValue[baseIndex] |
-                              (storageValue[baseIndex + 1] << 8) |
-                              (storageValue[baseIndex + 2] << 16) |
-                              (storageValue[baseIndex + 3] << 24)) &
-                          0xFFFFFFFF)
-                      .toSigned(32);
-                  storageLengths.add(result);
-                }
-              }
-              debugPrint('Storage lengths: $storageLengths');
-              return storageLengths;
-            }
-          }
-        }
-      }
-      debugPrint('getStorageList: Storage service not found on this device');
+      debugPrint('getStorageList: Found storage control characteristic, reading...');
+      final storageValue = await char.read();
+      debugPrint('getStorageList: Read ${storageValue.length} bytes');
+
+      final storageLengths = parseStorageList(storageValue);
+      debugPrint('Storage lengths: $storageLengths');
+      return storageLengths;
     } catch (e) {
       debugPrint('Error reading storage list: $e');
     }
@@ -582,35 +585,21 @@ class BleService {
   /// command: 0 = start reading, 1 = clear/acknowledge
   Future<bool> writeToStorage(int fileNum, int command, int offset) async {
     if (_connectedDevice == null) return false;
-    
+
     try {
-      final services = await _connectedDevice!.discoverServices();
-      for (var service in services) {
-        if (service.uuid.toString().toLowerCase() == storageDataStreamServiceUuid.toLowerCase()) {
-          for (var char in service.characteristics) {
-            if (char.uuid.toString().toLowerCase() == storageDataStreamCharacteristicUuid.toLowerCase()) {
-              debugPrint('Writing to storage: file=$fileNum, cmd=$command, offset=$offset');
-              
-              var offsetBytes = [
-                (offset >> 24) & 0xFF,
-                (offset >> 16) & 0xFF,
-                (offset >> 8) & 0xFF,
-                offset & 0xFF,
-              ];
-              
-              await char.write([
-                command & 0xFF, 
-                fileNum & 0xFF, 
-                offsetBytes[0], 
-                offsetBytes[1], 
-                offsetBytes[2], 
-                offsetBytes[3]
-              ], withoutResponse: false);
-              return true;
-            }
-          }
-        }
+      final char = _characteristic(storageDataStreamCharacteristicUuid);
+      if (char == null) {
+        debugPrint('writeToStorage: storage data characteristic not available');
+        return false;
       }
+      debugPrint('Writing to storage: file=$fileNum, cmd=$command, offset=$offset');
+      final payload = buildStorageCommand(
+        command: command,
+        fileNumber: fileNum,
+        offset: offset,
+      );
+      await char.write(payload, withoutResponse: false);
+      return true;
     } catch (e) {
       debugPrint('Error writing to storage: $e');
     }
@@ -625,26 +614,22 @@ class BleService {
   /// Start listening for storage data stream
   Future<StreamSubscription?> startStorageStream() async {
     if (_connectedDevice == null) return null;
-    
+
     try {
-      final services = await _connectedDevice!.discoverServices();
-      for (var service in services) {
-        if (service.uuid.toString().toLowerCase() == storageDataStreamServiceUuid.toLowerCase()) {
-          for (var char in service.characteristics) {
-            if (char.uuid.toString().toLowerCase() == storageDataStreamCharacteristicUuid.toLowerCase()) {
-              _storageCharacteristic = char;
-              await char.setNotifyValue(true);
-              _storageSubscription = char.onValueReceived.listen((value) {
-                if (value.isNotEmpty) {
-                  _storageController.add(value);
-                }
-              });
-              debugPrint('Storage stream started');
-              return _storageSubscription;
-            }
-          }
-        }
+      final char = _characteristic(storageDataStreamCharacteristicUuid);
+      if (char == null) {
+        debugPrint('startStorageStream: storage data characteristic not available');
+        return null;
       }
+      _storageCharacteristic = char;
+      await char.setNotifyValue(true);
+      _storageSubscription = char.onValueReceived.listen((value) {
+        if (value.isNotEmpty) {
+          _storageController.add(value);
+        }
+      });
+      debugPrint('Storage stream started');
+      return _storageSubscription;
     } catch (e) {
       debugPrint('Error starting storage stream: $e');
     }
@@ -663,12 +648,13 @@ class BleService {
     _storageCharacteristic = null;
   }
 
-  void dispose() {
-    _stateController.close();
-    _audioController.close();
-    _batteryController.close();
-    _buttonController.close();
-    _storageController.close();
-    _storageSubscription?.cancel();
-  }
+  /// Intentionally a no-op, kept so existing callers still compile.
+  ///
+  /// `BleService` is a process-lifetime singleton but `AppProvider.dispose()`
+  /// calls this, so neither the broadcast controllers nor the live
+  /// subscriptions may be torn down here: closing the controllers would leave
+  /// a re-created provider with permanently dead streams, and cancelling the
+  /// subscriptions would leave a still-connected device with no data flow and
+  /// nothing to re-subscribe it. Use `disconnect()` to release a connection.
+  void dispose() {}
 }

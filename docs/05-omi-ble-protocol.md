@@ -31,6 +31,8 @@ UUID `19b10000-…` is also valid and more robust; do both.
   `20` = Opus 10 ms frames (160 samples, 80-byte payload, 100 fps),
   `21` = Opus 20 ms frames (`opusFS320`, 320 samples, 120-byte payload, 50 fps).
   Unknown ids default to `pcm8` upstream; LibreOmi should refuse to stream and show an error instead.
+  (As of LO-12 `getAudioCodec()` still falls back to `pcm8` and only logs a warning —
+  refusing to stream changes the public return type and is deferred to LO-14.)
 - **Packet layout (notify):** `[packetIndex lo][packetIndex hi][frameIndex][payload…]`.
   Strip the first 3 bytes; the remainder is one Opus frame (or PCM).
   Omibutfree ignores packet index; LibreOmi should log gaps (`packetIndex` not
@@ -92,9 +94,14 @@ completion and 5 s for the first packet.
 ## Connection sequence (LibreOmi)
 
 1. `connect(timeout 10 s, autoConnect for saved device)`
-2. Android: `requestMtu(512)`; then `requestConnectionPriority(high)` while streaming
+2. Android: `requestMtu(512)` **before** `discoverServices()` (an unsolicited MTU update
+   otherwise races discovery); refuse the session if the negotiated MTU is < 86. Then
+   `requestConnectionPriority(high)` while streaming, `balanced` when idle. Both calls
+   throw off Android, so they are Android-guarded.
 3. `discoverServices()` **once**; cache characteristics by UUID
 4. read codec, device info, battery; subscribe battery notify if present
+   (as of LO-12 the reads are implemented but the battery *notify* subscription is not —
+   `batteryStream` is only fed by polling callers; see LO-17)
 5. subscribe button notify
 6. probe storage control (presence ⇒ SD-card UI enabled)
 7. subscribe audio notify only when a session starts; unsubscribe on stop
