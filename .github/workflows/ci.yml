@@ -42,9 +42,11 @@ jobs:
             echo "::error file=mise.toml::could not parse the flutter and/or temurin version out of mise.toml"
             exit 1
           fi
-          echo "flutter-version=$flutter_version" >> "$GITHUB_OUTPUT"
-          echo "java-version=$java_version" >> "$GITHUB_OUTPUT"
-          echo "started-at=$(date +%s)" >> "$GITHUB_OUTPUT"
+          {
+            echo "flutter-version=$flutter_version"
+            echo "java-version=$java_version"
+            echo "started-at=$(date +%s)"
+          } >> "$GITHUB_OUTPUT"
           echo "mise.toml pins Flutter $flutter_version and Temurin $java_version"
 
       # AGP 8.x needs JDK 17; Gradle reads JAVA_HOME, which this action sets.
