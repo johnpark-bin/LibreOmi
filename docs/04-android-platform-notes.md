@@ -124,7 +124,8 @@ warning only and does not fail the toolchain check.
 | `FOREGROUND_SERVICE_CONNECTED_DEVICE` | ≥ 34 | no | BLE session service type |
 | `FOREGROUND_SERVICE_MICROPHONE` | ≥ 34 | no | phone-mic session service type; on 34+ a mic FGS must be started while the app is in the foreground |
 | `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | ≥ 23 | intent | keep BLE alive in Doze; Play policy allows it for "connected device" apps |
-| `WAKE_LOCK` | all | no | partial wake lock while listening |
+| `WAKE_LOCK` | all | no | partial wake lock while listening (`allowWakeLock: true`) |
+| `RECEIVE_BOOT_COMPLETED` | all | no | **merged out**: contributed by `flutter_foreground_task`, unused because boot start is out of scope (see §4) |
 | `INTERNET` | all | no | Deepgram/OpenAI/model download |
 | `SCHEDULE_EXACT_ALARM` | 31–32 granted, ≥ 33 denied by default | intent | exact task reminders. Prefer **inexact** alarms (`preciseAlarm: false`) and only offer exact as an opt-in |
 | `VIBRATE` | all | no | haptic feedback |
@@ -136,22 +137,94 @@ with an explanation screen. Never request everything at startup.
 
 ## 4. Foreground service
 
-`flutter_foreground_task` (same as the official app). Manifest additions:
+`flutter_foreground_task 11.0.2` (same plugin as the official app), pinned to an exact
+version because `08-dev-workflow.md` §3 forbids new `^` ranges on native plugins.
+Manifest additions inside `<application>`:
 
 ```xml
+<meta-data
+    android:name="org.libreomi.app.NOTIFICATION_ICON"
+    android:resource="@drawable/ic_notification" />
 <service
     android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
     android:foregroundServiceType="connectedDevice|microphone"
+    android:stopWithTask="true"
     android:exported="false" />
 ```
 
+The manifest declares the union of the types; each session requests the subset it needs
+through `startService(serviceTypes: …)`. The plugin resolves the small status-bar icon
+through the `<meta-data>` entry above (`NotificationIcon(metaDataName: …)`), not by
+resource name — without it the notification falls back to the launcher icon.
+
+The plugin's own manifest contributes `RECEIVE_BOOT_COMPLETED` for its optional boot
+receiver. A boot receiver is out of scope for v1 (`03-architecture.md` §5) and the
+service is configured with `autoRunOnBoot: false`, so the app manifest merges the
+permission out with `tools:node="remove"`.
+
+Dart side, in `lib/platform/`:
+
+| File | Role |
+|------|------|
+| `background_reasons.dart` | `BackgroundReason`, reason set → service types, notification text and its 30 s update throttle. Pure, unit-tested. |
+| `background_runner.dart` | The `BackgroundRunner` interface (`03-architecture.md` §2). |
+| `android_foreground_runner.dart` | The plugin wrapper. |
+| `noop_background_runner.dart` | Every non-Android platform. |
+| `background_runner_factory.dart` | Picks the implementation; one of the `platform/` files allowed a `Platform.isAndroid` branch. |
+| `fake_background_runner.dart` | Recording fake for tests. |
+
+Options used (`ForegroundTaskOptions`): `eventAction: nothing()` — the task handler is
+empty on purpose, see `03-architecture.md` §5 item 2 — `allowWakeLock: true` (LO-24's
+partial wake lock), `allowWifiLock: false`, `autoRunOnBoot: false`,
+`autoRunOnMyPackageReplaced: false`, `allowAutoRestart: false`. The service must also die
+with the app task, but that is set **only** as `android:stopWithTask="true"` on the
+`<service>`, never through the plugin's Dart option of the same name.
+
+Both of those are deliberate. Left at the defaults, `ForegroundService.onTaskRemoved`
+sets a 1 s restart alarm and `onDestroy` a 5 s one, and the service comes back in a fresh
+engine running the empty task handler — with no `AppProvider`, no BLE and no transcriber
+behind it. That is a persistent notification claiming to record that the app cannot take
+down, i.e. exactly what LO-24 forbids; an auto-restart could not resume the session
+anyway, because the session lives in the main isolate and not in the task handler.
+
+The manifest flag alone is enough: `ForegroundServiceUtils.isSetStopWithTaskFlag` falls
+back to `ServiceInfo.FLAG_STOP_WITH_TASK` whenever the preference is absent, which makes
+`onTaskRemoved` call `stopSelf()`, keeps `onDestroy` from arming the restart alarm, and
+returns `START_NOT_STICKY`. Passing `stopWithTask: true` from Dart would additionally make
+`onStartCommand` install `TrackVisibilityUtils`, which stops the service as soon as no
+activity is resumed — that is every screen-off, i.e. precisely the case LO-20 exists to
+survive. Do not set it there.
+
+The trade-off of the manifest flag is that swiping the app out of recents ends the
+session; the screen going off, which is what LO-20 is about, does not remove the task.
+`AppProvider._init()` additionally calls `stop()` once at start-up to reap a service
+orphaned by a process that died without stopping it.
+
 - Start the service **before** starting BLE audio notifications or the mic stream.
-- Use a dedicated low-importance notification channel for the persistent notification;
-  keep AI responses / reminders on their own high-importance channels.
-- On Android 14+, starting a `microphone`-type service from the background throws; the
-  session must transition from a foreground UI action (or already be running).
-- Stop the service when idle with no device connected, otherwise the persistent
-  notification annoys users and Play reviewers.
+- Reason sets: an Omi BLE session uses `{connectedDevice}`; a phone-mic session uses
+  `{connectedDevice, microphone}`.
+- The persistent notification reuses the low-importance `session` channel (§6). Android
+  keeps the first definition of a channel id, so the plugin's own channel options are
+  effectively a no-op as long as `awesome_notifications` registers the channel under the
+  literal id `session` — worth confirming on a device that Settings → Notifications lists
+  exactly one "Session" channel. Its notification id is 1 000 000, above the range
+  `NotificationService` uses for instant notifications; task reminders derive ids across
+  the whole 31-bit range and could in principle collide, which LO-35 removes.
+- Notification text is `<source> · <mm:ss>`, e.g. `Omi connected · 12:34`, refreshed from
+  transcript segments and connection changes but rate-limited to one update per 30 s
+  unless the source part itself changed.
+- Foreground services cannot generally be started from the background since API 31; the
+  Omi path starts one from the BLE connection callback, so it depends on the
+  battery-optimisation exemption (LO-11 / #15) to be reliable. `startService` returns a
+  failure result rather than throwing, and `AndroidForegroundRunner` logs it and lets the
+  session continue in the foreground.
+- On Android 14+, a `microphone`-type service additionally may only be started while the
+  app is in the foreground; the phone-mic session is only ever reached from a button tap.
+  `requiresForegroundStart()` states which reason sets that applies to and is used to
+  annotate the failure log — it is a documented rule, not an enforced guard.
+- Stop the service as soon as the session leaves listening, whether or not a device is
+  still connected — an idle app must show no persistent notification (LO-24), otherwise
+  it annoys users and Play reviewers.
 
 ## 5. BLE specifics (`flutter_blue_plus` on Android)
 
