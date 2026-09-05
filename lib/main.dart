@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'services/settings_service.dart';
 import 'services/notification_service.dart'; // Added
+import 'platform/permission_gateway.dart';
 import 'providers/app_provider.dart';
 import 'pages/home_page.dart';
 
@@ -19,6 +20,20 @@ void main() async {
   }
 
   runApp(const LibreOmiApp());
+
+  // Notifications are the only permission requested at launch (docs/04 §3):
+  // every notification the app posts, including the persistent session one,
+  // needs it from Android 13 on. BLE and microphone are requested at the point
+  // of use instead. Asked after the first frame so the dialog has an attached
+  // activity, and deliberately not awaited: a denial only means the user gets
+  // no notifications, which must not block the UI from coming up.
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    try {
+      await appPermissions.ensureNotifications();
+    } catch (e) {
+      debugPrint('Notification permission request failed: $e');
+    }
+  });
 }
 
 class LibreOmiApp extends StatelessWidget {

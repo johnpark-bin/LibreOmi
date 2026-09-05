@@ -38,6 +38,8 @@ dependencies:
   # BLE for Omi device connection
   flutter_blue_plus: ^1.34.0
   permission_handler: ^11.3.0
+  # Android API level detection for the runtime-permission branches (docs/04 §3)
+  device_info_plus: ^11.2.0
 
   # Deepgram WebSocket for transcription
   web_socket_channel: ^2.4.0
