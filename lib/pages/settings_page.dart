@@ -235,6 +235,29 @@ class _SettingsPageState extends State<SettingsPage> {
                       'Get from console.deepgram.com',
                       style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), fontSize: 12),
                     ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: SettingsService.deepgramModel,
+                      dropdownColor: const Color(0xFF2D2D2D),
+                      decoration: const InputDecoration(
+                        labelText: 'Model',
+                      ),
+                      icon: Icon(Icons.arrow_drop_down, color: theme.colorScheme.onSurface.withOpacity(0.5)),
+                      items: const [
+                        DropdownMenuItem(value: 'nova-2', child: Text('Nova-2')),
+                        DropdownMenuItem(value: 'nova-3', child: Text('Nova-3')),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => SettingsService.deepgramModel = value);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Streaming model used for live transcription',
+                      style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), fontSize: 12),
+                    ),
                   ],
                 ),
               ),
