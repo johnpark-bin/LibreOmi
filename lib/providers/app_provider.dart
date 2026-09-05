@@ -6,6 +6,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 import '../models/conversation.dart';
+import '../platform/background_runner.dart';
+import '../platform/background_runner_factory.dart';
 import '../services/ble_service.dart';
 import '../services/database_service.dart';
 import '../services/deepgram_service.dart';
@@ -26,6 +28,16 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   final BleService _bleService = BleService();
   final MicService _micService = MicService();
   SdCardSyncService? _sdCardSyncService;
+
+  /// Keeps the process alive while a session records (docs/03 §5). A
+  /// foreground service on Android, inert everywhere else. Injectable so a
+  /// test can pass a `FakeBackgroundRunner`.
+  final BackgroundRunner _backgroundRunner;
+
+  /// Rate-limits rewrites of the persistent notification so a burst of
+  /// transcript segments does not produce a burst of platform calls.
+  final SessionNotificationThrottle _sessionNotificationThrottle =
+      SessionNotificationThrottle();
 
   // App lifecycle state
   AppLifecycleState _appLifecycleState = AppLifecycleState.resumed;
@@ -115,13 +127,22 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   StreamSubscription? _audioSubscription;
   StreamSubscription? _buttonSubscription;
 
-  AppProvider() {
+  AppProvider({BackgroundRunner? backgroundRunner})
+      : _backgroundRunner = backgroundRunner ?? createBackgroundRunner() {
     _init();
   }
 
   Future<void> _init() async {
     // Register app lifecycle observer
     WidgetsBinding.instance.addObserver(this);
+
+    // Nothing is recording yet, so any foreground service still up belongs to
+    // a previous process that did not shut down cleanly. Reap it, otherwise a
+    // notification claiming to record would survive with no session behind it.
+    // Awaited on purpose: it has to finish before the device-state listener
+    // below can start a session, or the reap could take that session's service
+    // down instead.
+    await _stopBackgroundRunnerWhenIdle();
 
     try {
       // Listen to device state changes
@@ -154,6 +175,10 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
             );
           }
         }
+
+        // A connection change alters the notification's first half, which the
+        // throttle pushes immediately rather than at the next interval.
+        _updateSessionNotification();
 
         notifyListeners();
       });
@@ -317,16 +342,33 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     if (_isListening) return;
 
     _isUsingPhoneMic = false;
-    await _startTranscriptionServices(useOpusEncoding: true);
 
-    // Start audio stream from Omi device
-    await _bleService.startAudioStream();
+    // The foreground service goes up before any audio flows, so the process is
+    // never killed mid-setup (docs/04 §4). An Omi session only needs the
+    // connectedDevice type; the microphone type is reserved for the phone-mic
+    // path, which Android 14+ allows to start from the foreground only.
+    await _startBackgroundRunner(<BackgroundReason>{
+      BackgroundReason.connectedDevice,
+    });
 
-    // Initialize Opus decoder for Omi device (needed for local transcription and debug playback)
-    _opusDecoder = OpusDecoderService();
-    await _opusDecoder!.initialize();
+    try {
+      await _startTranscriptionServices(useOpusEncoding: true);
 
-    _audioSubscription = _bleService.audioStream.listen(_handleOmiAudioData);
+      // Start audio stream from Omi device
+      await _bleService.startAudioStream();
+
+      // Initialize Opus decoder for Omi device (needed for local transcription and debug playback)
+      _opusDecoder = OpusDecoderService();
+      await _opusDecoder!.initialize();
+
+      _audioSubscription = _bleService.audioStream.listen(_handleOmiAudioData);
+    } catch (_) {
+      // Setup failed, so the session never reaches listening: take the service
+      // back down instead of leaving a notification for a session that is not
+      // running.
+      await _stopBackgroundRunnerWhenIdle();
+      rethrow;
+    }
 
     _isListening = true;
     _startNewConversation();
@@ -350,13 +392,30 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     }
 
     _isUsingPhoneMic = true;
-    await _startTranscriptionServices(useOpusEncoding: false);
 
-    // Start phone mic recording
-    await _micService.startRecording();
-    _audioSubscription = _micService.audioStream.listen(
-      _handlePhoneMicAudioData,
-    );
+    // Microphone-type foreground services may only be started while the app is
+    // in the foreground on Android 14+ (docs/04 §3/§4), and this method is only
+    // ever reached from a button tap, so the type is safe to request here.
+    await _startBackgroundRunner(<BackgroundReason>{
+      BackgroundReason.connectedDevice,
+      BackgroundReason.microphone,
+    });
+
+    try {
+      await _startTranscriptionServices(useOpusEncoding: false);
+
+      // Start phone mic recording
+      await _micService.startRecording();
+      _audioSubscription = _micService.audioStream.listen(
+        _handlePhoneMicAudioData,
+      );
+    } catch (_) {
+      // Leaving the flag set would keep auto-reconnect switched off for the
+      // rest of the process.
+      _isUsingPhoneMic = false;
+      await _stopBackgroundRunnerWhenIdle();
+      rethrow;
+    }
 
     _isListening = true;
     _startNewConversation();
@@ -432,6 +491,55 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
+  /// Brings the foreground service up for [reasons]. Never throws: a session
+  /// that cannot get a service still works while the app is in the foreground,
+  /// so a failure here must not abort recording.
+  Future<void> _startBackgroundRunner(Set<BackgroundReason> reasons) async {
+    _sessionNotificationThrottle.reset();
+    try {
+      await _backgroundRunner.start(reasons: reasons);
+    } catch (e) {
+      debugPrint('Background runner failed to start: $e');
+    }
+  }
+
+  /// Takes the foreground service down once the session is no longer
+  /// listening. An idle session shows no persistent notification, whether or
+  /// not the wearable is still connected (LO-24, `docs/06-roadmap.md`).
+  Future<void> _stopBackgroundRunnerWhenIdle() async {
+    if (_isListening) {
+      return;
+    }
+    _sessionNotificationThrottle.reset();
+    try {
+      await _backgroundRunner.stop();
+    } catch (e) {
+      debugPrint('Background runner failed to stop: $e');
+    }
+  }
+
+  /// Refreshes the persistent notification with the connection state and the
+  /// length of the conversation being recorded. Cheap to call often: the
+  /// throttle drops updates that only move the clock forward.
+  void _updateSessionNotification() {
+    if (!_isListening) {
+      return;
+    }
+    final startedAt = _currentConversation?.createdAt;
+    final now = DateTime.now();
+    final candidate = SessionNotificationText.forSession(
+      usingPhoneMic: _isUsingPhoneMic,
+      deviceConnected: _deviceState == DeviceConnectionState.connected,
+      conversationLength:
+          startedAt == null ? Duration.zero : now.difference(startedAt),
+    );
+    final next = _sessionNotificationThrottle.next(candidate, now);
+    if (next == null) {
+      return;
+    }
+    unawaited(_backgroundRunner.update(next.text));
+  }
+
   void _startNewConversation() {
     _currentConversation = Conversation(
       id: const Uuid().v4(),
@@ -466,6 +574,9 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
 
     // Reset silence timer
     _resetSilenceTimer();
+
+    // Keep the persistent notification's conversation length roughly current.
+    _updateSessionNotification();
 
     notifyListeners();
   }
@@ -646,6 +757,9 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     _isUsingPhoneMic = false;
     _currentConversation = null;
     _liveSegments = [];
+
+    await _stopBackgroundRunnerWhenIdle();
+
     notifyListeners();
 
     debugPrint('Stopped continuous listening');
@@ -1251,13 +1365,14 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
         _voiceCommandBuffer = [];
 
         if (!_isListening) {
-          await _bleService.startAudioStream();
-          if (_audioSubscription == null) {
-            _audioSubscription = _bleService.audioStream.listen(
-              _handleOmiAudioData,
-            );
+          // startListening() brings the foreground service up before it touches
+          // the audio stream and installs the subscription itself; opening the
+          // stream here first would invert that order and leak a subscription.
+          try {
+            await startListening();
+          } catch (e) {
+            debugPrint('Could not start listening for the query: $e');
           }
-          startListening();
         }
 
         notifyListeners();
@@ -1408,6 +1523,8 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     _silenceTimer?.cancel();
     _bleService.dispose();
     _deepgramService?.disconnect();
+    // Do not leave a foreground service (and its notification) behind.
+    unawaited(_backgroundRunner.stop());
     _audioPlayer.dispose();
     super.dispose();
   }

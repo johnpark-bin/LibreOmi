@@ -159,9 +159,12 @@ off or the app in the background, for hours, on a single charge.
 Design (M2):
 
 1. `AndroidForegroundRunner` wraps `flutter_foreground_task`. It starts a foreground
-   service with `foregroundServiceType="connectedDevice|microphone"` whenever the
-   session enters `listening`, and stops it when the session returns to `idle` with no
-   device connected. The service notification shows connection state and the current
+   service before the session enters `listening` and stops it when the session returns
+   to `idle` — whether or not a device is still connected, because an idle app must show
+   no persistent notification (LO-24). The manifest declares
+   `foregroundServiceType="connectedDevice|microphone"`, but each start requests only the
+   types that session needs: `connectedDevice` for an Omi session, plus `microphone` for a
+   phone-mic session. The service notification shows connection state and the current
    conversation length; it is the user's "the app is alive" indicator.
 2. The service **does not run separate Dart logic**; it exists to keep the Flutter
    engine's main isolate unfrozen. All BLE callbacks continue in the main isolate. (This

@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- Permission matrix: docs/04-android-platform-notes.md §3 -->
 
     <!-- Network: Deepgram / OpenAI / on-device model download -->
@@ -24,7 +25,7 @@
     <!-- Runtime permission on API >= 33; covers the foreground-service notification too. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
-    <!-- Foreground session service (the <service> element itself lands with LO-20). -->
+    <!-- Foreground session service; the <service> element is declared inside <application>. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
@@ -35,6 +36,15 @@
     <uses-permission android:name="android.permission.VIBRATE"/>
     <!-- Keeps the BLE link alive in Doze; offered with an explanation, never silently. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+
+    <!-- flutter_foreground_task's own manifest declares RECEIVE_BOOT_COMPLETED for its
+         optional boot receiver. A boot receiver is explicitly out of scope for v1
+         (docs/03-architecture.md §5) and the service is configured with
+         autoRunOnBoot: false, so the permission is merged out instead of being shipped
+         unused. Drop this block if boot start is ever adopted. -->
+    <uses-permission
+        android:name="android.permission.RECEIVE_BOOT_COMPLETED"
+        tools:node="remove"/>
 
     <application
         android:label="LibreOmi"
@@ -62,6 +72,30 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- Small status-bar icon for the persistent session notification. The
+             foreground-service plugin resolves the drawable through this meta-data entry
+             (AndroidForegroundRunner.iconMetaDataName), not by resource name. -->
+        <meta-data
+            android:name="org.libreomi.app.NOTIFICATION_ICON"
+            android:resource="@drawable/ic_notification"/>
+
+        <!-- Foreground service that keeps the Flutter main isolate alive while a session
+             records (docs/04-android-platform-notes.md §4). The class is the one shipped by
+             flutter_foreground_task; both types are declared here because the session picks
+             them per run: an Omi BLE session uses connectedDevice only, a phone-mic session
+             uses connectedDevice|microphone. On Android 14+ a microphone-type service may
+             only be started while the app is in the foreground, so the phone-mic session is
+             always started from a UI action. stopWithTask keeps the service from outliving
+             the app task: a restarted service would carry a notification with no session
+             behind it. It is set here and NOT through the plugin's Dart option of the same
+             name — that variant also stops the service whenever no activity is resumed,
+             which would kill every session at screen-off (see docs/04 §4). -->
+        <service
+            android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
+            android:foregroundServiceType="connectedDevice|microphone"
+            android:stopWithTask="true"
+            android:exported="false"/>
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

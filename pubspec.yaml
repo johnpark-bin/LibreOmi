@@ -44,6 +44,10 @@ dependencies:
   # Deepgram WebSocket for transcription
   web_socket_channel: ^2.4.0
 
+  # Android foreground service that keeps the session alive (docs/04 §4).
+  # Exact pin: no new `^` ranges on native plugins (docs/08 §3).
+  flutter_foreground_task: 11.0.2
+
   # Local SQLite database
   sqflite: ^2.3.0
   path: ^1.8.3
