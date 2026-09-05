@@ -28,6 +28,14 @@ class SettingsService {
 
   static String get openaiModel => prefs.getString('openai_model') ?? 'gpt-4.1-mini';
   static set openaiModel(String value) => prefs.setString('openai_model', value);
+
+  /// Deepgram streaming model. Keys of [deepgramPricePerMinute] are the
+  /// supported values; anything else falls back to the default.
+  static String get deepgramModel {
+    final stored = prefs.getString('deepgram_model') ?? defaultDeepgramModel;
+    return deepgramPricePerMinute.containsKey(stored) ? stored : defaultDeepgramModel;
+  }
+  static set deepgramModel(String value) => prefs.setString('deepgram_model', value);
   
   // Transcription mode: 'cloud' (Deepgram), 'whisper', or 'sherpa'
   static String get transcriptionMode => prefs.getString('transcription_mode') ?? 'cloud';
@@ -124,10 +132,20 @@ class SettingsService {
     'gpt-3.5-turbo': {'input': 0.50, 'output': 1.50},
   };
   
-  static const double deepgramPricePerMinute = 0.0059; // Nova-2 streaming
+  static const String defaultDeepgramModel = 'nova-2';
+
+  /// Streaming price per minute, per model. Both models are billed at the same
+  /// published rate today; LO-60 makes this table editable.
+  static const Map<String, double> deepgramPricePerMinute = {
+    'nova-2': 0.0059,
+    'nova-3': 0.0059,
+  };
   
   // Cost calculations
-  static double get deepgramCost => deepgramMinutesUsed * deepgramPricePerMinute;
+  static double get deepgramCost =>
+      deepgramMinutesUsed *
+      (deepgramPricePerMinute[deepgramModel] ??
+          deepgramPricePerMinute[defaultDeepgramModel]!);
   
   static double get openaiCost {
     final model = openaiModel;

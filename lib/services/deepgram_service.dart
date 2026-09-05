@@ -1,24 +1,30 @@
 /// Direct Deepgram WebSocket service for speech-to-text
+library;
+
 import 'dart:async';
-import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/conversation.dart';
+import 'deepgram/deepgram_parser.dart';
 import 'settings_service.dart';
 
 class DeepgramService {
   WebSocketChannel? _channel;
   StreamSubscription? _subscription;
   bool _isConnected = false;
-  
+
   final String apiKey;
   final String language;
   final String encoding;
   final int sampleRate;
   final Function(List<TranscriptSegment>)? onTranscript;
   final Function(String)? onError;
-  
+
+  /// Explicit model override. When null the model is read from
+  /// [SettingsService] at connect time, so the constructor stays free of
+  /// side effects and a settings change takes effect on the next connect.
+  final String? _modelOverride;
+
   DeepgramService({
     required this.apiKey,
     this.language = 'en',
@@ -26,24 +32,45 @@ class DeepgramService {
     this.sampleRate = 16000,
     this.onTranscript,
     this.onError,
-  });
+    String? model,
+  }) : _modelOverride = model;
+
+  /// Model this service will use on its next [connect].
+  String get model => _modelOverride ?? SettingsService.deepgramModel;
 
   bool get isConnected => _isConnected;
 
+  /// Builds the Deepgram `/v1/listen` WebSocket URI. Extracted as a pure,
+  /// testable function so query-parameter changes get unit test coverage
+  /// without opening a real socket.
+  @visibleForTesting
+  static Uri buildListenUri({
+    required String model,
+    required String language,
+    required int sampleRate,
+    required String encoding,
+  }) {
+    return Uri.parse(
+      'wss://api.deepgram.com/v1/listen'
+      '?model=$model'
+      '&language=$language'
+      '&punctuate=true'
+      '&diarize=true'
+      '&sample_rate=$sampleRate'
+      '&encoding=$encoding'
+      '&channels=1'
+    );
+  }
+
   Future<void> connect() async {
     if (_isConnected) return;
-    
+
     try {
-      // Deepgram WebSocket URL with parameters
-      final uri = Uri.parse(
-        'wss://api.deepgram.com/v1/listen'
-        '?model=nova-2'
-        '&language=$language'
-        '&punctuate=true'
-        '&diarize=true'
-        '&sample_rate=$sampleRate'
-        '&encoding=$encoding'
-        '&channels=1'
+      final uri = buildListenUri(
+        model: model,
+        language: language,
+        sampleRate: sampleRate,
+        encoding: encoding,
       );
 
       _channel = WebSocketChannel.connect(
@@ -65,7 +92,7 @@ class DeepgramService {
       );
 
       _isConnected = true;
-      debugPrint('Connected to Deepgram (encoding: $encoding, sampleRate: $sampleRate)');
+      debugPrint('Connected to Deepgram (model: $model, encoding: $encoding, sampleRate: $sampleRate)');
     } catch (e) {
       debugPrint('Failed to connect to Deepgram: $e');
       onError?.call(e.toString());
@@ -75,65 +102,33 @@ class DeepgramService {
 
   void _handleMessage(dynamic message) {
     try {
-      final json = jsonDecode(message as String);
-      
-      // Check if this is a transcript result
-      if (json['type'] == 'Results') {
-        final alternatives = json['channel']?['alternatives'] as List?;
-        if (alternatives != null && alternatives.isNotEmpty) {
-          final transcript = alternatives[0]['transcript'] as String?;
-          final words = alternatives[0]['words'] as List?;
-          
-          // Track audio duration for cost calculation
-          final duration = json['duration'] as num?;
-          if (duration != null && duration > 0) {
-            SettingsService.addDeepgramUsage(duration.toDouble() / 60.0); // Convert seconds to minutes
+      // Decode once, then dispatch on the message type.
+      final json = decodeDeepgramMessage(message as String);
+      if (json == null) return;
+
+      switch (json['type']) {
+        case 'Results':
+          final result = parseDeepgramResults(json);
+
+          // Interim results repeat and extend the same audio window, so only
+          // final results are billed. See DeepgramResult.billableMinutes.
+          final minutes = result.billableMinutes;
+          if (minutes > 0) {
+            SettingsService.addDeepgramUsage(minutes);
           }
-          
-          if (transcript != null && transcript.isNotEmpty) {
-            // Convert to TranscriptSegment
-            final segments = _parseWords(words ?? []);
-            if (segments.isNotEmpty) {
-              onTranscript?.call(segments);
-            }
+
+          if (result.segments.isNotEmpty) {
+            onTranscript?.call(result.segments);
           }
-        }
+        case 'Metadata':
+          // Closing message; usage is already accounted for from the final
+          // results, so this is logged for diagnostics only.
+          debugPrint(
+              'Deepgram Metadata received (total duration: ${json['duration']})');
       }
     } catch (e) {
       debugPrint('Error parsing Deepgram message: $e');
     }
-  }
-
-  List<TranscriptSegment> _parseWords(List words) {
-    if (words.isEmpty) return [];
-    
-    // Group words by speaker
-    Map<int, List<dynamic>> speakerWords = {};
-    
-    for (var word in words) {
-      final speaker = word['speaker'] ?? 0;
-      speakerWords.putIfAbsent(speaker, () => []).add(word);
-    }
-    
-    List<TranscriptSegment> segments = [];
-    
-    for (var entry in speakerWords.entries) {
-      final wordList = entry.value;
-      if (wordList.isEmpty) continue;
-      
-      final text = wordList.map((w) => w['word'] ?? '').join(' ');
-      final start = (wordList.first['start'] ?? 0).toDouble();
-      final end = (wordList.last['end'] ?? 0).toDouble();
-      
-      segments.add(TranscriptSegment(
-        text: text,
-        speakerId: entry.key,
-        startTime: start,
-        endTime: end,
-      ));
-    }
-    
-    return segments;
   }
 
   void sendAudio(Uint8List audioData) {
