@@ -10,7 +10,7 @@ Goal: a clean fork that builds nothing yet but has every convention in place.
 
 | ID | Item | Size | Acceptance |
 |----|------|------|------------|
-| LO-01 | Create repo from upstream `lib/`, `assets/`, `pubspec.yaml`, `analysis_options.yaml`, `ios/` (minus Finder duplicates, `OmiLocal/`, `.ralph/`, logs, scripts). Keep upstream git history via `git filter-repo` or start fresh with attribution in `LICENSE`. | S | `git log` clean; `LICENSE` has both copyright lines |
+| LO-01 | Create repo from upstream `lib/`, `assets/`, `pubspec.yaml`, `analysis_options.yaml`, `ios/` (minus Finder duplicates, `OmiLocal/`, `.ralph/`, logs, scripts). Start fresh: no upstream history, one import commit recording the upstream commit hash in the message and in `README.md`, attribution in `LICENSE`. | S | `git log` clean; `LICENSE` has both copyright lines |
 | LO-02 | Pin toolchain: `mise.toml` (concrete flutter stable, java 17); `docs/` and `AGENTS.md` committed | S | after the one-time Android SDK setup in `04 §1`, `mise install && mise exec -- flutter doctor` shows Flutter / Android toolchain / licenses green |
 | LO-03 | Rename app: `libreomi` package, `org.libreomi.app` id (placeholder until owner decides), app label "LibreOmi", new icon assets | S | `flutter analyze` passes |
 | LO-04 | CI: GitHub Actions running `flutter analyze` + `flutter test` + `flutter build apk --debug` on PR | M | green on main |

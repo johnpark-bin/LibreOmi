@@ -10,8 +10,37 @@ same tree.
 
 ## Status
 
-Planning phase. No application code has been written in this repository yet.
-The design documents below are the source of truth for the implementation work.
+Bootstrap phase (M0). The upstream Flutter application sources have been imported;
+no Android platform folder exists yet and the app has not been built or run from
+this repository. The design documents below remain the source of truth for the
+implementation work.
+
+### Upstream import
+
+The application code in `lib/`, `assets/`, `test/`, `ios/`, `pubspec.yaml`,
+`pubspec.lock`, `analysis_options.yaml` and `flutter_launcher_icons.yaml` was
+copied verbatim from upstream:
+
+- Source: <https://github.com/kbdevs/omibutfree>
+- Commit: `98b912f4e46f03bcad818646b51c8f10f35563fe` ("failed swift transformation")
+- Imported: 2026-09-06
+
+Upstream history was **not** carried over. The files were brought in as a single
+commit and the upstream commit hash above is the provenance record; use it to diff
+against upstream. Attribution is kept in `LICENSE`, which carries both the upstream
+(kbdevs) and the LibreOmi copyright lines.
+
+Deliberately not imported: the abandoned native SwiftUI rewrite (`OmiLocal/`), the
+agent-loop state (`.ralph/`), the author's build logs and codesign scripts
+(`build_log.txt`, `fix_build.sh`), a stale submodule pointer (`omi`), the upstream
+`README.md` and `.gitignore` (this repository keeps its own), macOS Finder
+duplicate artefacts (`ios/Pods 2/`, `ios/Flutter/Flutter 2.podspec`,
+`Flutter 3.podspec`, `flutter_export_environment 2.sh`,
+`flutter_export_environment 3.sh`, `.flutter-plugins-dependencies 2`), and
+`.metadata` (regenerated when the Android platform folder is created).
+
+The imported Dart code is unmodified, including `name: omi_local` in `pubspec.yaml`
+and the `package:omi_local/...` imports; renaming is tracked separately (LO-03).
 
 ## Documents
 
