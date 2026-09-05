@@ -1,4 +1,4 @@
-# Flutter / Dart (populated further in LO-01)
+# Flutter / Dart
 .dart_tool/
 .packages
 .pub-cache/
@@ -7,18 +7,51 @@
 /coverage/
 .flutter-plugins
 .flutter-plugins-dependencies
-**/ios/Flutter/.last_build_id
+migrate_working_dir/
+**/doc/api/
+
+# Symbolication / obfuscation output
+app.*.symbols
+app.*.map.json
+
+# Android
 **/android/.gradle
 **/android/local.properties
 **/android/key.properties
+/android/app/debug
+/android/app/profile
+/android/app/release
 *.jks
 *.keystore
+
+# iOS / Xcode
+**/ios/Flutter/.last_build_id
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/App.framework
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+ios/Flutter/flutter_assets/
+ios/Flutter/flutter_export_environment.sh
+ios/Runner/GeneratedPluginRegistrant.*
+ios/ServiceDefinitions.json
+**/DerivedData/
+xcuserdata/
+*.mode1v3
+*.mode2v3
+*.pbxuser
+*.perspectivev3
+*.moved-aside
 
 # IDE / OS
 .idea/
 *.iml
 .vscode/
 .DS_Store
+.history
+.atom/
 
 # Secrets
 .env
