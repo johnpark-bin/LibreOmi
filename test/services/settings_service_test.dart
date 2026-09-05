@@ -33,6 +33,33 @@ void main() {
     });
   });
 
+  group('SettingsService.batteryOptimizationPromptShown', () {
+    test('defaults to false on a fresh install', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await SettingsService.init();
+
+      expect(SettingsService.batteryOptimizationPromptShown, isFalse);
+    });
+
+    test('setting it to true persists and reads back', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await SettingsService.init();
+
+      SettingsService.batteryOptimizationPromptShown = true;
+
+      expect(SettingsService.batteryOptimizationPromptShown, isTrue);
+    });
+
+    test('reads a value stored by an earlier run', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'battery_optimization_prompt_shown': true,
+      });
+      await SettingsService.init();
+
+      expect(SettingsService.batteryOptimizationPromptShown, isTrue);
+    });
+  });
+
   group('SettingsService.deepgramCost', () {
     test('equals minutes used times price per minute for nova-2', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});

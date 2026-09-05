@@ -88,6 +88,15 @@ class SettingsService {
   static bool get notifyProcessing => prefs.getBool('notify_processing') ?? true;
   static set notifyProcessing(bool value) => prefs.setBool('notify_processing', value);
   
+  /// Whether the one-time battery-optimisation explanation dialog has already
+  /// been shown before a session start (LO-21). Set once, so a user who
+  /// refused is never asked automatically again; the settings page is the way
+  /// back in.
+  static bool get batteryOptimizationPromptShown =>
+      prefs.getBool('battery_optimization_prompt_shown') ?? false;
+  static set batteryOptimizationPromptShown(bool value) =>
+      prefs.setBool('battery_optimization_prompt_shown', value);
+
   // iCloud backup
   static bool get icloudBackupEnabled => prefs.getBool('icloud_backup_enabled') ?? false;
   static set icloudBackupEnabled(bool value) => prefs.setBool('icloud_backup_enabled', value);

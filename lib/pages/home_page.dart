@@ -1,11 +1,14 @@
 /// Home page - device connection and live transcription
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../platform/battery_optimization.dart';
+import '../platform/battery_optimization_gateway.dart';
 import '../platform/permission_gateway.dart';
 import '../platform/permissions.dart';
 import '../providers/app_provider.dart';
 import '../services/ble_service.dart';
 import '../services/settings_service.dart';
+import 'battery_guidance_page.dart';
 import 'settings_page.dart';
 import 'conversations_page.dart';
 import 'memories_page.dart';
@@ -95,6 +98,16 @@ class _DeviceTabState extends State<DeviceTab> {
   bool _isScanning = false;
   bool _isUserConnecting = false; // Track user-initiated connection
   List<BleDevice> _devices = [];
+
+  /// Owns the "battery-optimisation prompt already shown" decision. Kept as a
+  /// field so its in-flight guard survives across the two session-start paths
+  /// below (see `lib/platform/battery_optimization.dart`).
+  late final BatteryOptimizationPrompt _batteryPrompt = BatteryOptimizationPrompt(
+    optimization: batteryOptimization,
+    readShown: () => SettingsService.batteryOptimizationPromptShown,
+    writeShown: (value) =>
+        SettingsService.batteryOptimizationPromptShown = value,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -731,6 +744,8 @@ class _DeviceTabState extends State<DeviceTab> {
   }
 
   Future<void> _startListening(AppProvider provider) async {
+    await _maybePromptBatteryOptimization();
+    if (!mounted) return;
     try {
       await provider.startListening();
     } catch (e) {
@@ -761,6 +776,8 @@ class _DeviceTabState extends State<DeviceTab> {
       return;
     }
 
+    await _maybePromptBatteryOptimization();
+    if (!mounted) return;
     try {
       await provider.startListeningWithPhoneMic();
     } catch (e) {
@@ -770,6 +787,97 @@ class _DeviceTabState extends State<DeviceTab> {
         );
       }
     }
+  }
+
+  /// Offers the battery-optimisation exemption once, immediately before the
+  /// first session starts (docs/04 §3). Android can suspend the app while the
+  /// screen is off, which cuts a recording session short unless the app is
+  /// exempt from battery optimisation; this dialog explains that trade-off
+  /// and lets the user grant the exemption on the spot. It never blocks or
+  /// fails a session start: any platform error is swallowed and the session
+  /// proceeds as if the user had declined.
+  Future<void> _maybePromptBatteryOptimization() async {
+    final bool shouldPrompt;
+    try {
+      // claim() records the "shown" flag before it returns true and holds an
+      // in-flight guard across its await, so two quick session starts cannot
+      // stack two dialogs.
+      shouldPrompt = await _batteryPrompt.claim();
+    } catch (e) {
+      debugPrint('battery optimisation: could not decide on prompt: $e');
+      return;
+    }
+    if (!shouldPrompt) return;
+    if (!mounted) return;
+
+    final bool continuePressed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Keep recording while the screen is off?'),
+            content: const Text(
+              'Android\'s battery optimisation can suspend LibreOmi while '
+              'the screen is off, which can cut a recording session short. '
+              'Exempting LibreOmi from battery optimisation keeps the '
+              'Bluetooth session alive in the background.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Not now'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Continue'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!mounted) return;
+
+    if (!continuePressed) {
+      _offerBatteryGuidance(
+        'You can exempt LibreOmi from battery optimisation later.',
+      );
+      return;
+    }
+
+    final BatteryOptimizationOutcome outcome;
+    try {
+      outcome = await _batteryPrompt.optimization.request();
+    } catch (e) {
+      debugPrint('battery optimisation: request failed: $e');
+      return;
+    }
+    if (!mounted) return;
+
+    if (outcome == BatteryOptimizationOutcome.denied) {
+      _offerBatteryGuidance(
+        'Battery optimisation is still on for LibreOmi.',
+      );
+    }
+  }
+
+  /// Shows a SnackBar offering the manufacturer-specific guidance page for
+  /// keeping LibreOmi alive in the background.
+  void _offerBatteryGuidance(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        action: SnackBarAction(
+          label: 'Guidance',
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => const BatteryGuidancePage(),
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
 
   /// Reports a permission request that could not even be made.

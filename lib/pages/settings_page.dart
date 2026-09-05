@@ -9,12 +9,19 @@ import '../providers/app_provider.dart';
 import '../services/ble_service.dart';
 import '../services/settings_service.dart';
 import '../services/database_service.dart';
+import '../platform/battery_optimization.dart';
+import '../platform/battery_optimization_gateway.dart';
+import 'battery_guidance_page.dart';
 import 'device_settings_page.dart';
 import 'stats_page.dart';
 import 'sdcard_sync_page.dart';
 
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key});
+  const SettingsPage({super.key, this.batteryOptimizationOverride});
+
+  /// Injected for widget tests so they never touch a plugin channel.
+  /// Defaults to the app-wide instance.
+  final BatteryOptimization? batteryOptimizationOverride;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -26,11 +33,85 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _obscureDeepgram = true;
   bool _obscureOpenai = true;
 
+  late final BatteryOptimization _batteryOptimization;
+  bool? _isIgnoringBatteryOptimization;
+  bool _checkingBatteryOptimization = true;
+  bool _batteryStatusCheckFailed = false;
+  bool _requestingBatteryExemption = false;
+
   @override
   void initState() {
     super.initState();
     _deepgramController.text = SettingsService.deepgramApiKey;
     _openaiController.text = SettingsService.openaiApiKey;
+    _batteryOptimization =
+        widget.batteryOptimizationOverride ?? batteryOptimization;
+    _refreshBatteryOptimizationStatus(notify: false);
+  }
+
+  Future<void> _refreshBatteryOptimizationStatus({bool notify = true}) async {
+    // The first call comes from initState, before the first build, where a
+    // setState would be redundant; later calls need one.
+    if (notify) {
+      setState(() => _checkingBatteryOptimization = true);
+    } else {
+      _checkingBatteryOptimization = true;
+    }
+    bool? ignoring;
+    var failed = false;
+    try {
+      ignoring = await _batteryOptimization.isIgnoring();
+    } catch (e) {
+      // Say the check failed rather than leaving the row stuck on "Checking…"
+      // forever — and keep the request row available so there is a way to
+      // retry, which reporting it as "not applicable" would take away.
+      debugPrint('battery optimisation: status check failed: $e');
+      failed = true;
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isIgnoringBatteryOptimization = ignoring;
+      _batteryStatusCheckFailed = failed;
+      _checkingBatteryOptimization = false;
+    });
+  }
+
+  Future<void> _requestBatteryExemption() async {
+    setState(() => _requestingBatteryExemption = true);
+    final BatteryOptimizationOutcome outcome;
+    try {
+      outcome = await _batteryOptimization.request();
+    } catch (e) {
+      debugPrint('battery optimisation: request failed: $e');
+      if (!mounted) {
+        return;
+      }
+      setState(() => _requestingBatteryExemption = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not open the battery optimisation dialog.'),
+        ),
+      );
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() => _requestingBatteryExemption = false);
+    final message = switch (outcome) {
+      BatteryOptimizationOutcome.ignoring =>
+        'LibreOmi is now exempt from battery optimisation.',
+      BatteryOptimizationOutcome.denied =>
+        'Exemption request was declined.',
+      BatteryOptimizationOutcome.unsupported =>
+        'Not applicable on this platform.',
+    };
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+    await _refreshBatteryOptimizationStatus();
   }
 
   @override
@@ -372,6 +453,114 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           const SizedBox(height: 32),
 
+          // Background reliability section
+          _buildSectionHeader('Background reliability'),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF00b894).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.battery_charging_full,
+                      color: Color(0xFF00b894),
+                    ),
+                  ),
+                  title: const Text(
+                    'Battery optimisation',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    _batteryOptimizationStatusText(),
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+                // Only offered when Android says it is actually optimising,
+                // or when the check itself failed and the user deserves a
+                // retry. `null` means the platform has no such concept, so
+                // the row would do nothing.
+                if ((_isIgnoringBatteryOptimization == false ||
+                        _batteryStatusCheckFailed) &&
+                    !_checkingBatteryOptimization) ...[
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6C5CE7).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.battery_alert,
+                        color: Color(0xFF6C5CE7),
+                      ),
+                    ),
+                    title: const Text(
+                      'Request exemption',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      'Ask Android to stop restricting LibreOmi in the '
+                      'background',
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurface.withOpacity(0.6),
+                        fontSize: 13,
+                      ),
+                    ),
+                    enabled: !_requestingBatteryExemption,
+                    onTap: _requestingBatteryExemption
+                        ? null
+                        : _requestBatteryExemption,
+                  ),
+                ],
+                const Divider(height: 1),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0984e3).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.help_outline,
+                      color: Color(0xFF0984e3),
+                    ),
+                  ),
+                  title: const Text(
+                    'Manufacturer guidance',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    'Vendor-specific steps to keep LibreOmi running',
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      fontSize: 13,
+                    ),
+                  ),
+                  trailing: Icon(
+                    Icons.arrow_forward_ios,
+                    size: 16,
+                    color: theme.colorScheme.onSurface.withOpacity(0.3),
+                  ),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const BatteryGuidancePage(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 32),
+
           // Data section
           _buildSectionHeader('Data'),
           Card(
@@ -483,6 +672,20 @@ class _SettingsPageState extends State<SettingsPage> {
         ],
       ),
     );
+  }
+
+  String _batteryOptimizationStatusText() {
+    if (_checkingBatteryOptimization) {
+      return 'Checking…';
+    }
+    if (_batteryStatusCheckFailed) {
+      return 'Could not check battery optimisation';
+    }
+    return switch (_isIgnoringBatteryOptimization) {
+      true => 'Exempt from battery optimisation',
+      false => 'Battery optimisation is active',
+      null => 'Not applicable on this platform',
+    };
   }
 
   Widget _buildSectionHeader(String title) {

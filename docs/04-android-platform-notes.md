@@ -273,8 +273,16 @@ with an explanation screen. Never request everything at startup.
 - Even with an FGS, Doze may defer network (Deepgram/OpenAI) during deep idle; the BLE
   link itself survives. Finalization requests should use a retry queue (M2).
 - Samsung "Sleeping apps", Xiaomi "Battery saver", OnePlus, Huawei aggressively kill
-  FGS apps. Add a Settings entry linking to https://dontkillmyapp.com/<vendor> and detect
-  the manufacturer via `device_info_plus`.
+  FGS apps. LO-21 detects `Build.MANUFACTURER` via `device_info_plus` and shows a
+  per-vendor guidance page (`lib/pages/battery_guidance_page.dart`) built from the table in
+  `lib/platform/battery_optimization.dart`, reachable from Settings > Background reliability.
+- dontkillmyapp.com is **not** uniformly `/<vendor>`: Honor, Redmi and POCO have no page of
+  their own (they 404) and are folded into `/huawei` and `/xiaomi`, as is Black Shark; realme
+  does have its own `/realme`; anything unrecognised falls back to `/general`. Verify a slug
+  before adding a vendor.
+- The exemption itself is the `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` intent, fired through
+  `permission_handler`'s `Permission.ignoreBatteryOptimizations`. It is offered once, right
+  before the first session starts, and is reachable again from Settings afterwards.
 
 ## 12. Build commands (reference)
 
