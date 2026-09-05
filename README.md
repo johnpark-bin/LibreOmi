@@ -37,10 +37,12 @@ agent-loop state (`.ralph/`), the author's build logs and codesign scripts
 duplicate artefacts (`ios/Pods 2/`, `ios/Flutter/Flutter 2.podspec`,
 `Flutter 3.podspec`, `flutter_export_environment 2.sh`,
 `flutter_export_environment 3.sh`, `.flutter-plugins-dependencies 2`), and
-`.metadata` (regenerated when the Android platform folder is created).
+`.metadata` (regenerated in LO-03 together with the Android platform folder).
 
-The imported Dart code is unmodified, including `name: omi_local` in `pubspec.yaml`
-and the `package:omi_local/...` imports; renaming is tracked separately (LO-03).
+The imported Dart code was unmodified at import time. LO-03 has since renamed the
+package to `libreomi` (`package:libreomi/...`), set the Android application id to
+`org.libreomi.app` and the display name to "LibreOmi"; everything else is still the
+upstream code.
 
 ## Documents
 

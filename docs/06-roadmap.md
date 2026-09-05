@@ -12,7 +12,7 @@ Goal: a clean fork that builds nothing yet but has every convention in place.
 |----|------|------|------------|
 | LO-01 | Create repo from upstream `lib/`, `assets/`, `pubspec.yaml`, `analysis_options.yaml`, `ios/` (minus Finder duplicates, `OmiLocal/`, `.ralph/`, logs, scripts). Start fresh: no upstream history, one import commit recording the upstream commit hash in the message and in `README.md`, attribution in `LICENSE`. | S | `git log` clean; `LICENSE` has both copyright lines |
 | LO-02 | Pin toolchain: `mise.toml` (concrete flutter stable, java 17); `docs/` and `AGENTS.md` committed | S | after the one-time Android SDK setup in `04 §1`, `mise install && mise exec -- flutter doctor` shows Flutter / Android toolchain / licenses green |
-| LO-03 | Rename app: `libreomi` package, `org.libreomi.app` id (placeholder until owner decides), app label "LibreOmi", new icon assets | S | `flutter analyze` passes |
+| LO-03 | Rename app: `libreomi` package, `org.libreomi.app` id (placeholder until owner decides), app label "LibreOmi", launcher icons. Includes `flutter create --platforms=android` (the application id needs `android/` to exist) and pins `compileSdk 36` / `minSdk 26` / `targetSdk 35`. | S | `flutter analyze` passes; `flutter build apk --debug` succeeds; no `omi_local` left in `lib/`, `test/`, `pubspec.yaml` |
 | LO-04 | CI: GitHub Actions running `flutter analyze` + `flutter test` + `flutter build apk --debug` on PR | M | green on main |
 | LO-05 | Issue/PR templates (Korean), labels, milestones created via `scripts/create_issues.sh` | S | backlog visible on GitHub |
 
@@ -22,7 +22,7 @@ Goal: Omi → Android phone → Deepgram → text on screen, app in foreground.
 
 | ID | Item | Size | Acceptance |
 |----|------|------|------------|
-| LO-10 | `flutter create --platforms=android`; minSdk 26 / target 35; Kotlin DSL; `abiFilters arm64-v8a` for debug | S | `flutter run` launches the upstream UI on a phone |
+| LO-10 | Android build tuning on top of the platform folder created in LO-03: `abiFilters arm64-v8a` for debug, release minify/shrink review | S | `flutter run` launches the upstream UI on a phone |
 | LO-11 | AndroidManifest permissions per `04 §3`; `permission_handler` flows for BLE (31+ vs ≤ 30), notifications (33+) | M | Scan button works on Android 12+ and Android 10 |
 | LO-12 | BLE: `requestMtu(512)` + connection priority after connect; cache characteristics; verify 83-byte packets in logs | M | Audio packets arrive intact (log packet length = 83) |
 | LO-13 | Notifications: Android small icon, remove missing sound resource, channel review | S | Instant notification shows on Android 13+ |

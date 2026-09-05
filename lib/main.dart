@@ -18,18 +18,18 @@ void main() async {
     debugPrint('Settings init error: $e');
   }
 
-  runApp(const OmiLocalApp());
+  runApp(const LibreOmiApp());
 }
 
-class OmiLocalApp extends StatelessWidget {
-  const OmiLocalApp({super.key});
+class LibreOmiApp extends StatelessWidget {
+  const LibreOmiApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       create: (_) => AppProvider(),
       child: MaterialApp(
-        title: 'Omi Local',
+        title: 'LibreOmi',
         debugShowCheckedModeBanner: false,
         themeMode: ThemeMode.dark,
         darkTheme: ThemeData.dark().copyWith(

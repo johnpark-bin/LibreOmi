@@ -6,7 +6,7 @@ import '../models/conversation.dart';
 
 class DatabaseService {
   static Database? _database;
-  static const String _dbName = 'omi_local.db';
+  static const String _dbName = 'libreomi.db';
   static const int _dbVersion = 3; // Incremented for tasks table
 
   static Future<Database> get database async {
