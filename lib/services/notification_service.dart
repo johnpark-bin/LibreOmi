@@ -76,13 +76,21 @@ class NotificationService {
         notificationLayout: NotificationLayout.Default,
         category: NotificationCategory.Reminder,
         wakeUpScreen: true,
-        fullScreenIntent: true,
-        criticalAlert: true,
       ),
       schedule: NotificationCalendar.fromDate(
         date: scheduledDate,
+        // Inexact delivery: the reminder may arrive a few minutes late, which
+        // is fine for a due-date nudge. `preciseAlarm: true` needs
+        // SCHEDULE_EXACT_ALARM, which Android 14 stopped pre-granting to apps
+        // targeting API 33+ (we target 35), so it would silently degrade to
+        // this anyway unless the user opts in from system settings. An explicit
+        // opt-in setting is left to a follow-up issue.
+        preciseAlarm: false,
+        // Maps to AlarmManager.setAndAllowWhileIdle: it fires during Doze
+        // rather than being deferred to a maintenance window, but the system
+        // rate-limits such alarms to roughly one per app per 9 minutes and the
+        // delivery time is inexact.
         allowWhileIdle: true,
-        preciseAlarm: true,
       ),
     );
     debugPrint('Scheduled notification for task: $title at $scheduledDate (ID: $id)');

@@ -14,6 +14,7 @@ import '../services/settings_service.dart';
 import '../services/sherpa_service.dart';
 import '../services/whisper_service.dart';
 import '../services/opus_decoder_service.dart';
+import '../services/notification_ids.dart';
 import '../services/notification_service.dart';
 import '../services/mic_service.dart';
 import '../services/sdcard_sync_service.dart';
@@ -569,7 +570,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
                 // Schedule notification if due date is set
                 if (task.dueDate != null) {
                   await NotificationService().scheduleTaskNotification(
-                    id: task.id.hashCode,
+                    id: notificationIdForTask(task),
                     title: task.title,
                     dueDate: task.dueDate!,
                   );
@@ -779,9 +780,28 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     notifyListeners();
   }
 
+  Task? _findTaskById(String id) {
+    final index = _tasks.indexWhere((t) => t.id == id);
+    return index == -1 ? null : _tasks[index];
+  }
+
+  /// Cancels the reminder for [id] if the task is still in memory. The
+  /// notification id derives from the persisted `createdAt`, so a task we
+  /// cannot see is a task whose reminder we cannot address. Every UI path
+  /// operates on a task taken from [tasks], so this is not reachable today;
+  /// LO-35 can drop the caveat by reading the id back from the tasks table.
+  Future<void> _cancelTaskNotification(String id) async {
+    final task = _findTaskById(id);
+    if (task == null) return;
+    await NotificationService().cancelTaskNotification(
+      notificationIdForTask(task),
+    );
+  }
+
   Future<void> deleteTask(String id) async {
-    // Cancel notification
-    await NotificationService().cancelTaskNotification(id.hashCode);
+    // Cancel the notification before the row goes away: the id is derived
+    // from the task's createdAt, which we can only read while it is loaded.
+    await _cancelTaskNotification(id);
 
     await DatabaseService.deleteTask(id);
     await loadTasks();
@@ -792,19 +812,18 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
 
     // Manage notification
     if (isCompleted) {
-      await NotificationService().cancelTaskNotification(id.hashCode);
+      await _cancelTaskNotification(id);
     } else {
       // Find task to reschedule if needed
-      final taskIndex = _tasks.indexWhere((t) => t.id == id);
-      if (taskIndex != -1) {
-        final task = _tasks[taskIndex];
-        if (task.dueDate != null && task.dueDate!.isAfter(DateTime.now())) {
-          await NotificationService().scheduleTaskNotification(
-            id: task.id.hashCode,
-            title: task.title,
-            dueDate: task.dueDate!,
-          );
-        }
+      final task = _findTaskById(id);
+      if (task != null &&
+          task.dueDate != null &&
+          task.dueDate!.isAfter(DateTime.now())) {
+        await NotificationService().scheduleTaskNotification(
+          id: notificationIdForTask(task),
+          title: task.title,
+          dueDate: task.dueDate!,
+        );
       }
     }
 

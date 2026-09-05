@@ -187,7 +187,13 @@ with an explanation screen. Never request everything at startup.
 - Channels: `session` (low, persistent FGS), `ai_responses` (max), `task_reminders` (high),
   `device` (default: battery, disconnect).
 - Reminder IDs: add an integer `notification_id` column (autoincrement) to `tasks` instead
-  of `String.hashCode`.
+  of `String.hashCode`. That column arrives with LO-35; until then LO-16 derives the id from
+  the persisted `created_at` in `lib/services/notification_ids.dart`, because `String.hashCode`
+  is not stable across restarts and a reminder scheduled before one could not be cancelled
+  after it.
+- Task reminders are scheduled inexact (`preciseAlarm: false`, `allowWhileIdle: true`) so the
+  app needs neither `SCHEDULE_EXACT_ALARM` nor `USE_FULL_SCREEN_INTENT`. Delivery may lag the
+  due time by minutes; an exact-alarm opt-in is a follow-up.
 
 ## 7. Native libraries and APK size
 
