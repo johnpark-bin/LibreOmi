@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:libreomi/core/ids.dart' show fallbackNotificationId;
 import 'package:libreomi/models/conversation.dart';
 import 'package:libreomi/services/notification_ids.dart';
 
@@ -78,6 +79,55 @@ void main() {
 
       expect(id, greaterThanOrEqualTo(0));
       expect(id, lessThanOrEqualTo(0x7fffffff));
+    });
+
+    test('prefers the persisted column over the createdAt derivation', () {
+      final createdAt = DateTime.utc(2026, 9, 6, 12, 30, 45, 123);
+      final persisted = Task(
+        id: 'task-1',
+        title: 'Buy milk',
+        createdAt: createdAt,
+        notificationId: 4242,
+      );
+
+      expect(notificationIdForTask(persisted), 4242);
+      expect(notificationIdForTask(persisted),
+          isNot(fallbackNotificationId(createdAt)));
+    });
+
+    test('reads the column back out of a v5 database row', () {
+      final createdAt = DateTime.utc(2026, 9, 6, 12, 30, 45, 123);
+      final restored = Task.fromDbRow({
+        'id': 'task-1',
+        'title': 'Buy milk',
+        'description': null,
+        'due_date': null,
+        'created_at': createdAt.millisecondsSinceEpoch,
+        'source_conversation_id': null,
+        'is_completed': 0,
+        'notification_id': 4242,
+      });
+
+      expect(notificationIdForTask(restored), 4242);
+    });
+
+    test('falls back for a row written before the column existed', () {
+      // A v4 row read through `fromDbRow` has no `notification_id`; the
+      // migration backfills it with exactly this value, so the id a task
+      // reports does not change across the upgrade.
+      final createdAt = DateTime.utc(2026, 9, 6, 12, 30, 45, 123);
+      final restored = Task.fromDbRow({
+        'id': 'task-1',
+        'title': 'Buy milk',
+        'description': null,
+        'due_date': null,
+        'created_at': createdAt.millisecondsSinceEpoch,
+        'source_conversation_id': null,
+        'is_completed': 0,
+      });
+
+      expect(restored.notificationId, isNull);
+      expect(notificationIdForTask(restored), fallbackNotificationId(createdAt));
     });
   });
 }

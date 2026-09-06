@@ -207,12 +207,38 @@ class ChatMessage {
   final bool isUser;
   final DateTime createdAt;
 
+  /// The conversation this exchange was about, when it was about one.
+  /// The chat page asks across the whole library, so this is usually null.
+  final String? conversationId;
+
   ChatMessage({
     required this.id,
     required this.text,
     required this.isUser,
     required this.createdAt,
+    this.conversationId,
   });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'conversation_id': conversationId,
+    'text': text,
+    'is_user': isUser ? 1 : 0,
+    'created_at': createdAt.millisecondsSinceEpoch,
+  };
+
+  factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    return ChatMessage(
+      id: json['id'],
+      text: json['text'] ?? '',
+      isUser: json['is_user'] == 1 || json['is_user'] == true,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(json['created_at']),
+      conversationId: json['conversation_id'],
+    );
+  }
+
+  factory ChatMessage.fromDbRow(Map<String, dynamic> row) =>
+      ChatMessage.fromJson(row);
 }
 
 /// A task extracted from conversations
@@ -225,6 +251,12 @@ class Task {
   final String? sourceConversationId;
   bool isCompleted;
 
+  /// Stable id for this task's scheduled reminder, persisted since schema v5
+  /// (`tasks.notification_id`). Null for a task that has not been through the
+  /// database yet; `notificationIdForTask` then falls back to deriving one
+  /// from [createdAt], which is what the column is backfilled with.
+  final int? notificationId;
+
   Task({
     required this.id,
     required this.title,
@@ -233,6 +265,7 @@ class Task {
     required this.createdAt,
     this.sourceConversationId,
     this.isCompleted = false,
+    this.notificationId,
   });
 
   Map<String, dynamic> toJson() => {
@@ -243,6 +276,7 @@ class Task {
     'created_at': createdAt.millisecondsSinceEpoch,
     'source_conversation_id': sourceConversationId,
     'is_completed': isCompleted ? 1 : 0,
+    'notification_id': notificationId,
   };
 
   factory Task.fromDbRow(Map<String, dynamic> row) {
@@ -256,6 +290,7 @@ class Task {
       createdAt: DateTime.fromMillisecondsSinceEpoch(row['created_at']),
       sourceConversationId: row['source_conversation_id'],
       isCompleted: row['is_completed'] == 1,
+      notificationId: row['notification_id'] as int?,
     );
   }
 }
