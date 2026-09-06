@@ -225,6 +225,105 @@ void main() {
       await transcriber.stop();
       expect(fake.stopCalls, 1);
     });
+
+    // LO-44: which model the store is asked for depends on `language`. None
+    // of these cases install a model, so `requireInstalledDir` always throws
+    // — but which spec it names in the thrown message proves which spec was
+    // asked for, the same technique the "uninstalled model" test above uses.
+    test(
+        'with language: ko and no modelDir, start() asks the store for the '
+        'Korean streaming model', () async {
+      final support =
+          Directory.systemTemp.createTempSync('sherpa-store-test-ko');
+      addTearDown(() => support.deleteSync(recursive: true));
+
+      fake = _FakeWorkerClient();
+      final t = SherpaStreamingTranscriber(
+        language: 'ko',
+        modelStore: ModelStore(supportDirectory: () async => support),
+        workerClient: fake,
+      );
+      final errors = <String>[];
+      t.errors.listen(errors.add);
+
+      await expectLater(t.start(), throwsA(isA<ModelNotInstalledException>()));
+      expect(fake.startedWith, isNull);
+      expect(errors, hasLength(1));
+      expect(errors.single, contains(ModelCatalog.streamingZipformerKo.displayName));
+    });
+
+    test(
+        'with the default language and no modelDir, start() asks the store '
+        'for the English streaming model', () async {
+      final support =
+          Directory.systemTemp.createTempSync('sherpa-store-test-en');
+      addTearDown(() => support.deleteSync(recursive: true));
+
+      fake = _FakeWorkerClient();
+      final t = SherpaStreamingTranscriber(
+        modelStore: ModelStore(supportDirectory: () async => support),
+        workerClient: fake,
+      );
+      final errors = <String>[];
+      t.errors.listen(errors.add);
+
+      await expectLater(t.start(), throwsA(isA<ModelNotInstalledException>()));
+      expect(fake.startedWith, isNull);
+      expect(errors, hasLength(1));
+      expect(errors.single,
+          contains(ModelCatalog.streamingZipformerEn20M.displayName));
+    });
+
+    test(
+        'a stale language falls back to the English streaming model instead '
+        'of throwing on the language itself', () async {
+      final support =
+          Directory.systemTemp.createTempSync('sherpa-store-test-stale');
+      addTearDown(() => support.deleteSync(recursive: true));
+
+      fake = _FakeWorkerClient();
+      final t = SherpaStreamingTranscriber(
+        language: 'jp', // not in ModelCatalog.localSttLanguages
+        modelStore: ModelStore(supportDirectory: () async => support),
+        workerClient: fake,
+      );
+      final errors = <String>[];
+      t.errors.listen(errors.add);
+
+      await expectLater(t.start(), throwsA(isA<ModelNotInstalledException>()));
+      expect(fake.startedWith, isNull);
+      expect(errors, hasLength(1));
+      // Falls back to English, not a "jp" model that does not exist.
+      expect(errors.single,
+          contains(ModelCatalog.streamingZipformerEn20M.displayName));
+    });
+
+    test(
+        'with language: ko and the Korean model installed, start() starts '
+        'the worker with the Korean model directory', () async {
+      final support =
+          Directory.systemTemp.createTempSync('sherpa-store-test-ko-installed');
+      addTearDown(() => support.deleteSync(recursive: true));
+
+      final koDir = Directory(
+          '${support.path}/models/${ModelCatalog.streamingZipformerKo.directoryName}')
+        ..createSync(recursive: true);
+      for (final name in ModelCatalog.streamingZipformerKo.requiredFiles) {
+        File('${koDir.path}/$name').writeAsBytesSync([1, 2, 3]);
+      }
+
+      fake = _FakeWorkerClient();
+      final t = SherpaStreamingTranscriber(
+        language: 'ko',
+        modelStore: ModelStore(supportDirectory: () async => support),
+        workerClient: fake,
+      );
+
+      await t.start();
+
+      expect(fake.startedWith, isNotNull);
+      expect(fake.startedWith!.modelDir, koDir.path);
+    });
   });
 
   group('IsolateSherpaWorkerClient (real, no fake)', () {

@@ -31,6 +31,7 @@ import 'whisper_worker.dart';
 class WhisperBatchTranscriber implements StreamingTranscriber {
   WhisperBatchTranscriber({
     this.modelSize = 'tiny',
+    this.language = 'en',
     String? modelDir,
     String? vadModelPath,
     int numThreads = 2,
@@ -43,6 +44,13 @@ class WhisperBatchTranscriber implements StreamingTranscriber {
         _client = workerClient ?? IsolateWhisperWorkerClient();
 
   final String modelSize;
+
+  /// Language to transcribe in (`'en'` or `'ko'`, LO-44). Reduced through
+  /// [ModelCatalog.localSttLanguage] in [start] before it reaches the
+  /// worker — same defensive contract [ModelCatalog.whisperSize] already
+  /// gives [modelSize], so a stale or corrupted preference cannot leave the
+  /// worker with a language the catalog does not offer.
+  final String language;
 
   /// Where the Whisper model files live. Null means "wherever the
   /// [ModelStore] installed `ModelCatalog.whisper(modelSize)`", resolved on
@@ -111,6 +119,18 @@ class WhisperBatchTranscriber implements StreamingTranscriber {
       modelSize: ModelCatalog.whisperSize(modelSize),
       vad: VadConfig(modelPath: vadModelPath),
       numThreads: _numThreads,
+      // Reduced through ModelCatalog.localSttLanguage, same as modelSize
+      // above: an empty language would let Whisper auto-detect and risk
+      // mislabeling Korean speech as something else.
+      //
+      // The trade-off is deliberate and is a behaviour change: before LO-44
+      // this path passed no language at all, so Whisper auto-detected. It is
+      // now pinned to whatever the settings picker holds, which means a user
+      // speaking a third language into local Whisper no longer gets
+      // detection. Widening `ModelCatalog.localSttLanguages` — or adding an
+      // explicit "auto" entry that maps back to '' — is how that comes back.
+      language: ModelCatalog.localSttLanguage(language),
+      task: 'transcribe',
     );
 
     // Subscribed before init so a model-loading failure inside the worker is

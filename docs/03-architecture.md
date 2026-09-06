@@ -37,12 +37,13 @@ lib/
     deepgram_streaming.dart
     deepgram_prerecorded.dart   file transcription (SD-card)
     isolate_channel.dart        request/response + events over Isolate.spawn
-    sherpa_streaming.dart       zipformer, runs in isolate
+    sherpa_streaming.dart       zipformer (en/ko), runs in isolate
     sherpa_worker.dart          the streaming worker isolate; imports sherpa_onnx
     whisper_batch.dart          offline whisper + Silero VAD, runs in isolate
     whisper_worker.dart         the batch worker isolate; imports sherpa_onnx
     vad.dart                    Silero VAD abstraction + sample-index timeline
-    model_catalog.dart          catalog of installable models: id, url, required files, sizes
+    model_catalog.dart          catalog of installable models: id, url, required files, sizes,
+                                language; maps the local-STT language to a streaming model
     model_store.dart            model download / verify / delete, progress
   intelligence/
     llm_client.dart             abstract LlmClient (chat, summarize → ConversationInsights)

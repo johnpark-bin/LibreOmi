@@ -114,6 +114,47 @@ void main() {
       expect(fake.startedWith!.modelSize, 'base');
     });
 
+    // LO-44: language is forwarded to the worker config, reduced through
+    // ModelCatalog.localSttLanguage the same way modelSize is reduced
+    // through ModelCatalog.whisperSize above.
+    test('language: ko starts the worker with config.language == ko and '
+        'task == transcribe', () async {
+      fake = _FakeWorkerClient();
+      transcriber = WhisperBatchTranscriber(
+        language: 'ko',
+        modelDir: '/models/test-whisper',
+        vadModelPath: '/models/test-vad/silero_vad.onnx',
+        workerClient: fake,
+      );
+      await transcriber.start();
+
+      expect(fake.startedWith!.language, 'ko');
+      expect(fake.startedWith!.task, 'transcribe');
+    });
+
+    test(
+        'the default language is en, not empty — an empty language would '
+        'let Whisper auto-detect and risk mislabeling Korean speech',
+        () async {
+      await transcriber.start();
+
+      expect(fake.startedWith!.language, 'en');
+      expect(fake.startedWith!.task, 'transcribe');
+    });
+
+    test('a stale language reduces to en', () async {
+      fake = _FakeWorkerClient();
+      transcriber = WhisperBatchTranscriber(
+        language: 'jp', // not in ModelCatalog.localSttLanguages
+        modelDir: '/models/test-whisper',
+        vadModelPath: '/models/test-vad/silero_vad.onnx',
+        workerClient: fake,
+      );
+      await transcriber.start();
+
+      expect(fake.startedWith!.language, 'en');
+    });
+
     test('a WhisperSegmentEvent becomes one TranscriptSegment', () async {
       await transcriber.start();
       final segments = <Object?>[];

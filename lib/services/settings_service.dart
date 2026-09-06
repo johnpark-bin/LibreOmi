@@ -4,6 +4,7 @@ library;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../transcription/model_catalog.dart';
 import 'secret_store.dart';
 
 class SettingsService {
@@ -149,6 +150,27 @@ class SettingsService {
   // Whisper model size: 'tiny' or 'base'
   static String get whisperModelSize => prefs.getString('whisper_model_size') ?? 'tiny';
   static set whisperModelSize(String value) => prefs.setString('whisper_model_size', value);
+
+  /// Language the on-device modes transcribe in: `'en'` (default) or `'ko'`
+  /// (LO-44). Separate from [language], which is the Deepgram code for the
+  /// cloud mode — the two engines take different values and a user can have
+  /// one set without the other.
+  ///
+  /// Reduced through [ModelCatalog.localSttLanguage] on read, so a value
+  /// written by a future build (or a corrupted preference) can never point
+  /// the Sherpa mode at a model the catalog has no entry for.
+  static String get localSttLanguage =>
+      ModelCatalog.localSttLanguage(prefs.getString('local_stt_language') ?? 'en');
+  static set localSttLanguage(String value) =>
+      prefs.setString('local_stt_language', value);
+
+  /// Catalog id of the streaming model the Sherpa mode loads, derived from
+  /// [localSttLanguage].
+  ///
+  /// Deliberately not a stored preference of its own: the language is the
+  /// only thing the user picks, and storing the id beside it would let the
+  /// two disagree after a catalog change.
+  static String get sherpaModelId => ModelCatalog.streaming(localSttLanguage).id;
   
   static bool get useLocalTranscription => transcriptionMode == 'sherpa' || transcriptionMode == 'whisper';
   static bool get useSherpa => transcriptionMode == 'sherpa';
