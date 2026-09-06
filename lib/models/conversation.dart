@@ -1,4 +1,5 @@
 /// Data models for LibreOmi app
+library;
 
 import 'dart:convert';
 
@@ -10,12 +11,25 @@ class TranscriptSegment {
   final double endTime;
   final bool isUser;
 
+  /// Wall-clock start/end of this segment, in addition to the
+  /// Deepgram-relative seconds above. Optional: null when the source of
+  /// this segment did not supply a wall-clock timestamp.
+  ///
+  /// Serialized as milliseconds since epoch, so a round trip through JSON
+  /// truncates sub-millisecond precision and returns a local-zone
+  /// `DateTime` even when a UTC one went in. The instant is preserved;
+  /// `==` against the original UTC value is not.
+  final DateTime? startAt;
+  final DateTime? endAt;
+
   TranscriptSegment({
     required this.text,
     required this.speakerId,
     required this.startTime,
     required this.endTime,
     this.isUser = false,
+    this.startAt,
+    this.endAt,
   });
 
   Map<String, dynamic> toJson() => {
@@ -24,6 +38,8 @@ class TranscriptSegment {
     'start': startTime,
     'end': endTime,
     'is_user': isUser,
+    if (startAt != null) 'start_at': startAt!.millisecondsSinceEpoch,
+    if (endAt != null) 'end_at': endAt!.millisecondsSinceEpoch,
   };
 
   factory TranscriptSegment.fromJson(Map<String, dynamic> json) {
@@ -33,6 +49,12 @@ class TranscriptSegment {
       startTime: (json['start'] ?? 0).toDouble(),
       endTime: (json['end'] ?? 0).toDouble(),
       isUser: json['is_user'] ?? false,
+      startAt: json['start_at'] != null
+          ? DateTime.fromMillisecondsSinceEpoch((json['start_at'] as num).toInt())
+          : null,
+      endAt: json['end_at'] != null
+          ? DateTime.fromMillisecondsSinceEpoch((json['end_at'] as num).toInt())
+          : null,
     );
   }
 }
@@ -57,9 +79,25 @@ class Conversation {
     return segments.map((s) => 'Speaker ${s.speakerId}: ${s.text}').join('\n');
   }
 
-  /// Get the duration of the conversation from first to last segment
+  /// Duration of the conversation, from the first segment's start to the
+  /// last segment's end.
+  ///
+  /// Prefers the wall-clock timestamps when the first segment has a
+  /// [TranscriptSegment.startAt] and the last has an
+  /// [TranscriptSegment.endAt], clamping a negative result to
+  /// [Duration.zero]. Otherwise falls back to the transcriber-relative
+  /// seconds exactly as before LO-30 — including its lack of a clamp.
   Duration get duration {
     if (segments.isEmpty) return Duration.zero;
+
+    final wallStart = segments.first.startAt;
+    final wallEnd = segments.last.endAt;
+    if (wallStart != null && wallEnd != null) {
+      final diff = wallEnd.difference(wallStart);
+      return diff.isNegative ? Duration.zero : diff;
+    }
+
+    // Fallback: relative seconds, unchanged from the pre-LO-30 behaviour.
     final firstStart = segments.first.startTime;
     final lastEnd = segments.last.endTime;
     return Duration(milliseconds: ((lastEnd - firstStart) * 1000).round());
