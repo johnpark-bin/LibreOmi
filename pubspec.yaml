@@ -61,6 +61,12 @@ dependencies:
   # Settings storage
   shared_preferences: ^2.2.0
 
+  # Secure storage for the Deepgram / OpenAI keys (docs/04 §9, LO-25).
+  # Exact pin: no new `^` ranges on native plugins (docs/08 §3). 11.x is held
+  # back because its Android library compiles against SDK 37 while this app is
+  # fixed at compileSdk 36 (docs/04 §2).
+  flutter_secure_storage: 10.3.1
+
   # Audio decoding (Opus)
   opus_dart: ^3.0.1
   opus_flutter: ^3.0.1

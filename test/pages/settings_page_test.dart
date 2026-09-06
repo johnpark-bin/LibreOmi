@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:libreomi/pages/settings_page.dart';
 import 'package:libreomi/platform/battery_optimization.dart';
 import 'package:libreomi/providers/app_provider.dart';
+import 'package:libreomi/services/secret_store.dart';
 import 'package:libreomi/services/settings_service.dart';
 
 /// Scripts the platform answers for [BatteryOptimization] so tests never
@@ -66,7 +67,7 @@ void main() {
       'transcription_mode': 'cloud',
       if (storedModel != null) 'deepgram_model': storedModel,
     });
-    await SettingsService.init();
+    await SettingsService.init(secretStore: InMemorySecretStore());
 
     await tester.pumpWidget(
       ChangeNotifierProvider(

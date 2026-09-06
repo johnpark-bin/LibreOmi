@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Auto Backup rules for Android 11 and below (android:fullBackupContent).
+  See docs/04-android-platform-notes.md §9.
+
+  Everything not listed here is still backed up: the conversation database in
+  `databases/` is the point of having backup on at all, so `allowBackup` stays
+  at its default of true and only the credential-bearing SharedPreferences
+  files are carved out.
+
+  The FlutterSecure* entries are what flutter_secure_storage 10.3.1 writes on
+  Android with the default options: `FlutterSecureStorage` holds the
+  ciphertext and `FlutterSecureKeyStorage` the wrapped data key. Config
+  markers (chosen cipher, migration flags) go to
+  `FlutterSecureStorageConfiguration:FlutterSecureStorage` — the plugin
+  namespaces that file by the data prefs name and only *reads* the unsuffixed
+  `FlutterSecureStorageConfiguration` as a legacy fallback
+  (NamespacedConfigSource.getNamespacedConfigPrefsName). Both names are listed
+  so an install upgraded from an older plugin is covered too. The data key is
+  wrapped by an Android Keystore key that never leaves the device, so a
+  restored copy could not be decrypted anyway — excluding them keeps
+  undecryptable garbage from being restored over a working install, and keeps
+  the ciphertext off Google's servers.
+
+  `FlutterSharedPreferences` is the shared_preferences plugin's own file. It no
+  longer holds the API keys after the LO-25 migration, but a backup taken by an
+  older build of this app does, so it is excluded as well. The cost is that the
+  remaining settings (model choice, saved device, usage counters) are not
+  restored; all of them are re-derivable from the UI, unlike a leaked key.
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="FlutterSecureStorage.xml"/>
+    <exclude domain="sharedpref" path="FlutterSecureKeyStorage.xml"/>
+    <exclude domain="sharedpref" path="FlutterSecureStorageConfiguration.xml"/>
+    <exclude domain="sharedpref" path="FlutterSecureStorageConfiguration:FlutterSecureStorage.xml"/>
+    <exclude domain="sharedpref" path="FlutterSharedPreferences.xml"/>
+</full-backup-content>

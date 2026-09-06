@@ -328,10 +328,43 @@ orphaned by a process that died without stopping it.
 
 ## 9. Secrets
 
-- Replace plaintext SharedPreferences for `deepgram_api_key` / `openai_api_key` with
-  `flutter_secure_storage` (`encryptedSharedPreferences: true`). One-time migration on
-  first launch of the new version.
-- Exclude secure-storage files from Auto Backup.
+- `deepgram_api_key` / `openai_api_key` live in `flutter_secure_storage`, not in plaintext
+  SharedPreferences (LO-25). The plugin is pinned exactly at **10.3.1**: 11.x compiles its
+  Android library against SDK 37 while this app is fixed at `compileSdk = 36` (§2), and AGP
+  refuses to build an app whose compile SDK is below a library's.
+- Do **not** pass `AndroidOptions(encryptedSharedPreferences: true)`. From 10.0 that
+  parameter is deprecated and ignored — Google deprecated the Jetpack Security library it
+  selected. The default path in 10.x is stronger anyway: the data key is wrapped by an
+  Android Keystore key with `RSA/ECB/OAEPWithSHA-256AndMGF1Padding` and the values are
+  encrypted with `AES/GCM/NoPadding`. `AndroidOptions()` is what the app uses.
+- `lib/services/secret_store.dart` puts a three-method `SecretStore` interface
+  (`read`/`write`/`delete`) in front of the plugin so tests can run against
+  `InMemorySecretStore` without a plugin channel.
+- `SettingsService` keeps its synchronous getters: `init()` loads both keys into a memory
+  cache, getters read the cache, setters update the cache and write through
+  asynchronously. Secure-storage failures are logged and swallowed so the app still boots.
+- One-time migration on first launch of the new version, guarded by the
+  `secure_keys_migrated` bool pref: copy any legacy plaintext values into the secure store,
+  then delete `deepgram_api_key` / `openai_api_key` from SharedPreferences. If the secure
+  write fails the migration is abandoned without deleting anything and retried next launch.
+- Auto Backup stays enabled (`allowBackup` default true) so the conversation database is
+  restorable, but `res/xml/backup_rules.xml` (`android:fullBackupContent`, API <= 30) and
+  `res/xml/data_extraction_rules.xml` (`android:dataExtractionRules`, API 31+) exclude the
+  SharedPreferences files the plugin writes plus `FlutterSharedPreferences`, which older
+  builds filled with the plaintext keys. Android reads only one of the two rule files
+  depending on the OS version, so they must be kept in sync.
+- With default options the plugin writes `FlutterSecureStorage` (ciphertext),
+  `FlutterSecureKeyStorage` (wrapped data key) and
+  `FlutterSecureStorageConfiguration:FlutterSecureStorage` (cipher choice and migration
+  markers). The config file is namespaced by the data prefs name; the unsuffixed
+  `FlutterSecureStorageConfiguration` is only *read*, as a legacy fallback
+  (`NamespacedConfigSource`). Both names are excluded so an install carried over from an
+  older plugin version is covered as well.
+- Excluding `FlutterSharedPreferences` means a cloud restore or a device-to-device transfer
+  brings the conversation database across but not the settings in it — paired device,
+  language, transcription mode, Deepgram model, usage counters. That is deliberate: a
+  backup taken by a pre-LO-25 build has the API keys sitting in that file in plaintext, and
+  every other value in it is a few taps to re-enter.
 
 ## 10. Audio (phone mic)
 
