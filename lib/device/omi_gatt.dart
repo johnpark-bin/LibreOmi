@@ -195,6 +195,13 @@ List<int> buildStorageCommand({
   ];
 }
 
+/// The single-byte "stop the current transfer" storage command (`0x03`).
+///
+/// Unlike [buildStorageCommand]'s 6-byte read/clear payload, upstream sends a
+/// bare `0x03` for this one (*observed*); see docs/05-omi-ble-protocol.md
+/// "Storage (SD card) protocol".
+List<int> buildStorageStopCommand() => const [0x03];
+
 /// Encodes a storage read-control command. This is the name used by the
 /// LO-30 issue; it simply delegates to [buildStorageCommand] so there is a
 /// single implementation of the encoding.

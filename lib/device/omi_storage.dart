@@ -13,10 +13,10 @@ import 'omi_gatt.dart';
 ///
 /// - [packets] is the interface `docs/03` §2 describes and what new code
 ///   should use.
-/// - [rawPackets] is the untouched byte stream. `services/sdcard_sync_service.dart`
-///   still switches on notification lengths itself; porting that transfer
-///   loop onto [packets] is LO-50 (M5), and doing it here would have meant
-///   rewriting the one path LO-31 cannot verify without hardware.
+/// - [rawPackets] is the untouched byte stream, kept for the debug BLE
+///   session capture (`ble_session_capture.dart`) and for hand-inspecting a
+///   transfer. Since LO-50 no transfer code uses it: the sync service reads
+///   [packets] and drives `services/sdcard_transfer.dart`.
 abstract class OmiStorage {
   /// `[totalBytes, offset]` as reported by the storage control
   /// characteristic, or `[]` when the device has no storage service.
@@ -32,6 +32,14 @@ abstract class OmiStorage {
   /// Asks the device to start sending file [fileNumber] from [offset]
   /// (command 0). Returns false when the write could not be made.
   Future<bool> startRead(int offset, {int fileNumber = 1});
+
+  /// Asks the device to stop the transfer that is currently in flight
+  /// (command 3, sent as a bare `0x03` byte rather than the 6-byte read/clear
+  /// payload). Returns false when the write could not be made.
+  ///
+  /// Sending this is what lets a cancelled sync leave the device idle instead
+  /// of streaming into a listener that is gone.
+  Future<bool> stopRead();
 
   /// Acknowledges the transferred data and clears it from the device
   /// (command 1).

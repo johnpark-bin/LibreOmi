@@ -125,6 +125,9 @@ class FakeOmiStorage implements OmiStorage {
   /// Arguments passed to [clear], recorded for assertions.
   final List<int> clearFileNumbers = [];
 
+  /// Number of [stopRead] calls, recorded for assertions.
+  int stopReadCalls = 0;
+
   @override
   Stream<List<int>> get rawPackets => _rawPacketsController.stream;
 
@@ -147,6 +150,12 @@ class FakeOmiStorage implements OmiStorage {
   @override
   Future<bool> startRead(int offset, {int fileNumber = 1}) async {
     startReadCalls.add((offset: offset, fileNumber: fileNumber));
+    return true;
+  }
+
+  @override
+  Future<bool> stopRead() async {
+    stopReadCalls++;
     return true;
   }
 
