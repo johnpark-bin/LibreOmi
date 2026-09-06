@@ -5,23 +5,31 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
+import '../audio/audio_routing.dart';
+import '../audio/audio_source.dart';
+import '../audio/omi_audio_source.dart';
+import '../audio/opus_decoder.dart';
+import '../audio/phone_mic_source.dart';
+import '../intelligence/llm_client.dart';
+import '../intelligence/openai_client.dart';
 import '../models/conversation.dart';
 import '../platform/background_runner.dart';
 import '../platform/background_runner_factory.dart';
 import '../services/ble/reconnect_backoff.dart';
 import '../services/ble_service.dart';
 import '../services/database_service.dart';
-import '../services/deepgram_service.dart';
 import '../services/finalization_queue.dart';
-import '../services/openai_service.dart';
 import '../services/settings_service.dart';
 import '../services/sherpa_service.dart';
 import '../services/whisper_service.dart';
-import '../services/opus_decoder_service.dart';
 import '../services/notification_ids.dart';
 import '../services/notification_service.dart';
 import '../services/mic_service.dart';
 import '../services/sdcard_sync_service.dart';
+import '../transcription/deepgram_streaming.dart';
+import '../transcription/sherpa_streaming.dart';
+import '../transcription/transcriber.dart';
+import '../transcription/whisper_batch.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
@@ -49,11 +57,18 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
 
   // App lifecycle state
   AppLifecycleState _appLifecycleState = AppLifecycleState.resumed;
-  DeepgramService? _deepgramService; // Transcription services
-  SherpaService? _sherpaService;
-  WhisperService? _whisperService;
-  OpenAIService? _openaiService;
-  OpusDecoderService? _opusDecoder;
+  /// The one transcription backend for the current session, whichever mode
+  /// settings selected. Built in [_startTranscriptionServices] and torn down
+  /// in [stopListening].
+  StreamingTranscriber? _transcriber;
+  StreamSubscription<TranscriptSegment>? _segmentsSubscription;
+  StreamSubscription<String>? _transcriberErrorsSubscription;
+
+  /// The audio producer feeding [_transcriber]: an [OmiAudioSource] over the
+  /// BLE notification stream, or a [PhoneMicSource] over the phone mic.
+  AudioSource? _audioSource;
+
+  OpusDecoder? _opusDecoder;
 
   // Device state
   DeviceConnectionState _deviceState = DeviceConnectionState.disconnected;
@@ -162,15 +177,33 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   /// The queue's summariser. Built per call because the key and the model can
   /// change in settings between a conversation being queued and being retried.
   ///
-  /// Deliberately a local, not the shared [_openaiService] field: a drain runs
-  /// in the background and would otherwise be able to swap the instance out
-  /// from under a chat request that is between its own assignment and its use.
-  Future<Map<String, dynamic>> _summarizeForQueue(String transcript) {
-    final client = OpenAIService(
+  /// Deliberately a local: a drain runs in the background and would otherwise
+  /// be able to swap a shared client out from under a chat request that is
+  /// between its own assignment and its use. Every [LlmClient] call site in
+  /// this class follows the same rule, so no shared field exists at all.
+  ///
+  /// TODO(LO-23): the queue still consumes an untyped map and reads the
+  /// "Untitled Conversation" sentinel as "retry this later", so a failed
+  /// summarisation is folded back into that sentinel here instead of being
+  /// surfaced as the [LlmException] the client now throws. LO-23 makes the
+  /// queue take typed errors and this bridge goes away with it.
+  Future<Map<String, dynamic>> _summarizeForQueue(String transcript) async {
+    final client = OpenAiClient.fromApiKey(
       apiKey: SettingsService.openaiApiKey,
       model: SettingsService.openaiModel,
     );
-    return client.summarizeConversation(transcript);
+    try {
+      final insights = await client.summarize(transcript);
+      return insights.toMap();
+    } on LlmException catch (e) {
+      debugPrint('OpenAI summarize error: $e');
+      return <String, dynamic>{
+        'title': 'Untitled Conversation',
+        'summary': '',
+        'memories': <String>[],
+        'tasks': <dynamic>[],
+      };
+    }
   }
 
   /// Kicks the queue without letting its failure escape into the app zone.
@@ -559,14 +592,20 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
       await _bleService.startAudioStream();
 
       // Initialize Opus decoder for Omi device (needed for local transcription and debug playback)
-      _opusDecoder = OpusDecoderService();
+      _opusDecoder = OpusDecoder();
       await _opusDecoder!.initialize();
 
-      _audioSubscription = _bleService.audioStream.listen(_handleOmiAudioData);
+      // The source only transforms the BLE notification stream (header strip,
+      // encoding tag); starting and stopping the stream itself stays with
+      // BleService, so the session lifecycle above is unchanged.
+      final source = OmiAudioSource(_bleService.audioStream);
+      _audioSource = source;
+      _audioSubscription = source.start().listen(_handleOmiAudioChunk);
     } catch (_) {
       // Setup failed, so the session never reaches listening: take the service
       // back down instead of leaving a notification for a session that is not
       // running.
+      await _discardHalfStartedSession();
       await _stopBackgroundRunnerWhenIdle();
       rethrow;
     }
@@ -608,15 +647,19 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     try {
       await _startTranscriptionServices(useOpusEncoding: false);
 
-      // Start phone mic recording
-      await _micService.startRecording();
-      _audioSubscription = _micService.audioStream.listen(
-        _handlePhoneMicAudioData,
-      );
+      // Start phone mic recording. `prepare()` rather than relying on
+      // `start()` to kick the recorder off, because only an awaited call can
+      // surface a recorder failure as an exception here, which is what rolls
+      // the half-open session back below.
+      final source = PhoneMicSource();
+      _audioSource = source;
+      await source.prepare();
+      _audioSubscription = source.start().listen(_handlePhoneMicAudioChunk);
     } catch (_) {
       // Leaving the flag set would keep auto-reconnect switched off for the
       // rest of the process.
       _isUsingPhoneMic = false;
+      await _discardHalfStartedSession();
       await _stopBackgroundRunnerWhenIdle();
       rethrow;
     }
@@ -630,7 +673,36 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     );
   }
 
-  /// Initialize transcription services based on selected mode
+  /// Releases the session state a failed `startListening*` managed to bring
+  /// up. [stopListening] cannot do this job: it returns early while
+  /// `_isListening` is false, which it still is on this path. Without it a
+  /// retry would overwrite the subscriptions and leave the previous ones
+  /// listening to a transcriber whose controllers are never closed.
+  ///
+  /// Does *not* call `BleService.stopAudioStream()`: the caller knows whether
+  /// it got that far, and the phone-mic path has already cleared
+  /// `_isUsingPhoneMic` by the time this runs, so the flag cannot be used to
+  /// decide. Notifications left enabled by a setup that failed after
+  /// `startAudioStream()` are the same leak `main` had; see the PR follow-up
+  /// note.
+  Future<void> _discardHalfStartedSession() async {
+    await _audioSubscription?.cancel();
+    _audioSubscription = null;
+    await _audioSource?.stop();
+    _audioSource = null;
+    await _segmentsSubscription?.cancel();
+    _segmentsSubscription = null;
+    await _transcriberErrorsSubscription?.cancel();
+    _transcriberErrorsSubscription = null;
+    await _transcriber?.stop();
+    _transcriber = null;
+    _opusDecoder?.dispose();
+    _opusDecoder = null;
+  }
+
+  /// Build and start the one transcription backend the selected mode calls
+  /// for. [useOpusEncoding] is true for the Omi path, which streams Opus, and
+  /// false for the phone mic, which streams raw PCM16.
   Future<void> _startTranscriptionServices({
     required bool useOpusEncoding,
   }) async {
@@ -643,7 +715,10 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
       );
     }
 
-    // Start transcription service based on selected mode
+    final StreamingTranscriber transcriber;
+    final String errorLabel;
+
+    // Build the transcriber for the selected mode
     switch (transcriptionMode) {
       case 'sherpa':
         debugPrint(
@@ -652,15 +727,8 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
         _isLoadingModel = true;
         notifyListeners();
 
-        _sherpaService = SherpaService(
-          onTranscript: _onTranscriptReceived,
-          onError: (error) => debugPrint('Sherpa error: $error'),
-        );
-        await _sherpaService!.initialize();
-        _sherpaService!.startProcessing();
-
-        _isLoadingModel = false;
-        break;
+        transcriber = SherpaStreamingTranscriber();
+        errorLabel = 'Sherpa';
 
       case 'whisper':
         debugPrint(
@@ -669,29 +737,36 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
         _isLoadingModel = true;
         notifyListeners();
 
-        _whisperService = WhisperService(
-          onTranscript: _onTranscriptReceived,
-          onError: (error) => debugPrint('Whisper error: $error'),
+        transcriber = WhisperBatchTranscriber(
           modelSize: SettingsService.whisperModelSize,
         );
-        await _whisperService!.initialize();
-        _whisperService!.startProcessing();
-
-        _isLoadingModel = false;
-        break;
+        errorLabel = 'Whisper';
 
       default: // 'cloud'
         debugPrint('Starting with CLOUD Deepgram transcription');
-        _deepgramService = DeepgramService(
+        transcriber = DeepgramStreamingTranscriber(
           apiKey: SettingsService.deepgramApiKey,
           language: SettingsService.language,
-          onTranscript: _onTranscriptReceived,
-          onError: (error) => debugPrint('Deepgram error: $error'),
-          // Use linear16 for phone mic (raw PCM), opus for Omi
-          encoding: useOpusEncoding ? 'opus' : 'linear16',
+          // Deepgram gets linear16 for the phone mic (raw PCM), opus for Omi.
+          encoding: useOpusEncoding ? AudioEncoding.opus : AudioEncoding.pcm16,
           sampleRate: 16000,
         );
-        await _deepgramService!.connect();
+        errorLabel = 'Deepgram';
+    }
+
+    _transcriber = transcriber;
+    // Subscribed before start() so nothing produced during start-up is lost.
+    _segmentsSubscription = transcriber.segments.listen(_onSegmentReceived);
+    _transcriberErrorsSubscription = transcriber.errors.listen(
+      (error) => debugPrint('$errorLabel error: $error'),
+    );
+
+    try {
+      await transcriber.start();
+    } finally {
+      // In a `finally` so a model that fails to load does not leave the
+      // spinner up for the rest of the process.
+      _isLoadingModel = false;
     }
   }
 
@@ -761,23 +836,19 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     debugPrint('Started new conversation: ${_currentConversation!.id}');
   }
 
-  void _onTranscriptReceived(List<TranscriptSegment> segments) {
+  void _onSegmentReceived(TranscriptSegment segment) {
     if (!_isListening) return;
 
     // Check for silence to handle end-of-utterance
     // ...
 
     // Accumulate for Hold-to-Ask
-    if (_isHoldToAskActive) {
-      for (var segment in segments) {
-        if (segment.text.isNotEmpty) {
-          _aiQueryTranscript += " ${segment.text}";
-        }
-      }
+    if (_isHoldToAskActive && segment.text.isNotEmpty) {
+      _aiQueryTranscript += " ${segment.text}";
     }
 
-    // Add segments to current conversation
-    _liveSegments.addAll(segments);
+    // Add the segment to the current conversation
+    _liveSegments.add(segment);
     _lastTranscriptTime = DateTime.now();
     _hasActiveConversation = true;
 
@@ -981,22 +1052,22 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     await _audioSubscription?.cancel();
     _audioSubscription = null;
 
-    // Stop audio source
-    if (_isUsingPhoneMic) {
-      await _micService.stopRecording();
-    } else {
+    // Stop audio source. PhoneMicSource owns the recorder, so stopping it is
+    // enough there; OmiAudioSource does not own the BLE stream, so that one
+    // still has to be stopped explicitly.
+    await _audioSource?.stop();
+    _audioSource = null;
+    if (!_isUsingPhoneMic) {
       await _bleService.stopAudioStream();
     }
 
-    // Clean up transcription services
-    await _deepgramService?.disconnect();
-    _deepgramService = null;
-    _sherpaService?.stopProcessing();
-    _sherpaService?.dispose();
-    _sherpaService = null;
-    _whisperService?.stopProcessing();
-    _whisperService?.dispose();
-    _whisperService = null;
+    // Clean up the transcription backend
+    await _segmentsSubscription?.cancel();
+    _segmentsSubscription = null;
+    await _transcriberErrorsSubscription?.cancel();
+    _transcriberErrorsSubscription = null;
+    await _transcriber?.stop();
+    _transcriber = null;
 
     _opusDecoder?.dispose();
     _opusDecoder = null;
@@ -1049,16 +1120,13 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     final context = _buildMemoryContext();
 
     // Get AI response
-    _openaiService = OpenAIService(
+    final llmClient = OpenAiClient.fromApiKey(
       apiKey: SettingsService.openaiApiKey,
       model: SettingsService.openaiModel,
     );
 
     try {
-      final response = await _openaiService!.chat(
-        userMessage: message,
-        conversationContext: context,
-      );
+      final response = await llmClient.chat(message, context: context);
 
       _chatMessages.add(
         ChatMessage(
@@ -1216,7 +1284,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     // If Opus, decode to PCM first
     List<int> pcmData;
     if (isOpus) {
-      final decoder = OpusDecoderService();
+      final decoder = OpusDecoder();
       await decoder.initialize();
 
       // Decode Opus frames
@@ -1589,66 +1657,62 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
-  // Audio Data Handler for Omi device (Opus encoded)
-  void _handleOmiAudioData(Uint8List audioData) {
-    // Omi device audio has a 3-byte header that needs to be trimmed
-    if (audioData.length <= 3) return;
-    final trimmedAudio = audioData.sublist(3);
-
+  // Audio Data Handler for the Omi device (Opus encoded, header already
+  // stripped by OmiAudioSource)
+  void _handleOmiAudioChunk(AudioChunk chunk) {
     // BUFFER for Voice Command if active
     if (_isCollectingVoiceCommand) {
-      _voiceCommandBuffer.addAll(trimmedAudio);
+      _voiceCommandBuffer.addAll(chunk.bytes);
     }
 
     // Decode Opus to PCM (needed for Sherpa and Debug Playback)
-    final pcmData = _opusDecoder?.decode(trimmedAudio);
+    final pcmData = _opusDecoder?.decode(chunk.bytes);
 
     if (_isTestingAudio) {
       if (pcmData != null) _testAudioBuffer.addAll(pcmData);
-    } else {
-      // PAUSE: If AI is processing a query, ignore incoming audio for the main conversation
-      if (_isAiQueryProcessing) return;
-
-      // Route to active transcription service
-      final transcriptionMode = SettingsService.transcriptionMode;
-      switch (transcriptionMode) {
-        case 'sherpa':
-          if (pcmData != null) _sherpaService?.addAudio(pcmData);
-          break;
-        case 'whisper':
-          if (pcmData != null) _whisperService?.addAudio(pcmData);
-          break;
-        default: // cloud
-          // Deepgram expects Opus when encoding='opus'
-          if (_deepgramService != null) {
-            _deepgramService?.sendAudio(trimmedAudio);
-          }
-      }
+      return;
     }
+
+    // PAUSE: If AI is processing a query, ignore incoming audio for the main conversation
+    if (_isAiQueryProcessing) return;
+
+    _feedTranscriber(chunk, decodedPcm: pcmData);
   }
 
-  // Audio Data Handler for phone microphone (raw PCM16)
-  void _handlePhoneMicAudioData(Uint8List audioData) {
-    if (audioData.isEmpty) return;
+  // Audio Data Handler for the phone microphone (raw PCM16)
+  void _handlePhoneMicAudioChunk(AudioChunk chunk) {
+    if (chunk.bytes.isEmpty) return;
 
-    // Create a properly aligned copy of the audio data
-    // This is needed because Int16List.view requires proper buffer alignment
-    final alignedData = Uint8List.fromList(audioData);
+    _feedTranscriber(chunk);
+  }
 
-    // Route to active transcription service
-    final transcriptionMode = SettingsService.transcriptionMode;
-    switch (transcriptionMode) {
-      case 'sherpa':
-        _sherpaService?.addAudio(alignedData);
+  /// Hands one chunk to the active transcriber, decoding it first when the
+  /// backend only accepts PCM16. [decodedPcm] lets the Omi path reuse the
+  /// decode it already ran for debug playback instead of decoding twice; a
+  /// chunk whose decode failed or which cannot be converted is dropped, which
+  /// is what the per-mode routing did before.
+  void _feedTranscriber(AudioChunk chunk, {Uint8List? decodedPcm}) {
+    final transcriber = _transcriber;
+    if (transcriber == null) return;
+
+    switch (routeAudioChunk(
+      chunk: chunk.encoding,
+      accepted: transcriber.acceptedEncoding,
+    )) {
+      case AudioRouting.passThrough:
+        transcriber.feed(chunk);
+      case AudioRouting.decodeOpus:
+        final pcm = decodedPcm ?? _opusDecoder?.decode(chunk.bytes);
+        if (pcm == null) return;
+        transcriber.feed(
+          AudioChunk(
+            bytes: pcm,
+            encoding: AudioEncoding.pcm16,
+            at: chunk.at,
+          ),
+        );
+      case AudioRouting.drop:
         break;
-      case 'whisper':
-        _whisperService?.addAudio(alignedData);
-        break;
-      default: // cloud
-        // Deepgram expects linear16 when encoding='linear16'
-        if (_deepgramService != null) {
-          _deepgramService?.sendAudio(alignedData);
-        }
     }
   }
 
@@ -1666,16 +1730,16 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
       NotificationService().showAiResponse("Processing: $query");
     }
 
-    _openaiService = OpenAIService(
+    final llmClient = OpenAiClient.fromApiKey(
       apiKey: SettingsService.openaiApiKey,
       model: SettingsService.openaiModel,
     );
 
     try {
       // Chat
-      final response = await _openaiService!.chat(
-        userMessage: query,
-        conversationContext:
+      final response = await llmClient.chat(
+        query,
+        context:
             "You are Omi, a helpful AI wearable assistant. Your responses are on notifications, so they MUST be extremely concise. Aim for just the answer. Navigate straight to the point. No fluff.",
       );
 
@@ -1709,7 +1773,12 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     _buttonSubscription?.cancel();
     _silenceTimer?.cancel();
     _bleService.dispose();
-    _deepgramService?.disconnect();
+    _segmentsSubscription?.cancel();
+    _transcriberErrorsSubscription?.cancel();
+    final transcriber = _transcriber;
+    if (transcriber != null) {
+      unawaited(transcriber.stop());
+    }
     unawaited(_finalizationQueue.stop());
     // Do not leave a foreground service (and its notification) behind.
     unawaited(_backgroundRunner.stop());

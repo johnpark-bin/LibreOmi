@@ -21,6 +21,8 @@ lib/
     audio_source.dart           abstract AudioSource → Stream<AudioChunk>
     omi_audio_source.dart       BLE bytes → header strip → (opus | pcm)
     phone_mic_source.dart       `record` PCM16 16 kHz
+    mic_recorder.dart           the recorder slice phone_mic_source needs, + its MicService adapter
+    audio_routing.dart          pure: chunk encoding + transcriber encoding → pass / decode / drop
     opus_decoder.dart           opus_flutter wrapper
     wav.dart                    header builder, pcm helpers
   transcription/
@@ -59,6 +61,11 @@ Dependency rule: `ui → session/data/platform → transcription/intelligence/au
 Nothing below `session` imports Flutter widgets. `device`, `audio`, `transcription`,
 `intelligence` depend only on their plugin and `core`.
 
+Transitional exception (M3): LO-32 introduced these modules as adapters, so
+`audio/`, `transcription/` and `intelligence/` still import the upstream
+`services/*_service.dart` classes they wrap. The imports disappear as §6's
+migration moves each service into its module.
+
 ## 2. Key interfaces
 
 ```dart
@@ -89,6 +96,7 @@ abstract class StreamingTranscriber {
   Future<void> start();
   void feed(AudioChunk chunk);
   Stream<TranscriptSegment> get segments;  // with wall-clock start/end filled in
+  Stream<String> get errors;               // backend error messages, for logging/UI
   Future<void> stop();
 }
 abstract class FileTranscriber { Future<List<TranscriptSegment>> transcribe(File wav); }
@@ -96,7 +104,7 @@ abstract class FileTranscriber { Future<List<TranscriptSegment>> transcribe(File
 // intelligence/llm_client.dart
 class ConversationInsights { title; summary; List<String> memories; List<TaskDraft> tasks; }
 abstract class LlmClient {
-  Future<ConversationInsights> summarize(String transcript, {DateTime now});
+  Future<ConversationInsights> summarize(String transcript, {DateTime? now});
   Future<String> chat(String user, {String? context});
 }
 
@@ -111,6 +119,20 @@ abstract class BackgroundRunner {
 `TranscriptSegment` gains `DateTime startAt/endAt` (wall clock) in addition to the
 Deepgram-relative seconds so local transcribers can populate durations
 (`01-upstream-analysis.md` §5.4).
+
+Two implementation notes on these interfaces, settled by LO-32:
+
+- Every adapter emits on `StreamController.broadcast(sync: true)`. The upstream
+  services deliver transcripts through constructor callbacks that run synchronously
+  inside the audio callback; an async hop would let a button event run between a
+  segment's arrival and its delivery, reordering hold-to-ask accumulation against
+  the button state machine.
+- `PhoneMicSource` adds `Future<void> prepare()` alongside `AudioSource.start()`.
+  `start()` is synchronous by contract and therefore cannot throw a recorder
+  failure (permission denied, microphone busy) back at the caller, and the session
+  has to see that failure as an exception in order to roll itself back. `start()`
+  calls `prepare()` too — the recorder is idempotent — so a caller holding only the
+  `AudioSource` interface still works, with the failure surfacing as a stream error.
 
 ## 3. Runtime data flow
 
@@ -191,11 +213,11 @@ Not in scope for v1: boot receiver, companion-device pairing, native Kotlin serv
 | Upstream | Action |
 |----------|--------|
 | `services/ble_service.dart` | Split into `omi_gatt.dart` (constants, parsers) + `omi_ble_device.dart` + `device_manager.dart`. Add MTU, char cache, subscription cleanup, backoff. |
-| `services/opus_decoder_service.dart` | Copy → `audio/opus_decoder.dart`. |
-| `services/mic_service.dart` | Copy → `audio/phone_mic_source.dart` behind `AudioSource`. |
-| `services/deepgram_service.dart` | Copy → `transcription/deepgram_streaming.dart`; fix usage accounting; model configurable. Add `deepgram_prerecorded.dart`. |
-| `services/sherpa_service.dart`, `whisper_service.dart` | Copy → `transcription/`; extract model download into `model_store.dart`; add timestamps; add VAD to whisper; move decode into isolate (M4). |
-| `services/openai_service.dart` | Copy → `intelligence/openai_client.dart`; typed `ConversationInsights`; base URL setting. |
+| `services/opus_decoder_service.dart` | LO-32 wrapped it as `audio/opus_decoder.dart`; the service still holds the `opus_flutter` code until it moves. |
+| `services/mic_service.dart` | LO-32 put `audio/phone_mic_source.dart` in front of it behind `AudioSource` (via `audio/mic_recorder.dart`); the recorder itself still lives in `services/`. |
+| `services/deepgram_service.dart` | LO-32 wrapped it as `transcription/deepgram_streaming.dart` behind `StreamingTranscriber`. Still to move: the service body, plus fix usage accounting, make the model configurable, add `deepgram_prerecorded.dart`. |
+| `services/sherpa_service.dart`, `whisper_service.dart` | LO-32 wrapped them as `transcription/sherpa_streaming.dart` / `whisper_batch.dart`. Still to move: the service bodies, extract model download into `model_store.dart`, add timestamps, add VAD to whisper, move decode into an isolate (M4). |
+| `services/openai_service.dart` | LO-32 wrapped it in `intelligence/openai_client.dart` behind `LlmClient` with typed `ConversationInsights` and retryable/permanent errors; the HTTP service itself still lives in `services/` until the base-URL setting lands. |
 | `services/database_service.dart`, `models/` | Copy → `data/`, split into repos; schema v4 adds `start_at/end_at` on segments (stored in transcript JSON, no table change) and `chat_messages` persistence. |
 | `services/settings_service.dart` | Copy → `data/settings_repo.dart`; keys move to secure storage with one-time migration. |
 | `services/notification_service.dart` | Copy → `platform/notifications.dart`; stable numeric IDs from a DB column; Android res added. |
