@@ -6,11 +6,11 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-import 'ble/ble_protocol.dart';
+import '../device/omi_gatt.dart';
 import 'ble/connection_ownership.dart';
 import 'ble/gatt_retry.dart';
 
-export 'ble/ble_protocol.dart';
+export '../device/omi_gatt.dart';
 
 enum DeviceConnectionState {
   disconnected,
