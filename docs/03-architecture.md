@@ -61,10 +61,20 @@ Dependency rule: `ui → session/data/platform → transcription/intelligence/au
 Nothing below `session` imports Flutter widgets. `device`, `audio`, `transcription`,
 `intelligence` depend only on their plugin and `core`.
 
-Transitional exception (M3): LO-32 introduced these modules as adapters, so
-`audio/`, `transcription/` and `intelligence/` still import the upstream
-`services/*_service.dart` classes they wrap. The imports disappear as §6's
-migration moves each service into its module.
+Migration status (LO-30, M3 wave A): `core/` exists with `result.dart`, `clock.dart`,
+`ids.dart` and `log.dart`, and `device/omi_gatt.dart` is the single source of truth for the
+GATT constants and packet parsers. The data models (`Conversation`, `TranscriptSegment`,
+`Memory`, `Task`) are still in `lib/models/conversation.dart` rather than under `core/`:
+moving them touches more than twenty importers and would collide with the concurrent
+LO-32 work, so the move is deferred to LO-34/LO-35 when those importers are rewritten
+anyway. `lib/services/ble/ble_protocol.dart` remains as a one-line re-export of
+`device/omi_gatt.dart` so existing imports keep compiling; it is deleted in LO-31.
+
+Transitional exception (LO-32, M3 wave A): `audio/`, `transcription/` and
+`intelligence/` were introduced as adapters, so they still import the upstream
+`services/*_service.dart` classes they wrap, and `transcription/` imports
+`models/conversation.dart` for `TranscriptSegment` until the models move. The
+imports disappear as §6's migration moves each service into its module.
 
 ## 2. Key interfaces
 

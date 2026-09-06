@@ -6,6 +6,10 @@ and the React Native SDK. Items marked *observed* come from omibutfree's runtime
 behaviour and should be re-verified against the firmware version you own
 (shown in Device Settings → Firmware).
 
+Since LO-30 the constants and the pure packet parsers described here live in
+`lib/device/omi_gatt.dart` (unit-tested in `test/device/omi_gatt_test.dart`);
+`lib/services/ble/ble_protocol.dart` is a re-export shim kept until LO-31.
+
 ## GATT services and characteristics
 
 | Service | UUID | Characteristic | UUID | Props | Notes |
@@ -77,7 +81,15 @@ Responses on the data characteristic:
 - 1-byte packets: `0` ready, `3` bad file size, `4` file empty, `100` transfer complete,
   anything else = error (*observed*).
 - 83-byte packets: `[hdr0][hdr1][hdr2][len][data(len)…]` — one Opus frame (*observed*).
+  `len` is the 4th byte, so at most 79 payload bytes actually fit. Upstream slices
+  `value.sublist(4, 4 + value[3])` unguarded and throws a `RangeError` if the firmware
+  ever reports a larger `len`; `parseStoragePacket` clamps to the bytes present instead.
 - 440-byte packets: repeated `[len][data(len)]` records, `len == 0` is padding (*observed*).
+  Upstream stops at `offset + 1 + len >= 440`, which discards a record that would end
+  exactly on the last byte of the packet. `parseStoragePacket` reproduces that condition
+  verbatim so LO-30 stays a no-behaviour-change refactor; correcting it needs a device to
+  verify against and is deferred.
+- Any other length is ignored (`StoragePacketKind.unknown`).
 
 Local file format written by omibutfree (kept for compatibility):
 `sdcard_audio_{codec}_16000_1_{unixStart}.bin` = repeated `[len int32 LE][opus frame]`.
