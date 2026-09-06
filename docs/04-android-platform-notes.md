@@ -290,6 +290,13 @@ process that died without stopping it.
 
 ## 7. Native libraries and APK size
 
+- `sherpa_onnx`'s FFI bindings are per-isolate statics (`SherpaOnnxBindings.init`), so the
+  LO-41 worker isolate calls `initBindings()` itself and the main isolate never loads the
+  library. On device the loader resolves `libsherpa-onnx-c-api.so` by soname out of the
+  APK's `lib/` directory, so no path is passed — the same call the upstream service made.
+  A desktop `flutter test` runs outside an app bundle, so it must pass the pub-cache
+  directory as `SherpaWorkerConfig.nativeLibraryDir` *and* open `libonnxruntime` by full
+  path first, because the c-api dylib links it through `@rpath`.
 - `sherpa_onnx_android` bundles `libonnxruntime.so` + `libsherpa-onnx-*.so` for
   arm64-v8a, armeabi-v7a, x86_64 (~15–20 MB per ABI uncompressed). That dominates the APK.
   Measured on clean builds at LO-10: an all-ABI debug APK is 215.8 MiB (arm64-v8a 71.7 MiB,
