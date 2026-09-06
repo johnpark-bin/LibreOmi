@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../device/omi_device.dart';
 import '../providers/app_provider.dart';
-import '../services/ble_service.dart';
 
 class DeviceSettingsPage extends StatefulWidget {
   const DeviceSettingsPage({super.key});
@@ -37,20 +37,20 @@ class _DeviceSettingsPageState extends State<DeviceSettingsPage> {
     
     if (!mounted) return;
     
-    // Get initial values from BLE service
-    final bleService = BleService();
-    
+    // Get initial values from the connected device
+    final device = context.read<AppProvider>().device;
+
     // Force read immediately instead of relying on cached values if any
     // Actually, getMicGain reads from characteristic.
-    
+
     // Load Gain
-    final gain = await bleService.getMicGain();
-    
+    final gain = await device?.readMicGain();
+
     // Load Dimming
-    final dim = await bleService.getLedDimRatio();
-    
+    final dim = await device?.readLedDim();
+
     // Load Battery
-    final batt = await bleService.getBatteryLevel();
+    final batt = await device?.readBatteryLevel();
     
     if (mounted) {
       setState(() {
@@ -68,11 +68,11 @@ class _DeviceSettingsPageState extends State<DeviceSettingsPage> {
   }
   
   void _updateDimRatio(double value) {
-    BleService().setLedDimRatio(value.toInt());
+    context.read<AppProvider>().device?.writeLedDim(value.toInt());
   }
 
   void _updateMicGain(double value) {
-    BleService().setMicGain(value.toInt());
+    context.read<AppProvider>().device?.writeMicGain(value.toInt());
   }
 
   @override

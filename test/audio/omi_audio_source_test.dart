@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libreomi/audio/audio_source.dart';
 import 'package:libreomi/audio/omi_audio_source.dart';
+import 'package:libreomi/core/log.dart';
 
 void main() {
   group('OmiAudioSource', () {
@@ -97,6 +98,107 @@ void main() {
 
       await sub.cancel();
       await source.stop();
+    });
+    group('packet gap detection', () {
+      late List<String> lines;
+      late void Function(String?) previousSink;
+
+      Uint8List packet(int index, [int payload = 7]) => Uint8List.fromList([
+            index & 0xFF,
+            (index >> 8) & 0xFF,
+            0,
+            payload,
+          ]);
+
+      setUp(() {
+        lines = [];
+        previousSink = logSink;
+        logSink = (message) => lines.add(message ?? '');
+      });
+
+      tearDown(() {
+        logSink = previousSink;
+      });
+
+      test('counts nothing for a contiguous run', () async {
+        final source = OmiAudioSource(rawPackets.stream);
+        final sub = source.start().listen((_) {});
+
+        for (var i = 0; i < 5; i++) {
+          rawPackets.add(packet(i));
+        }
+        await Future<void>.delayed(Duration.zero);
+
+        expect(source.gapCount, 0);
+        expect(lines, isEmpty);
+
+        await sub.cancel();
+        await source.stop();
+      });
+
+      test('counts and logs a skipped packet index', () async {
+        final source = OmiAudioSource(rawPackets.stream);
+        final sub = source.start().listen((_) {});
+
+        rawPackets.add(packet(98));
+        rawPackets.add(packet(99));
+        rawPackets.add(packet(101));
+        await Future<void>.delayed(Duration.zero);
+
+        expect(source.gapCount, 1);
+        expect(lines.single, contains('expected 100, got 101'));
+
+        await sub.cancel();
+        await source.stop();
+      });
+
+      test('treats the uint16 wrap as contiguous', () async {
+        final source = OmiAudioSource(rawPackets.stream);
+        final sub = source.start().listen((_) {});
+
+        rawPackets.add(packet(65535));
+        rawPackets.add(packet(0));
+        await Future<void>.delayed(Duration.zero);
+
+        expect(source.gapCount, 0);
+        expect(lines, isEmpty);
+
+        await sub.cancel();
+        await source.stop();
+      });
+
+      test('stops logging after maxGapLogs but keeps counting', () async {
+        final source = OmiAudioSource(rawPackets.stream);
+        final sub = source.start().listen((_) {});
+
+        // Every other index is skipped, so each packet after the first is a gap.
+        for (var i = 0; i < 2 * (OmiAudioSource.maxGapLogs + 3); i += 2) {
+          rawPackets.add(packet(i));
+        }
+        await Future<void>.delayed(Duration.zero);
+
+        expect(source.gapCount, OmiAudioSource.maxGapLogs + 2);
+        expect(lines, hasLength(OmiAudioSource.maxGapLogs));
+
+        await sub.cancel();
+        await source.stop();
+      });
+
+      test('start() resets the gap counter', () async {
+        final source = OmiAudioSource(rawPackets.stream);
+        var sub = source.start().listen((_) {});
+        rawPackets.add(packet(0));
+        rawPackets.add(packet(5));
+        await Future<void>.delayed(Duration.zero);
+        expect(source.gapCount, 1);
+        await sub.cancel();
+        await source.stop();
+
+        sub = source.start().listen((_) {});
+        expect(source.gapCount, 0);
+        await sub.cancel();
+        await source.stop();
+      });
     });
   });
 }

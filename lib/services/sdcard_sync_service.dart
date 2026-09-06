@@ -6,7 +6,8 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
-import 'ble_service.dart';
+import '../device/omi_gatt.dart';
+import '../device/omi_storage.dart';
 
 /// Represents a WAL (Write-Ahead Log) file from SD card
 enum WalStatus {
@@ -121,8 +122,9 @@ typedef SyncCompleteCallback = void Function(String filePath, int durationSecond
 typedef SyncErrorCallback = void Function(String error);
 
 class SdCardSyncService {
-  final BleService _bleService;
-  
+  final OmiStorage _storage;
+  final Future<BleAudioCodec> Function() _readCodec;
+
   StreamSubscription? _storageSubscription;
   
   // Current sync state
@@ -140,12 +142,20 @@ class SdCardSyncService {
   // Chunking constants
   static const int chunkSizeFrames = 6000; // ~60 seconds at 100fps
   
-  SdCardSyncService(this._bleService);
-  
+  /// Takes an [OmiStorage] rather than an [OmiDevice] so the SD-card path can
+  /// be driven by a fake in tests, and a codec reader rather than the device
+  /// itself for the same reason. The byte-level transfer loop below stays as
+  /// it is until LO-50 ports it onto [OmiStorage.packets].
+  SdCardSyncService({
+    required OmiStorage storage,
+    required Future<BleAudioCodec> Function() readCodec,
+  })  : _storage = storage,
+        _readCodec = readCodec;
+
   /// Check if SD card has data to sync
   Future<SdCardWal?> checkForPendingData() async {
     try {
-      final storageList = await _bleService.getStorageList();
+      final storageList = await _storage.list();
       if (storageList.isEmpty) {
         debugPrint('No storage data available');
         return null;
@@ -164,7 +174,7 @@ class SdCardSyncService {
       }
       
       // Get audio codec
-      final codec = await _bleService.getAudioCodec();
+      final codec = await _readCodec();
       
       // Calculate duration - minimum 10 seconds to be worth syncing
       final bytesToSync = totalBytes - storageOffset;
@@ -247,9 +257,9 @@ class SdCardSyncService {
     Timer? timeoutTimer;
     
     // Start storage stream listener
-    await _bleService.startStorageStream();
-    
-    _storageSubscription = _bleService.storageStream.listen((List<int> value) async {
+    await _storage.startStream();
+
+    _storageSubscription = _storage.rawPackets.listen((List<int> value) async {
       if (value.isEmpty || hasError) return;
       
       // Cancel timeout on first data
@@ -321,7 +331,7 @@ class SdCardSyncService {
     });
     
     // Start transfer from device
-    await _bleService.writeToStorage(1, 0, wal.storageOffset);
+    await _storage.startRead(wal.storageOffset);
     
     // Timeout for first data (5 seconds)
     timeoutTimer = Timer(const Duration(seconds: 5), () {
@@ -341,7 +351,7 @@ class SdCardSyncService {
       );
     } finally {
       await _storageSubscription?.cancel();
-      await _bleService.stopStorageStream();
+      await _storage.stopStream();
       timeoutTimer?.cancel();
     }
     
@@ -399,7 +409,7 @@ class SdCardSyncService {
     try {
       // Command 1 = clear/acknowledge processed data
       // Parameters: fileNum (1 for SD card), command (1 = clear), offset (0)
-      await _bleService.writeToStorage(1, 1, 0);
+      await _storage.clear();
       debugPrint('Cleared SD card storage after syncing ${wal.storageTotalBytes} bytes');
     } catch (e) {
       debugPrint('Warning: Failed to clear device storage: $e');
@@ -412,8 +422,8 @@ class SdCardSyncService {
     if (!_isSyncing) return;
     
     await _storageSubscription?.cancel();
-    await _bleService.stopStorageStream();
-    
+    await _storage.stopStream();
+
     if (_currentWal != null) {
       _currentWal!.status = WalStatus.failed;
     }
@@ -557,7 +567,7 @@ class SdCardSyncService {
   Future<bool> clearDeviceStorage() async {
     try {
       // Command 1 = clear storage
-      final success = await _bleService.writeToStorage(1, 1, 0);
+      final success = await _storage.clear();
       if (success) {
         debugPrint('Cleared device SD card storage');
       }

@@ -10,15 +10,20 @@ import '../audio/audio_source.dart';
 import '../audio/omi_audio_source.dart';
 import '../audio/opus_decoder.dart';
 import '../audio/phone_mic_source.dart';
+import '../device/device_manager.dart';
+import '../device/omi_ble_device.dart';
+import '../device/omi_device.dart';
+import '../device/omi_gatt.dart';
 import '../intelligence/llm_client.dart';
 import '../intelligence/openai_client.dart';
 import '../models/conversation.dart';
 import '../platform/background_runner.dart';
+import '../platform/ble_capture_file.dart';
 import '../platform/background_runner_factory.dart';
 import '../services/ble/reconnect_backoff.dart';
-import '../services/ble_service.dart';
 import '../services/database_service.dart';
 import '../services/finalization_queue.dart';
+import '../services/saved_device_store.dart';
 import '../services/settings_service.dart';
 import '../services/sherpa_service.dart';
 import '../services/whisper_service.dart';
@@ -35,7 +40,15 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 
 class AppProvider with ChangeNotifier, WidgetsBindingObserver {
-  final BleService _bleService = BleService();
+  final DeviceManager _deviceManager;
+
+  /// The device manager backing this provider, for callers (pages) that need
+  /// scanning/connect APIs beyond the ones re-exposed here.
+  DeviceManager get deviceManager => _deviceManager;
+
+  /// The currently connected device, or `null`.
+  OmiDevice? get device => _deviceManager.current;
+
   final MicService _micService = MicService();
   SdCardSyncService? _sdCardSyncService;
 
@@ -164,8 +177,19 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   StreamSubscription? _audioSubscription;
   StreamSubscription? _buttonSubscription;
 
-  AppProvider({BackgroundRunner? backgroundRunner, FinalizationQueue? finalizationQueue})
-      : _backgroundRunner = backgroundRunner ?? createBackgroundRunner() {
+  AppProvider({
+    BackgroundRunner? backgroundRunner,
+    FinalizationQueue? finalizationQueue,
+    DeviceManager? deviceManager,
+  })  : _backgroundRunner = backgroundRunner ?? createBackgroundRunner(),
+        _deviceManager = deviceManager ??
+            DeviceManager(
+              host: BleDeviceHost(),
+              savedDevices: const SettingsSavedDeviceStore(),
+              capture: appSupportBleSessionCapture(
+                enabled: () => SettingsService.captureBleSession,
+              ),
+            ) {
     _finalizationQueue = finalizationQueue ??
         FinalizationQueue(
           summarizer: _summarizeForQueue,
@@ -232,7 +256,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
 
     try {
       // Listen to device state changes
-      _stateSubscription = _bleService.stateStream.listen((state) async {
+      _stateSubscription = _deviceManager.connectionState.listen((state) async {
         final previousState = _deviceState;
         _deviceState = state;
 
@@ -244,7 +268,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
           _reconnectBackoff.reset();
           _reconnectTimer?.cancel();
           _reconnectTimer = null;
-          _batteryLevel = await _bleService.getBatteryLevel();
+          _batteryLevel = await _deviceManager.current?.readBatteryLevel();
           _checkBatteryNotification();
         }
 
@@ -297,7 +321,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
       });
 
       // Listen to button events
-      _buttonSubscription = _bleService.buttonStream.listen(_handleButtonPress);
+      _buttonSubscription = _deviceManager.buttonEvents.listen(_handleButtonPress);
 
       // Load saved conversations, memories, and tasks
       await loadConversations();
@@ -371,13 +395,13 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     _scheduleReconnect(advanceBackoff: canAttempt);
   }
 
-  /// Asks the BLE service to keep waiting for the saved device.
+  /// Asks the device manager to keep waiting for the saved device.
   ///
-  /// `BleService.connectToSavedDevice()` returns as soon as the request is
+  /// `DeviceManager.connectToSavedDevice()` returns as soon as the request is
   /// armed, so there is no connection to post-process here — the device-state
   /// listener does that whenever the link actually comes up.
   Future<void> _armSavedDeviceConnection() async {
-    final savedId = SettingsService.savedDeviceId;
+    final savedId = _deviceManager.savedDeviceId;
     if (savedId.isEmpty) return;
     // Arming while a link is up or coming up is refused by the platform
     // without telling us, which would leave the service believing in a
@@ -388,7 +412,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     }
     _isReconnecting = true;
     try {
-      final armed = await _bleService.connectToSavedDevice(savedId);
+      final armed = await _deviceManager.connectToSavedDevice();
       debugPrint(
         armed
             ? '[LibreOmi/BLE] auto-reconnect: autoConnect armed for $savedId'
@@ -445,7 +469,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   Future<bool> _waitForConnection(Duration timeout) async {
     if (_deviceState == DeviceConnectionState.connected) return true;
     final completer = Completer<bool>();
-    final subscription = _bleService.stateStream.listen((state) {
+    final subscription = _deviceManager.connectionState.listen((state) {
       if (state == DeviceConnectionState.connected && !completer.isCompleted) {
         completer.complete(true);
       }
@@ -463,23 +487,19 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
 
   // === Device Methods ===
 
-  Stream<List<BleDevice>> scanForDevices() {
-    return _bleService.scanForDevices();
+  Stream<List<DiscoveredDevice>> scanForDevices() {
+    return _deviceManager.scanForDevices();
   }
 
   Future<void> stopScan() async {
-    await _bleService.stopScan();
+    await _deviceManager.stopScan();
   }
 
-  Future<bool> connectToDevice(BleDevice device) async {
+  Future<bool> connectToDevice(DiscoveredDevice device) async {
     _isAutoReconnectEnabled = true;
-    final success = await _bleService.connect(device.device);
+    final success = await _deviceManager.connect(device);
     if (success) {
-      // Save device for auto-reconnect
-      SettingsService.savedDeviceId = device.device.remoteId.str;
-      SettingsService.savedDeviceName = device.name;
-
-      _batteryLevel = await _bleService.getBatteryLevel();
+      _batteryLevel = await _deviceManager.current?.readBatteryLevel();
       _checkBatteryNotification();
 
       // Check for SD card storage support
@@ -492,9 +512,14 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
 
   /// Check if the device supports SD card storage
   Future<void> _checkStorageSupport() async {
-    _hasStorageSupport = await _bleService.hasStorageSupport();
+    final device = _deviceManager.current;
+    final storage = device?.storage;
+    _hasStorageSupport = storage != null && (await storage.list()).isNotEmpty;
     if (_hasStorageSupport) {
-      _sdCardSyncService = SdCardSyncService(_bleService);
+      _sdCardSyncService = SdCardSyncService(
+        storage: storage!,
+        readCodec: () => device!.readCodec(),
+      );
       debugPrint('SD card storage support detected');
     } else {
       _sdCardSyncService = null;
@@ -515,7 +540,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     _reconnectBackoff.reset();
     _endAwaitingReconnect();
     await stopListening();
-    await _bleService.disconnect();
+    await _deviceManager.disconnect();
     await _stopBackgroundRunnerWhenIdle();
     _batteryLevel = null;
     _notified50 = false;
@@ -589,7 +614,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
       await _startTranscriptionServices(useOpusEncoding: true);
 
       // Start audio stream from Omi device
-      await _bleService.startAudioStream();
+      await _deviceManager.current?.startAudioStream();
 
       // Initialize Opus decoder for Omi device (needed for local transcription and debug playback)
       _opusDecoder = OpusDecoder();
@@ -597,8 +622,8 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
 
       // The source only transforms the BLE notification stream (header strip,
       // encoding tag); starting and stopping the stream itself stays with
-      // BleService, so the session lifecycle above is unchanged.
-      final source = OmiAudioSource(_bleService.audioStream);
+      // the device, so the session lifecycle above is unchanged.
+      final source = OmiAudioSource(_deviceManager.audioPackets);
       _audioSource = source;
       _audioSubscription = source.start().listen(_handleOmiAudioChunk);
     } catch (_) {
@@ -679,7 +704,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   /// retry would overwrite the subscriptions and leave the previous ones
   /// listening to a transcriber whose controllers are never closed.
   ///
-  /// Does *not* call `BleService.stopAudioStream()`: the caller knows whether
+  /// Does *not* call `OmiDevice.stopAudioStream()`: the caller knows whether
   /// it got that far, and the phone-mic path has already cleared
   /// `_isUsingPhoneMic` by the time this runs, so the flag cannot be used to
   /// decide. Notifications left enabled by a setup that failed after
@@ -1058,7 +1083,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     await _audioSource?.stop();
     _audioSource = null;
     if (!_isUsingPhoneMic) {
-      await _bleService.stopAudioStream();
+      await _deviceManager.current?.stopAudioStream();
     }
 
     // Clean up the transcription backend
@@ -1538,15 +1563,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   List<int> _voiceCommandBuffer = [];
   bool _isCollectingVoiceCommand = false;
 
-  void _handleButtonPress(List<int> data) async {
-    if (data.isEmpty) return;
-    debugPrint("Raw Button Data (length ${data.length}): $data");
-
-    if (data.length < 4) {
-      debugPrint("Button Data too short, ignoring.");
-      return;
-    }
-
+  void _handleButtonPress(ButtonEvent event) async {
     // Debounce - prevent multiple button events from being processed too quickly
     if (_isProcessingButtonEvent) {
       debugPrint("Button event blocked - still processing previous event");
@@ -1554,18 +1571,13 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     }
     _isProcessingButtonEvent = true;
 
-    // Parse button state exactly as Omi reference does
-    // Little Endian Uint32: [2, 0, 0, 0] -> 2
-    final buttonState = ByteData.view(
-      Uint8List.fromList(data.sublist(0, 4).reversed.toList()).buffer,
-    ).getUint32(0);
-    debugPrint("Button State Parsed: $buttonState");
+    debugPrint("Button Event Parsed: $event");
 
     // STATE 2: Double Tap (End/Save)
-    if (buttonState == 2) {
+    if (event == ButtonEvent.doubleTap) {
       debugPrint("Double Tap Detected (State 2): Saving Conversation");
       HapticFeedback.heavyImpact(); // Confirm action (Phone)
-      _bleService.triggerHaptic(3); // Confirm action (Omi - Long 500ms)
+      _deviceManager.current?.haptic(HapticLevel.long); // Confirm action (Omi - Long 500ms)
       if (_liveSegments.isEmpty) {
         NotificationService().showNotification(
           "Double Tap",
@@ -1583,12 +1595,12 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     }
 
     // STATE 1: Short Press (Toggle - first click starts, second click ends)
-    if (buttonState == 1) {
+    if (event == ButtonEvent.singleTap) {
       if (_isHoldToAskActive) {
         // Second click - end AI query and process
         debugPrint("Short Press (State 1): Ending AI Query");
         HapticFeedback.lightImpact(); // Confirm end (Phone)
-        _bleService.triggerHaptic(1); // Confirm end (Omi - Short 20ms)
+        _deviceManager.current?.haptic(HapticLevel.short); // Confirm end (Omi - Short 20ms)
 
         // Wait to capture trailing audio
         await Future.delayed(const Duration(milliseconds: 1500));
@@ -1610,7 +1622,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
         // First click - start AI query
         debugPrint("Short Press (State 1): Starting AI Query");
         HapticFeedback.mediumImpact(); // Confirm start (Phone)
-        _bleService.triggerHaptic(2); // Confirm start (Omi - Medium 50ms)
+        _deviceManager.current?.haptic(HapticLevel.medium); // Confirm start (Omi - Medium 50ms)
         _buttonPressStartTime = DateTime.now();
         _isHoldToAskActive = true;
         _aiQueryTranscript = '';
@@ -1636,21 +1648,21 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     }
 
     // STATE 4: Short Press End (Not used with toggle - ignore)
-    if (buttonState == 4) {
+    if (event == ButtonEvent.singleTapRelease) {
       debugPrint("Short Press End (State 4) - Ignored (using toggle)");
       _isProcessingButtonEvent = false;
       return;
     }
 
     // STATE 3: Long Press Start (Disabled - now turns off device in new firmware)
-    if (buttonState == 3) {
+    if (event == ButtonEvent.longPressStart) {
       debugPrint("Long Press Detected (State 3) - Disabled for AI Query");
       _isProcessingButtonEvent = false;
       return;
     }
 
     // STATE 5: Long Press End
-    if (buttonState == 5) {
+    if (event == ButtonEvent.longPressEnd) {
       debugPrint("Long Press Ended (State 5) - Ignoring (long press disabled)");
       _isProcessingButtonEvent = false;
       return;
@@ -1772,7 +1784,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     _audioSubscription?.cancel();
     _buttonSubscription?.cancel();
     _silenceTimer?.cancel();
-    _bleService.dispose();
+    unawaited(_deviceManager.dispose());
     _segmentsSubscription?.cancel();
     _transcriberErrorsSubscription?.cancel();
     final transcriber = _transcriber;

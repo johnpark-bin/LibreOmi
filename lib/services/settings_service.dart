@@ -192,7 +192,14 @@ class SettingsService {
   
   static bool get notifyProcessing => prefs.getBool('notify_processing') ?? true;
   static set notifyProcessing(bool value) => prefs.setBool('notify_processing', value);
-  
+
+  /// Whether the developer "Capture BLE session" toggle is on (LO-31).
+  /// When true, `JsonlBleSessionCapture` records connected devices' BLE
+  /// notifications to a replay fixture `FakeOmiDevice` can read back (see
+  /// `test/fixtures/README.md`).
+  static bool get captureBleSession => prefs.getBool('capture_ble_session') ?? false;
+  static set captureBleSession(bool value) => prefs.setBool('capture_ble_session', value);
+
   /// Whether the one-time battery-optimisation explanation dialog has already
   /// been shown before a session start (LO-21). Set once, so a user who
   /// refused is never asked automatically again; the settings page is the way

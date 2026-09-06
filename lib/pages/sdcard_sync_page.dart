@@ -4,7 +4,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
-import '../services/ble_service.dart';
+import '../device/omi_device.dart';
 import '../services/sdcard_sync_service.dart';
 
 class SdCardSyncPage extends StatefulWidget {
