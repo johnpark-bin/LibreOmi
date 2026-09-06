@@ -12,7 +12,7 @@ import 'noop_background_runner.dart';
 ///
 /// Like `permission_gateway.dart` and `battery_optimization_gateway.dart`,
 /// this file is allowed to branch on `Platform` (see `AGENTS.md`); keeping the
-/// branch here means `providers/`, `device/`, `audio/` and `transcription/`
+/// branch here means `controllers/`, `device/`, `audio/` and `transcription/`
 /// never need one.
 BackgroundRunner createBackgroundRunner() =>
     Platform.isAndroid ? AndroidForegroundRunner() : NoopBackgroundRunner();

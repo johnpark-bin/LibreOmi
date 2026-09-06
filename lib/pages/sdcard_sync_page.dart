@@ -3,7 +3,8 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/app_provider.dart';
+import '../controllers/device_controller.dart';
+import '../controllers/session_controller.dart';
 import '../device/omi_device.dart';
 import '../services/sdcard_sync_service.dart';
 
@@ -60,7 +61,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
   }
   
   Future<void> _checkForData() async {
-    final provider = context.read<AppProvider>();
+    final provider = context.read<DeviceController>();
     if (!provider.hasStorageSupport) {
       setState(() {
         _statusMessage = 'SD card storage not supported on this device';
@@ -87,7 +88,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
   }
   
   Future<void> _startSync() async {
-    final provider = context.read<AppProvider>();
+    final provider = context.read<DeviceController>();
     
     setState(() {
       _isSyncing = true;
@@ -155,8 +156,8 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
     });
     
     try {
-      final provider = context.read<AppProvider>();
-      final transcript = await provider.processLocalAudioFile(filePath);
+      final session = context.read<SessionController>();
+      final transcript = await session.processLocalAudioFile(filePath);
       
       setState(() {
         _isProcessing = false;
@@ -186,8 +187,8 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
     });
     
     try {
-      final provider = context.read<AppProvider>();
-      final transcript = await provider.processLocalAudioFile(file.filePath);
+      final session = context.read<SessionController>();
+      final transcript = await session.processLocalAudioFile(file.filePath);
       
       setState(() {
         _isProcessing = false;
@@ -293,7 +294,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
   }
   
   Future<void> _clearDeviceStorage() async {
-    final provider = context.read<AppProvider>();
+    final provider = context.read<DeviceController>();
     
     final confirmed = await showDialog<bool>(
       context: context,
@@ -346,7 +347,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
   }
   
   Future<void> _cancelSync() async {
-    final provider = context.read<AppProvider>();
+    final provider = context.read<DeviceController>();
     await provider.sdCardSyncService?.cancelSync();
     
     setState(() {
@@ -363,7 +364,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
         title: const Text('SD Card Sync'),
         backgroundColor: Colors.transparent,
       ),
-      body: Consumer<AppProvider>(
+      body: Consumer<DeviceController>(
         builder: (context, provider, child) {
           if (!provider.hasStorageSupport) {
             return _buildNoSupportView();
@@ -376,7 +377,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
   }
   
   Widget _buildNoSupportView() {
-    final provider = context.read<AppProvider>();
+    final provider = context.read<DeviceController>();
     final isConnected = provider.deviceState == DeviceConnectionState.connected;
     
     return Center(
@@ -438,7 +439,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
     );
   }
   
-  Widget _buildSyncView(AppProvider provider) {
+  Widget _buildSyncView(DeviceController provider) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(

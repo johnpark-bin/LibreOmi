@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../controllers/device_controller.dart';
+import '../controllers/session_controller.dart';
 import '../device/omi_device.dart';
-import '../providers/app_provider.dart';
 
 class DeviceSettingsPage extends StatefulWidget {
   const DeviceSettingsPage({super.key});
@@ -38,7 +39,7 @@ class _DeviceSettingsPageState extends State<DeviceSettingsPage> {
     if (!mounted) return;
     
     // Get initial values from the connected device
-    final device = context.read<AppProvider>().device;
+    final device = context.read<DeviceController>().device;
 
     // Force read immediately instead of relying on cached values if any
     // Actually, getMicGain reads from characteristic.
@@ -68,11 +69,11 @@ class _DeviceSettingsPageState extends State<DeviceSettingsPage> {
   }
   
   void _updateDimRatio(double value) {
-    context.read<AppProvider>().device?.writeLedDim(value.toInt());
+    context.read<DeviceController>().device?.writeLedDim(value.toInt());
   }
 
   void _updateMicGain(double value) {
-    context.read<AppProvider>().device?.writeMicGain(value.toInt());
+    context.read<DeviceController>().device?.writeMicGain(value.toInt());
   }
 
   @override
@@ -85,8 +86,9 @@ class _DeviceSettingsPageState extends State<DeviceSettingsPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final provider = Provider.of<AppProvider>(context);
-    final isConnected = provider.deviceState == DeviceConnectionState.connected;
+    final device = Provider.of<DeviceController>(context);
+    final session = Provider.of<SessionController>(context);
+    final isConnected = device.deviceState == DeviceConnectionState.connected;
 
     return Scaffold(
       appBar: AppBar(
@@ -149,11 +151,11 @@ class _DeviceSettingsPageState extends State<DeviceSettingsPage> {
                child: ListTile(
                  title: const Text('Test Mic Audio'),
                  subtitle: const Text('Record 3s and playback'),
-                 trailing: provider.isTestingAudio 
+                 trailing: session.isTestingAudio 
                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                    : const Icon(Icons.mic),
-                 onTap: provider.isTestingAudio ? null : () {
-                   provider.startAudioTest();
+                 onTap: session.isTestingAudio ? null : () {
+                   session.startAudioTest();
                  },
                ),
               ),
@@ -164,7 +166,7 @@ class _DeviceSettingsPageState extends State<DeviceSettingsPage> {
                 width: double.infinity,
                 child: OutlinedButton(
                   onPressed: () async {
-                    await provider.disconnectDevice();
+                    await device.disconnectDevice();
                     Navigator.pop(context);
                   },
                   style: OutlinedButton.styleFrom(

@@ -1,7 +1,7 @@
 /// Conversations history page with multi-select deletion
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/app_provider.dart';
+import '../controllers/library_controller.dart';
 import '../models/conversation.dart';
 import 'conversation_detail_page.dart';
 
@@ -72,7 +72,7 @@ class _ConversationsPageState extends State<ConversationsPage> {
     );
     
     if (confirmed == true) {
-      final provider = context.read<AppProvider>();
+      final provider = context.read<LibraryController>();
       for (final id in _selectedIds) {
         await provider.deleteConversation(id);
       }
@@ -130,7 +130,7 @@ class _ConversationsPageState extends State<ConversationsPage> {
               }),
             ),
           ] else if (_isSelectionMode) ...[
-            Consumer<AppProvider>(
+            Consumer<LibraryController>(
               builder: (context, provider, _) => IconButton(
                 icon: const Icon(Icons.select_all),
                 tooltip: 'Select All',
@@ -150,7 +150,7 @@ class _ConversationsPageState extends State<ConversationsPage> {
               onPressed: _toggleSelectionMode,
             ),
           ] else ...[
-            Consumer<AppProvider>(
+            Consumer<LibraryController>(
               builder: (context, provider, _) {
                 if (provider.conversations.isEmpty) return const SizedBox();
                 return Row(
@@ -173,7 +173,7 @@ class _ConversationsPageState extends State<ConversationsPage> {
           ],
         ],
       ),
-      body: Consumer<AppProvider>(
+      body: Consumer<LibraryController>(
         builder: (context, provider, child) {
           if (provider.conversations.isEmpty) {
             return const Center(

@@ -125,7 +125,7 @@ class OmiBleDevice implements OmiDevice {
   /// Always non-null: whether the firmware actually has the storage service
   /// is discovered by calling [OmiStorage.list], which returns `[]` when the
   /// storage control characteristic is missing — exactly how
-  /// `AppProvider._checkStorageSupport()` decides today via
+  /// `DeviceController._checkStorageSupport()` decides today via
   /// `BleService.hasStorageSupport()`. Returning a live object unconditionally
   /// keeps that decision where the actual GATT lookup happens instead of
   /// duplicating it here.

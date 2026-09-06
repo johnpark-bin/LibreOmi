@@ -182,7 +182,7 @@ with the app task, but that is set **only** as `android:stopWithTask="true"` on 
 
 Both of those are deliberate. Left at the defaults, `ForegroundService.onTaskRemoved`
 sets a 1 s restart alarm and `onDestroy` a 5 s one, and the service comes back in a fresh
-engine running the empty task handler — with no `AppProvider`, no BLE and no transcriber
+engine running the empty task handler — with no controllers, no BLE and no transcriber
 behind it. That is a persistent notification claiming to record that the app cannot take
 down, i.e. exactly what LO-24 forbids; an auto-restart could not resume the session
 anyway, because the session lives in the main isolate and not in the task handler.
@@ -197,8 +197,9 @@ survive. Do not set it there.
 
 The trade-off of the manifest flag is that swiping the app out of recents ends the
 session; the screen going off, which is what LO-20 is about, does not remove the task.
-`AppProvider._init()` additionally calls `stop()` once at start-up to reap a service
-orphaned by a process that died without stopping it.
+`main.dart`'s bootstrap additionally calls `SessionController.reapStaleBackgroundService()`
+once at start-up, before the device listener is attached, to reap a service orphaned by a
+process that died without stopping it.
 
 - Start the service **before** starting BLE audio notifications or the mic stream.
 - Reason sets: an Omi BLE session uses `{connectedDevice}`; a phone-mic session uses
@@ -226,7 +227,7 @@ orphaned by a process that died without stopping it.
   still connected — an idle app must show no persistent notification (LO-24), otherwise
   it annoys users and Play reviewers. One bounded exception (LO-22): when a *running*
   session is interrupted by the wearable dropping out of range, the service is kept for
-  `AppProvider.reconnectGraceWindow` (5 min) so Android cannot kill the process before
+  `SessionController.reconnectGraceWindow` (5 min) so Android cannot kill the process before
   the reconnect lands; the notification's source half switches to `Omi disconnected`.
   An explicit disconnect, forgetting the device, or the window expiring takes it
   straight down — and past the window Android may reclaim the process, after which

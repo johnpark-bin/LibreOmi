@@ -10,8 +10,8 @@
 /// `SettingsService`, runtime permissions or the Android foreground service:
 /// building the transcriber for the selected mode, asking for the microphone,
 /// and bringing the foreground service up before any audio flows (docs/04 §4)
-/// stay in `providers/app_provider.dart`, which hands the ready-made pieces to
-/// [start]. That keeps `lib/session` free of platform and settings
+/// stay in `controllers/session_controller.dart`, which hands the ready-made
+/// pieces to [start]. That keeps `lib/session` free of platform and settings
 /// dependencies (`docs/03-architecture.md` §1) and keeps the ordering
 /// constraints that can only be verified on a device in one place.
 library;
@@ -38,7 +38,7 @@ import 'silence_detector.dart';
 const _log = Log('Session');
 
 /// The system prompt hold-to-ask answers are generated with. Kept verbatim
-/// from the pre-LO-33 `AppProvider._processAiQuery`: the answer is delivered
+/// from the pre-LO-33 monolith's `_processAiQuery`: the answer is delivered
 /// as a notification, which is why it insists on brevity.
 const String holdToAskSystemPrompt =
     "You are Omi, a helpful AI wearable assistant. Your responses are on "
@@ -102,7 +102,7 @@ class AiAnswer {
 /// The phone-side feedback a session produces: haptics and notifications.
 ///
 /// Injected so `lib/session` depends on neither `flutter/services` nor
-/// `awesome_notifications`; `AppProvider` supplies the production adapter and
+/// `awesome_notifications`; `controllers/session_controller.dart` supplies the production adapter and
 /// tests supply a recorder. Device-side haptics do not go through here — the
 /// session calls [OmiDevice.haptic] directly on the device it looks up.
 abstract class SessionFeedback {
@@ -244,7 +244,7 @@ class RecordingSession {
 
   /// Opens a session over [source].
   ///
-  /// The order below is the one the pre-LO-33 `AppProvider.startListening`
+  /// The order below is the one the pre-LO-33 monolith's `startListening`
   /// used and it matters: the transcriber is subscribed and started before
   /// any audio can arrive, the transport is opened only once there is
   /// something to receive it, and the source is subscribed last.
@@ -436,7 +436,7 @@ class RecordingSession {
     await _delay(_holdToAskTrailingDelay);
 
     // The session can be torn down underneath both awaits in this method: the
-    // wearable going out of range makes `AppProvider` call `stop()` without
+    // wearable going out of range makes `SessionController` call `stop()` without
     // waiting for anything here. Writing a state back afterwards would
     // resurrect a session whose transcriber, source and transport are gone.
     if (_state != SessionState.holdToAsk) {

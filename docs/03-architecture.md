@@ -10,6 +10,11 @@ layout unchanged, and M3 performs the refactor described here.
 lib/
   main.dart                     bootstrap: settings, notifications, foreground-service init, runApp
   app/                          MaterialApp, theme, routing, top-level providers
+  controllers/                  the ChangeNotifiers the pages read (LO-34)
+    device_controller.dart      scanning, connection, battery, auto-reconnect, SD-card presence
+    session_controller.dart     listening, transcriber choice, foreground service, finalization
+    library_controller.dart     conversations / memories / tasks lists and their CRUD
+    chat_controller.dart        chat history (persisted) and the LLM chat call
   core/                         models, Result/Failure types, logging, clock, ids
   device/                       Omi device transport
     omi_device.dart             abstract OmiDevice (interface) + DeviceConnectionState
@@ -63,7 +68,9 @@ lib/
     widgets/
 ```
 
-Dependency rule: `ui → session/data/platform → transcription/intelligence/audio/device → core`.
+Dependency rule: `ui → controllers → session/data/platform →
+transcription/intelligence/audio/device → core`. `controllers/` is where the pages'
+`ChangeNotifier`s live and the only layer allowed to combine several of the ones below it.
 Nothing below `session` imports Flutter widgets. `device`, `audio`, `transcription`,
 `intelligence` depend only on their plugin and `core`.
 
@@ -71,19 +78,18 @@ Migration status (LO-30, M3 wave A): `core/` exists with `result.dart`, `clock.d
 `ids.dart` and `log.dart`, and `device/omi_gatt.dart` is the single source of truth for the
 GATT constants and packet parsers. The data models (`Conversation`, `TranscriptSegment`,
 `Memory`, `Task`) are still in `lib/models/conversation.dart` rather than under `core/`:
-moving them touches more than twenty importers and would collide with the concurrent
-LO-32 work, so the move is deferred to LO-34/LO-35 when those importers are rewritten
-anyway. `lib/services/ble/ble_protocol.dart`, the one-line re-export that kept
+moving them touches more than twenty importers and would have collided with the concurrent
+LO-32 work. LO-30 deferred the move to LO-34/LO-35, but neither took it on — see the LO-35
+note below — so it still needs an issue of its own. `lib/services/ble/ble_protocol.dart`, the one-line re-export that kept
 the pre-LO-30 imports compiling, was deleted in LO-31.
 
 Migration status (LO-33, M3 wave C): `session/` exists and owns the state machine of §4.
-`providers/app_provider.dart` is still the composition root — it builds the transcriber
-for the selected mode, holds the microphone permission and the foreground service, and
-delegates the rest to `RecordingSession`. It keeps every public member the pages call, so
-`ui/` is untouched; dissolving it into the controllers of the target layout is LO-34.
-`ConversationFinalizer` takes a `Future<Database>` and builds the three repos per call,
-because the process-wide database is opened lazily; injecting the repos themselves waits
-for LO-34, when the provider that owns that future goes away.
+The composition root it was introduced under, `providers/app_provider.dart`, was dissolved
+by LO-34 (below); `SessionController` is what now builds the transcriber for the selected
+mode, holds the microphone permission and the foreground service, and delegates the rest to
+`RecordingSession`. `ConversationFinalizer` still takes a `Future<Database>` and builds the
+three repos per call, because the process-wide database is opened lazily; injecting the
+repos themselves is still open.
 
 Transitional exception (LO-32, M3 wave A): `audio/`, `transcription/` and
 `intelligence/` were introduced as adapters, so they still import the upstream
@@ -94,10 +100,12 @@ imports disappear as §6's migration moves each service into its module.
 Migration status (LO-35, M3 wave B): `data/` exists with `db.dart` (schema v5) and
 five repositories, each an instance class taking an already-open `Database` so the
 tests can drive it through `sqflite_common_ffi`. `services/database_service.dart`
-remains as a static **facade** whose methods forward to those repositories: LO-34
-rewrites the callers (`providers/app_provider.dart`, `pages/*`) onto the repositories
-directly, and the facade is deleted with the provider. Three consequences of that split
-are worth knowing:
+remains as a static **facade** whose methods forward to those repositories. LO-34 moved
+every caller under `lib/` onto the repositories directly, so the facade now has no
+production callers at all — only `test/services/database_service_test.dart` and
+`test/services/database_migration_test.dart` still exercise it, and deleting it is a
+follow-up that has to rewrite or drop those. Three consequences of that split are worth
+knowing:
 
 - `services/finalization_queue.dart` reads and writes every row through
   `data/finalization_repo.dart` (LO-33). The repo stays policy-free: backoff,
@@ -110,23 +118,44 @@ are worth knowing:
   so it sits in the one layer both are allowed to import.
 - The data models (`Conversation`, `TranscriptSegment`, `Memory`, `Task`,
   `ChatMessage`) are still in `lib/models/conversation.dart`. LO-30 deferred the move
-  to `core/` to LO-34/LO-35; LO-35 defers it again to LO-34, because moving twenty-odd
-  importers collides with the concurrent LO-31 work on `app_provider.dart` and the
-  pages. The repositories import `models/` in the meantime.
+  to `core/` to LO-34/LO-35 and LO-35 deferred it again to LO-34, but LO-34's scope was
+  the controller split alone and it did not move them either: the move touches twenty-odd
+  importers and is independent of where the UI reads its state from. It now needs an issue
+  of its own. The repositories import `models/` in the meantime.
+
+Migration status (LO-34, M3 wave D): `providers/app_provider.dart` is gone and
+`lib/controllers/` holds the four `ChangeNotifier`s the pages read. The dependency
+between them runs one way — `DeviceController` → `SessionController` →
+{`DeviceManager`, `LibraryController`, `ChatController`}, and `ChatController` →
+`LibraryController` — so the connection-state listener that used to sequence
+"battery, storage probe, auto-start" and "grace window, stop, reconnect ladder"
+inside the provider now lives in `DeviceController` alone, calling `SessionController`
+in the same order. `SessionController` never names `DeviceController`; the one call it
+needs in the other direction (the audio self-test's "connect to my saved device") is a
+`ensureSavedDeviceConnection` callback that `main.dart` assigns. `main.dart` is the
+composition root: `LibreOmiApp` builds the four controllers, wires that callback, and
+runs a bootstrap that reproduces the old `AppProvider._init()` order — reap a stale
+foreground service, `DeviceController.init()`, the library loads, the chat history load,
+then `SessionController.init()` for the finalization queue. Two things are new rather
+than moved: chat messages are persisted through `data/chat_repo.dart` (schema v5 had the
+table since LO-35 but nothing wrote to it), and `LibraryController` owns the export that
+`DatabaseService.exportAllData` used to serve. What LO-34 deliberately did *not* do is
+move the data models to `core/` — see the LO-35 note above.
 
 Migration status (LO-31, M3 wave B): `device/` now holds the `OmiDevice` and
 `OmiStorage` interfaces, an `OmiBleDevice`/`OmiBleStorage`/`BleDeviceHost`
 adapter trio over `services/ble_service.dart`, a `DeviceManager` that owns
 scanning, connecting, the saved device and the current `OmiDevice`, and a
-`FakeOmiDevice` that replays a captured session. `providers/app_provider.dart`,
+`FakeOmiDevice` that replays a captured session. `controllers/device_controller.dart`,
 `pages/home_page.dart`, `pages/device_settings_page.dart` and
 `services/sdcard_sync_service.dart` reach the wearable only through those, and
 `services/ble/ble_protocol.dart` is gone. Two transitional exceptions remain:
 `omi_ble_device.dart` is the one file under `device/` allowed to import
 `flutter_blue_plus` and `services/ble_service.dart` (the service keeps the
 connection, MTU and reconnect logic stabilised by LO-22/LO-16, which cannot be
-re-verified without hardware), and the auto-reconnect backoff still lives in
-`AppProvider` until LO-34 dissolves it. `SdCardSyncService` still switches on
+re-verified without hardware), and the auto-reconnect backoff lives in
+`DeviceController` rather than in `device/` itself (LO-34). `SdCardSyncService` still
+switches on
 raw notification lengths itself; LO-50 ports that loop onto
 `OmiStorage.packets`.
 
@@ -215,7 +244,7 @@ Two implementation notes on these interfaces, settled by LO-32:
 - `OmiBleDevice.storage` is never null in practice: the BLE adapter cannot know
   whether the firmware has the storage service until something reads it, so
   absence shows up as `list()` returning `[]` — which is exactly how
-  `AppProvider` decides whether SD-card sync is available.
+  `DeviceController` decides whether SD-card sync is available.
 - `PhoneMicSource` adds `Future<void> prepare()` alongside `AudioSource.start()`.
   `start()` is synchronous by contract and therefore cannot throw a recorder
   failure (permission denied, microphone busy) back at the caller, and the session
@@ -245,8 +274,8 @@ flowchart LR
   LLM -->|ConversationInsights| FIN
   FIN --> NOTIF[Notifications\ntask reminders]
   BTN[buttonEvents] --> BH[ButtonHandler] --> RS
-  AP[AppProvider] -->|start / stop| RS
-  AP --> BG[BackgroundRunner\nforeground service]
+  SC[SessionController] -->|start / stop| RS
+  SC --> BG[BackgroundRunner\nforeground service]
 ```
 
 ## 4. Session state machine
@@ -275,10 +304,10 @@ idle ──connect & keys ok──▶ listening ──single tap──▶ holdTo
 button gestures and the hold-to-ask exchange. It does *not* own the pieces that need
 `SettingsService`, runtime permissions or the Android foreground service: which transcriber
 the selected mode calls for, the microphone permission, and bringing the foreground service
-up before any audio flows (docs/04 §4) stay in `providers/app_provider.dart`. That provider
-supplies the transcriber as a `TranscriberFactory` at construction and hands the ready-made
-`AudioSource` — plus the pair of callbacks that open and close the audio transport under it
-— to `RecordingSession.start()`. That is what keeps `lib/session` free of platform and
+up before any audio flows (docs/04 §4) stay in `controllers/session_controller.dart`. That
+controller supplies the transcriber as a `TranscriberFactory` at construction and hands the
+ready-made `AudioSource` — plus the pair of callbacks that open and close the audio
+transport under it — to `RecordingSession.start()`. That is what keeps `lib/session` free of platform and
 settings dependencies, per the dependency rule in §1.
 
 `ConversationFinalizer` is the single implementation both the live path and the SD-card
@@ -333,11 +362,11 @@ Not in scope for v1: boot receiver, companion-device pairing, native Kotlin serv
 | `services/deepgram_service.dart` | LO-32 wrapped it as `transcription/deepgram_streaming.dart` behind `StreamingTranscriber`. Still to move: the service body, plus fix usage accounting, make the model configurable, add `deepgram_prerecorded.dart`. |
 | `services/sherpa_service.dart`, `whisper_service.dart` | LO-32 wrapped them as `transcription/sherpa_streaming.dart` / `whisper_batch.dart`. Still to move: the service bodies, extract model download into `model_store.dart`, add timestamps, add VAD to whisper, move decode into an isolate (M4). |
 | `services/openai_service.dart` | LO-32 wrapped it in `intelligence/openai_client.dart` behind `LlmClient` with typed `ConversationInsights` and retryable/permanent errors; the HTTP service itself still lives in `services/` until the base-URL setting lands. |
-| `services/database_service.dart`, `models/` | LO-35 split the SQL into `data/` repos behind an unchanged `DatabaseService` facade; schema v5 adds `tasks.notification_id` (backfilled with the pre-v5 `created_at & 0x7fffffff` derivation) and puts `chat_messages` on the migration path so chat is persisted. `start_at/end_at` on segments live in the transcript JSON, so they needed no table change. Still to do: move the models to `core/` and delete the facade with `AppProvider` (LO-34). |
+| `services/database_service.dart`, `models/` | LO-35 split the SQL into `data/` repos behind an unchanged `DatabaseService` facade; schema v5 adds `tasks.notification_id` (backfilled with the pre-v5 `created_at & 0x7fffffff` derivation) and puts `chat_messages` on the migration path so chat is persisted. `start_at/end_at` on segments live in the transcript JSON, so they needed no table change. LO-34 moved every production caller onto the repositories, leaving the facade with test-only callers. Still to do: move the models to `core/`, and delete the facade once its two test files are rewritten. |
 | `services/settings_service.dart` | Copy → `data/settings_repo.dart`; keys move to secure storage with one-time migration. |
 | `services/notification_service.dart` | Copy → `platform/notifications.dart`; stable numeric IDs now come from the `tasks.notification_id` column (LO-35), read via `services/notification_ids.dart`; Android res added. |
 | `services/sdcard_sync_service.dart` | LO-31 repointed it onto `OmiStorage` (it no longer knows about BLE). Still to move: the byte-level transfer loop → `device/omi_storage.dart` implementations via `OmiStorage.packets` (LO-50), and post-processing → `session/sdcard_import.dart` (via `FileTranscriber` + `ConversationFinalizer`). |
-| `providers/app_provider.dart` | Dissolve into `session/*` + three thin `ChangeNotifier`s for UI: `DeviceController`, `SessionController`, `LibraryController` (+ `ChatController`). |
+| `providers/app_provider.dart` | **Done (LO-34).** Dissolved into `session/*` (LO-33) plus the four `ChangeNotifier`s in `controllers/`: `DeviceController`, `SessionController`, `LibraryController`, `ChatController`. The file and `lib/providers/` are gone. |
 | `pages/*` | Port unchanged in M1; re-point to the new controllers in M3. |
 | `OmiLocal/`, Finder duplicates, iCloud toggle | Drop. |
 

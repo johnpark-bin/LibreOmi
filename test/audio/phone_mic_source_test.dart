@@ -82,7 +82,7 @@ void main() {
       final source = PhoneMicSource(mic: recorder, now: () => at);
 
       // This is why prepare() exists next to the synchronous start(): the
-      // session rollback in AppProvider needs the failure as an exception.
+      // session rollback in SessionController needs the failure as an exception.
       expect(source.prepare(), throwsA(isA<StateError>()));
     });
 

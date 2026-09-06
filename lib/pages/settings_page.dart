@@ -5,10 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
-import '../providers/app_provider.dart';
+import '../controllers/device_controller.dart';
+import '../controllers/library_controller.dart';
 import '../device/omi_device.dart';
 import '../services/settings_service.dart';
-import '../services/database_service.dart';
 import '../platform/battery_optimization.dart';
 import '../platform/battery_optimization_gateway.dart';
 import 'battery_guidance_page.dart';
@@ -130,7 +130,7 @@ class _SettingsPageState extends State<SettingsPage> {
           _buildSectionHeader('Connected Device'),
           Card(
             clipBehavior: Clip.antiAlias,
-            child: Consumer<AppProvider>(
+            child: Consumer<DeviceController>(
               builder: (context, provider, _) {
                 final savedName = SettingsService.savedDeviceName;
                 final isConnected = provider.deviceState == DeviceConnectionState.connected;
@@ -601,7 +601,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ),
                 const Divider(height: 1),
-                Consumer<AppProvider>(
+                Consumer<DeviceController>(
                   builder: (context, provider, _) {
                     return ListTile(
                       leading: Container(
@@ -792,7 +792,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
     try {
       // Get all data
-      final data = await DatabaseService.exportAllData();
+      final data = await context.read<LibraryController>().exportAllData();
       final jsonString = const JsonEncoder.withIndent('  ').convert(data);
       
       // Save to temp file

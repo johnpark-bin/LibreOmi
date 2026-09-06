@@ -1,5 +1,5 @@
 /// Extracts the button-event mapping and the "still processing the previous
-/// event" debounce out of `AppProvider._handleButtonPress` into a pure,
+/// event" debounce out of the pre-LO-33 button-press handler into a pure,
 /// unit-testable class.
 library;
 

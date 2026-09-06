@@ -929,7 +929,7 @@ class BleService {
 
   /// Intentionally a no-op, kept so existing callers still compile.
   ///
-  /// `BleService` is a process-lifetime singleton but `AppProvider.dispose()`
+  /// `BleService` is a process-lifetime singleton but `DeviceController.dispose()`
   /// calls this, so neither the broadcast controllers nor the live
   /// subscriptions may be torn down here: closing the controllers would leave
   /// a re-created provider with permanently dead streams, and cancelling the

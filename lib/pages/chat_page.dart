@@ -1,7 +1,8 @@
 /// AI Chat page with memory context
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/app_provider.dart';
+import '../controllers/chat_controller.dart';
+import '../controllers/library_controller.dart';
 
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key});
@@ -26,12 +27,12 @@ class _ChatPageState extends State<ChatPage> {
           IconButton(
             icon: Icon(Icons.delete_outline, color: theme.colorScheme.onSurface.withOpacity(0.6)),
             tooltip: 'Clear Chat',
-            onPressed: () => context.read<AppProvider>().clearChat(),
+            onPressed: () => context.read<ChatController>().clearChat(),
           ),
         ],
       ),
-      body: Consumer<AppProvider>(
-        builder: (context, provider, child) {
+      body: Consumer2<ChatController, LibraryController>(
+        builder: (context, provider, library, child) {
           return Column(
             children: [
               // Info banner
@@ -45,7 +46,7 @@ class _ChatPageState extends State<ChatPage> {
                     Icon(Icons.auto_awesome, color: theme.colorScheme.primary, size: 14),
                     const SizedBox(width: 8),
                     Text(
-                      'Chatting with context of ${provider.conversations.length} conversations',
+                      'Chatting with context of ${library.conversations.length} conversations',
                       style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), fontSize: 12),
                     ),
                   ],
@@ -171,7 +172,7 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  void _sendMessage(AppProvider provider) async {
+  void _sendMessage(ChatController provider) async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
 

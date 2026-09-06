@@ -1,34 +1,47 @@
-/// App state provider for device, conversations, and recording
+/// Owns the recording session -- everything between "audio is flowing" and
+/// "the conversation has been handed off" that still needs settings,
+/// permissions or the foreground service (LO-34, unit 2 of the pre-LO-34 monolith's
+/// split, `docs/06-roadmap.md`).
+///
+/// Depends on `DeviceManager`, `LibraryController` and `ChatController` but
+/// never on `DeviceController` -- the agreed dependency direction for the
+/// whole refactor is `DeviceController -> SessionController -> {
+/// DeviceManager, LibraryController, ChatController }`. Where this class
+/// needs to reconnect to the saved device (the audio self-test path) it uses
+/// [ensureSavedDeviceConnection], a late-bound callback `main.dart` wires in
+/// once `DeviceController` exists.
+library;
+
 import 'dart:async';
 import 'dart:typed_data';
+
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
+import 'dart:io';
+
 import '../audio/audio_source.dart';
 import '../audio/omi_audio_source.dart';
 import '../audio/opus_decoder.dart';
 import '../audio/phone_mic_source.dart';
+import '../data/db.dart';
 import '../device/device_manager.dart';
-import '../device/omi_ble_device.dart';
 import '../device/omi_device.dart';
+import '../device/omi_gatt.dart';
 import '../intelligence/llm_client.dart';
 import '../intelligence/openai_client.dart';
 import '../models/conversation.dart';
 import '../platform/background_runner.dart';
-import '../platform/ble_capture_file.dart';
 import '../platform/background_runner_factory.dart';
-import '../services/ble/reconnect_backoff.dart';
-import '../services/database_service.dart';
 import '../services/finalization_queue.dart';
-import '../services/saved_device_store.dart';
+import '../services/mic_service.dart';
+import '../services/notification_service.dart';
 import '../services/settings_service.dart';
+import '../services/sdcard_sync_service.dart';
 import '../services/sherpa_service.dart';
 import '../services/whisper_service.dart';
-import '../services/notification_ids.dart';
-import '../services/notification_service.dart';
-import '../services/mic_service.dart';
-import '../services/sdcard_sync_service.dart';
 import '../session/conversation_finalizer.dart';
 import '../session/recording_session.dart';
 import '../session/session_state.dart';
@@ -36,22 +49,50 @@ import '../transcription/deepgram_streaming.dart';
 import '../transcription/sherpa_streaming.dart';
 import '../transcription/transcriber.dart';
 import '../transcription/whisper_batch.dart';
-import 'package:audioplayers/audioplayers.dart';
-import 'package:path_provider/path_provider.dart';
-import 'dart:io';
+import 'chat_controller.dart';
+import 'library_controller.dart';
 
-class AppProvider with ChangeNotifier, WidgetsBindingObserver {
+class SessionController extends ChangeNotifier {
+  SessionController({
+    required DeviceManager deviceManager,
+    required LibraryController library,
+    required ChatController chat,
+    BackgroundRunner? backgroundRunner,
+    FinalizationQueue? finalizationQueue,
+    RecordingSession? session,
+    Duration? reconnectGraceWindowOverride,
+  })  : _deviceManager = deviceManager,
+        _chat = chat,
+        _backgroundRunner = backgroundRunner ?? createBackgroundRunner(),
+        _reconnectGraceWindow = reconnectGraceWindowOverride ?? reconnectGraceWindow {
+    _finalizer = ConversationFinalizer(
+      database: AppDatabase.instance,
+      enqueue: _enqueueFinalization,
+      scheduleReminder: NotificationService().scheduleTaskNotification,
+      onConversationSaved: library.loadConversations,
+      onInsightsApplied: library.reloadAll,
+    );
+    _finalizationQueue = finalizationQueue ??
+        FinalizationQueue(
+          llmClient: _newLlmClient,
+          applier: _finalizer.applyInsights,
+        );
+    _session = session ??
+        RecordingSession(
+          transcriberFactory: _buildTranscriber,
+          finalizer: _finalizer,
+          llmClientFactory: _newLlmClient,
+          device: () => _deviceManager.current,
+          feedback: const _PlatformSessionFeedback(),
+          // A single tap on an idle session means "record and ask"; only this
+          // class knows how to bring the foreground service up first.
+          onStartRequested: startListening,
+        );
+    _watchSession();
+  }
+
   final DeviceManager _deviceManager;
-
-  /// The device manager backing this provider, for callers (pages) that need
-  /// scanning/connect APIs beyond the ones re-exposed here.
-  DeviceManager get deviceManager => _deviceManager;
-
-  /// The currently connected device, or `null`.
-  OmiDevice? get device => _deviceManager.current;
-
-  final MicService _micService = MicService();
-  SdCardSyncService? _sdCardSyncService;
+  final ChatController _chat;
 
   /// Keeps the process alive while a session records (docs/03 §5). A
   /// foreground service on Android, inert everywhere else. Injectable so a
@@ -69,32 +110,27 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   late final ConversationFinalizer _finalizer;
 
   /// The session state machine (`docs/03-architecture.md` §4). Everything
-  /// this provider used to do between "audio is flowing" and "the
+  /// this controller used to do between "audio is flowing" and "the
   /// conversation has been handed off" now lives there; what stays here is
   /// what needs settings, permissions or the foreground service.
   late final RecordingSession _session;
+
+  final MicService _micService = MicService();
 
   StreamSubscription<SessionState>? _sessionStateSubscription;
   StreamSubscription<List<TranscriptSegment>>? _sessionSegmentsSubscription;
   StreamSubscription<AiAnswer>? _sessionAnswerSubscription;
 
+  /// Completes when the session's asynchronous teardown has finished. Chained
+  /// onto by `DeviceController.dispose()`, which may only drop the device
+  /// manager once the audio transport this closes is really shut.
+  Future<void> get teardown => _teardown;
+  Future<void> _teardown = Future<void>.value();
+
   /// Rate-limits rewrites of the persistent notification so a burst of
   /// transcript segments does not produce a burst of platform calls.
   final SessionNotificationThrottle _sessionNotificationThrottle =
       SessionNotificationThrottle();
-
-  // App lifecycle state
-  AppLifecycleState _appLifecycleState = AppLifecycleState.resumed;
-
-  // Device state
-  DeviceConnectionState _deviceState = DeviceConnectionState.disconnected;
-  DeviceConnectionState get deviceState => _deviceState;
-  int? _batteryLevel;
-  int? get batteryLevel => _batteryLevel;
-
-  // Battery notification tracking (to avoid duplicate alerts)
-  bool _notified50 = false;
-  bool _notified20 = false;
 
   bool _isListening = false;
   bool get isListening => _isListening;
@@ -108,7 +144,6 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   /// session that is about to declare itself live.
   bool _isStarting = false;
 
-  // Phone mic state
   bool _isUsingPhoneMic = false;
   bool get isUsingPhoneMic => _isUsingPhoneMic;
 
@@ -120,14 +155,6 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   List<TranscriptSegment> _liveSegments = [];
   List<TranscriptSegment> get liveSegments => _liveSegments;
 
-  // Auto-reconnect scheduling (LO-22). Upstream polled every 5 s forever;
-  // the saved device is now armed with `autoConnect`, so this timer only
-  // re-arms a request that could not be placed and backs off 5 s -> 60 s.
-  Timer? _reconnectTimer;
-  final ReconnectBackoff _reconnectBackoff = ReconnectBackoff();
-  bool _isAutoReconnectEnabled = true;
-  bool _isReconnecting = false;
-
   /// While the wearable is out of range the process has to stay alive or
   /// Android may kill it and no reconnect happens at all, so the foreground
   /// service outlives an involuntary disconnect for [reconnectGraceWindow].
@@ -135,6 +162,12 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   /// notification forever, which is exactly what LO-24 (docs/04 section 4)
   /// forbids.
   static const Duration reconnectGraceWindow = Duration(minutes: 5);
+
+  /// The grace window this instance actually uses. Defaults to the static
+  /// [reconnectGraceWindow] above; a test can shorten it via the constructor's
+  /// `reconnectGraceWindowOverride` rather than waiting 5 real minutes for
+  /// `beginAwaitingReconnect()`'s timer to fire.
+  final Duration _reconnectGraceWindow;
   bool _isAwaitingReconnect = false;
   Timer? _reconnectGraceTimer;
 
@@ -142,81 +175,24 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   bool get isHoldToAskActive => _session.isHoldToAskActive;
   bool get isAiQueryProcessing => _session.isAnswering;
 
-  // Conversations list
-  List<Conversation> _conversations = [];
-  List<Conversation> get conversations => _conversations;
-
-  // Memories list
-  List<Memory> _memories = [];
-  List<Memory> get memories => _memories;
-
-  // Tasks list
-  List<Task> _tasks = [];
-  List<Task> get tasks => _tasks;
-
-  // Chat
-  List<ChatMessage> _chatMessages = [];
-  List<ChatMessage> get chatMessages => _chatMessages;
-  bool _isChatLoading = false;
-  bool get isChatLoading => _isChatLoading;
-
-  // Audio Test
   bool _isTestingAudio = false;
   bool get isTestingAudio => _isTestingAudio;
 
-  // Model loading state
   bool _isLoadingModel = false;
   bool get isLoadingModel => _isLoadingModel;
-  List<int> _testAudioBuffer = [];
-  final AudioPlayer _audioPlayer = AudioPlayer(); // Added
+  final List<int> _testAudioBuffer = [];
+  // Constructed lazily rather than as an eager field: `AudioPlayer()` reaches
+  // for the `audioplayers` plugin channel the moment it is created (not just
+  // when `play()` is first called), so a test that builds a `SessionController`
+  // and never exercises the test-audio playback path must not pay for it.
+  AudioPlayer? _audioPlayerInstance;
+  AudioPlayer get _audioPlayer => _audioPlayerInstance ??= AudioPlayer();
 
-  // SD Card Sync
-  bool _hasStorageSupport = false;
-  bool get hasStorageSupport => _hasStorageSupport;
-  SdCardSyncService? get sdCardSyncService => _sdCardSyncService;
-
-  // Subscriptions
-  StreamSubscription? _stateSubscription;
-  StreamSubscription? _buttonSubscription;
-
-  AppProvider({
-    BackgroundRunner? backgroundRunner,
-    FinalizationQueue? finalizationQueue,
-    DeviceManager? deviceManager,
-  })  : _backgroundRunner = backgroundRunner ?? createBackgroundRunner(),
-        _deviceManager = deviceManager ??
-            DeviceManager(
-              host: BleDeviceHost(),
-              savedDevices: const SettingsSavedDeviceStore(),
-              capture: appSupportBleSessionCapture(
-                enabled: () => SettingsService.captureBleSession,
-              ),
-            ) {
-    _finalizer = ConversationFinalizer(
-      database: () => DatabaseService.database,
-      enqueue: _enqueueFinalization,
-      scheduleReminder: NotificationService().scheduleTaskNotification,
-      onConversationSaved: loadConversations,
-      onInsightsApplied: _reloadFinalizedData,
-    );
-    _finalizationQueue = finalizationQueue ??
-        FinalizationQueue(
-          llmClient: _newLlmClient,
-          applier: _finalizer.applyInsights,
-        );
-    _session = RecordingSession(
-      transcriberFactory: _buildTranscriber,
-      finalizer: _finalizer,
-      llmClientFactory: _newLlmClient,
-      device: () => _deviceManager.current,
-      feedback: const _PlatformSessionFeedback(),
-      // A single tap on an idle session means "record and ask"; only this
-      // class knows how to bring the foreground service up first.
-      onStartRequested: startListening,
-    );
-    _watchSession();
-    _init();
-  }
+  /// Connects to the saved device on the audio self-test's behalf.
+  /// `DeviceController` owns the auto-reconnect flag and the backoff ladder,
+  /// and it depends on this class rather than the other way round, so
+  /// `main.dart` assigns `deviceController.scanAndConnectToSavedDevice` here.
+  Future<void> Function()? ensureSavedDeviceConnection;
 
   /// Builds the LLM client for one call.
   ///
@@ -229,7 +205,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
         model: SettingsService.openaiModel,
       );
 
-  /// Mirrors the session's outputs into the provider state the pages read.
+  /// Mirrors the session's outputs into the state the pages read.
   void _watchSession() {
     _sessionStateSubscription = _session.states.listen((_) {
       _updateSessionNotification();
@@ -243,35 +219,30 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
       notifyListeners();
     });
     // The hold-to-ask answer is delivered as a notification by the session
-    // and, since #33, also recorded on the chat page.
-    _sessionAnswerSubscription = _session.aiAnswers.listen(_recordAiAnswer);
+    // and, since #33, also recorded on the chat page. A failure recording it
+    // must not escape into the app zone as an unhandled async error, same as
+    // the other two subscriptions above (which cannot fail) and the button
+    // subscription below.
+    _sessionAnswerSubscription = _session.aiAnswers.listen((answer) {
+      unawaited(_chat.recordAiAnswer(answer).catchError((Object error) {
+        debugPrint('Failed to record AI answer in chat: $error');
+      }));
+    });
   }
 
-  void _recordAiAnswer(AiAnswer answer) {
-    _chatMessages.add(
-      ChatMessage(
-        id: const Uuid().v4(),
-        text: answer.question,
-        isUser: true,
-        createdAt: DateTime.now(),
-      ),
-    );
-    _chatMessages.add(
-      ChatMessage(
-        id: const Uuid().v4(),
-        text: answer.answer,
-        isUser: false,
-        createdAt: DateTime.now(),
-      ),
-    );
-    notifyListeners();
-  }
-
-  /// Reloads everything a finished summarisation can have touched.
-  Future<void> _reloadFinalizedData() async {
-    await loadConversations();
-    await loadMemories();
-    await loadTasks();
+  /// Starts the finalization queue and drains it once.
+  ///
+  /// Deliberately not run from this class's constructor: the queue lives
+  /// entirely in the database, so starting it before storage has proven
+  /// usable would only arm a timer with nothing to drain. `main.dart` calls
+  /// this after `LibraryController` has loaded conversations/memories/tasks
+  /// -- the ordering the old monolith's `_init()` used to enforce by loading those
+  /// lists itself before starting the queue. Anything left over from a
+  /// previous process (killed mid-retry, or queued while offline) is picked
+  /// up by this first drain.
+  Future<void> init() async {
+    _finalizationQueue.start();
+    _drainFinalizationQueue();
   }
 
   /// Kicks the queue without letting its failure escape into the app zone.
@@ -286,240 +257,13 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     );
   }
 
-  Future<void> _init() async {
-    // Register app lifecycle observer
-    WidgetsBinding.instance.addObserver(this);
-
-    // Nothing is recording yet, so any foreground service still up belongs to
-    // a previous process that did not shut down cleanly. Reap it, otherwise a
-    // notification claiming to record would survive with no session behind it.
-    // Awaited on purpose: it has to finish before the device-state listener
-    // below can start a session, or the reap could take that session's service
-    // down instead.
-    await _stopBackgroundRunnerWhenIdle();
-
-    try {
-      // Listen to device state changes
-      _stateSubscription = _deviceManager.connectionState.listen((state) async {
-        final previousState = _deviceState;
-        _deviceState = state;
-
-        if (state == DeviceConnectionState.connected) {
-          // The link may have come up on its own (autoConnect), so the
-          // post-connect work belongs here rather than at the call site that
-          // only *armed* the request.
-          _endAwaitingReconnect();
-          _reconnectBackoff.reset();
-          _reconnectTimer?.cancel();
-          _reconnectTimer = null;
-          _batteryLevel = await _deviceManager.current?.readBatteryLevel();
-          _checkBatteryNotification();
-        }
-
-        // Auto-start listening when device connects (only if not using phone mic)
-        if (state == DeviceConnectionState.connected &&
-            !_isListening &&
-            !_isUsingPhoneMic) {
-          // Check for SD card storage support on any connection
-          await _checkStorageSupport();
-          _startListeningIfReady();
-        }
-
-        if (state == DeviceConnectionState.disconnected) {
-          // A session that was interrupted by the wearable going out of range
-          // keeps the foreground service (and the process) alive while the
-          // reconnect is pending. Must run before `stopListening()`, which
-          // would otherwise take the service straight down.
-          if (previousState == DeviceConnectionState.connected &&
-              _isListening &&
-              !_isUsingPhoneMic) {
-            _beginAwaitingReconnect();
-          }
-
-          // Only stop listening if we were using Omi, not phone mic
-          if (_isListening && !_isUsingPhoneMic) {
-            stopListening();
-          }
-
-          // (Re)start the ladder without advancing it: the previous
-          // `connected` reset it, so this schedules the first 5 s attempt, and
-          // a duplicate disconnect event cannot push that attempt further out.
-          _scheduleReconnect(advanceBackoff: false);
-
-          // Notify user of disconnection if it was previously connected
-          // Only show notification if app is in background
-          if (previousState == DeviceConnectionState.connected &&
-              _appLifecycleState != AppLifecycleState.resumed) {
-            NotificationService().showNotification(
-              "Omi Disconnected",
-              "Your device connection was lost.",
-            );
-          }
-        }
-
-        // A connection change alters the notification's first half, which the
-        // throttle pushes immediately rather than at the next interval.
-        _updateSessionNotification();
-
-        notifyListeners();
-      });
-
-      // Listen to button events. A command that fails (a database write, a
-      // platform channel) must not escape into the app zone as an unhandled
-      // async error, so it is logged here instead.
-      _buttonSubscription = _deviceManager.buttonEvents.listen((event) {
-        unawaited(
-          _session.handleButton(event).catchError((Object error) {
-            debugPrint('Button command failed: $error');
-          }),
-        );
-      });
-
-      // Load saved conversations, memories, and tasks
-      await loadConversations();
-      await loadMemories();
-      await loadTasks();
-
-      // Deliberately after the loads: the queue lives entirely in the
-      // database, so starting it before storage has proven usable would only
-      // arm a timer with nothing to drain. Anything left over from a previous
-      // process (killed mid-retry, or queued while offline) is picked up by
-      // this first drain.
-      _finalizationQueue.start();
-      _drainFinalizationQueue();
-    } catch (e) {
-      debugPrint('AppProvider init error: $e');
-    }
-
-    // Start auto-reconnect scheduling. No attempt has been made yet, so this
-    // must not consume a rung of the ladder.
-    _scheduleReconnect(advanceBackoff: false);
-  }
-
-  /// Schedules the next auto-reconnect attempt with an exponential backoff
-  /// (LO-22, `docs/03-architecture.md` section 5). No BLE scan is involved:
-  /// the saved device is armed with `autoConnect`, which the OS retries on its
-  /// own, so an attempt here is only a cheap re-arm of that request.
-  ///
-  /// [advanceBackoff] is false when no attempt was actually made (a duplicate
-  /// disconnect event, a tick the guards skipped): the ladder must only grow
-  /// for attempts that happened, or a phone-mic session or a slow
-  /// `stopListening()` would silently push the first real attempt out to the
-  /// 60 s ceiling.
-  void _scheduleReconnect({bool advanceBackoff = true}) {
-    _reconnectTimer?.cancel();
-    _reconnectTimer = null;
-    if (!_isAutoReconnectEnabled) return;
-    if (_deviceState == DeviceConnectionState.connected) return;
-
-    final delay = advanceBackoff
-        ? _reconnectBackoff.nextDelay()
-        : _reconnectBackoff.currentBaseDelay;
-    debugPrint(
-      '[LibreOmi/BLE] auto-reconnect: next attempt in ${delay.inMilliseconds} ms '
-      '(attempt ${_reconnectBackoff.attempt})',
-    );
-    _reconnectTimer = Timer(delay, () {
-      unawaited(_attemptReconnect());
-    });
-  }
-
-  Future<void> _attemptReconnect() async {
-    _reconnectTimer = null;
-    if (!_isAutoReconnectEnabled) return;
-
-    final savedId = SettingsService.savedDeviceId;
-    // Don't auto-reconnect when using the phone mic, while a session is
-    // running, while an attempt is already in flight, or while a connection
-    // (including a manual one) is being set up — `connecting` is not
-    // `disconnected`, and arming on top of a manual connect would race it.
-    final canAttempt = savedId.isNotEmpty &&
-        !_isReconnecting &&
-        !_isUsingPhoneMic &&
-        !_isListening &&
-        _deviceState == DeviceConnectionState.disconnected;
-    if (canAttempt) {
-      await _armSavedDeviceConnection();
-    }
-
-    // Arming is not connecting: keep the ladder running until the device
-    // actually comes back, at which point the state listener resets it.
-    _scheduleReconnect(advanceBackoff: canAttempt);
-  }
-
-  /// Asks the device manager to keep waiting for the saved device.
-  ///
-  /// `DeviceManager.connectToSavedDevice()` returns as soon as the request is
-  /// armed, so there is no connection to post-process here — the device-state
-  /// listener does that whenever the link actually comes up.
-  Future<void> _armSavedDeviceConnection() async {
-    final savedId = _deviceManager.savedDeviceId;
-    if (savedId.isEmpty) return;
-    // Arming while a link is up or coming up is refused by the platform
-    // without telling us, which would leave the service believing in a
-    // request that does not exist.
-    if (_deviceState != DeviceConnectionState.disconnected) {
-      debugPrint('[LibreOmi/BLE] not arming autoConnect while $_deviceState');
-      return;
-    }
-    _isReconnecting = true;
-    try {
-      final armed = await _deviceManager.connectToSavedDevice();
-      debugPrint(
-        armed
-            ? '[LibreOmi/BLE] auto-reconnect: autoConnect armed for $savedId'
-            : '[LibreOmi/BLE] auto-reconnect: could not arm autoConnect, retrying with backoff',
-      );
-    } catch (e) {
-      debugPrint('Auto-connect error: $e');
-    } finally {
-      _isReconnecting = false;
-    }
-  }
-
-  /// User-initiated "connect to my saved device" (settings screen, audio
-  /// test). Re-enables auto-reconnect, because an explicit disconnect turns
-  /// it off, and restarts the backoff from its shortest delay.
-  Future<void> scanAndConnectToSavedDevice() async {
-    _isAutoReconnectEnabled = true;
-    _reconnectBackoff.reset();
-    if (!_isReconnecting) {
-      await _armSavedDeviceConnection();
-    }
-    _scheduleReconnect(advanceBackoff: false);
-  }
-
-  /// Keeps the foreground service up while an interrupted session waits for
-  /// the wearable to come back, for at most [reconnectGraceWindow].
-  void _beginAwaitingReconnect() {
-    if (!_isAutoReconnectEnabled) return;
-    if (SettingsService.savedDeviceId.isEmpty) return;
-    _isAwaitingReconnect = true;
-    _reconnectGraceTimer?.cancel();
-    _reconnectGraceTimer = Timer(reconnectGraceWindow, () {
-      _reconnectGraceTimer = null;
-      _isAwaitingReconnect = false;
-      debugPrint('[LibreOmi/BLE] reconnect grace window expired, stopping background runner');
-      // Stopping the runner takes the notification with it, so there is
-      // nothing left to refresh here.
-      unawaited(_stopBackgroundRunnerWhenIdle());
-    });
-    _updateSessionNotification();
-  }
-
-  void _endAwaitingReconnect() {
-    _reconnectGraceTimer?.cancel();
-    _reconnectGraceTimer = null;
-    _isAwaitingReconnect = false;
-  }
-
   /// Resolves true once the device is connected, false on timeout.
   ///
   /// Uses an explicit subscription rather than `firstWhere().timeout()`:
   /// a timeout on the future would leave the underlying listener on the
   /// broadcast stream until the next connection.
   Future<bool> _waitForConnection(Duration timeout) async {
-    if (_deviceState == DeviceConnectionState.connected) return true;
+    if (_deviceManager.state == DeviceConnectionState.connected) return true;
     final completer = Completer<bool>();
     final subscription = _deviceManager.connectionState.listen((state) {
       if (state == DeviceConnectionState.connected && !completer.isCompleted) {
@@ -537,109 +281,11 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
-  // === Device Methods ===
-
-  Stream<List<DiscoveredDevice>> scanForDevices() {
-    return _deviceManager.scanForDevices();
-  }
-
-  Future<void> stopScan() async {
-    await _deviceManager.stopScan();
-  }
-
-  Future<bool> connectToDevice(DiscoveredDevice device) async {
-    _isAutoReconnectEnabled = true;
-    final success = await _deviceManager.connect(device);
-    if (success) {
-      _batteryLevel = await _deviceManager.current?.readBatteryLevel();
-      _checkBatteryNotification();
-
-      // Check for SD card storage support
-      await _checkStorageSupport();
-
-      notifyListeners();
-    }
-    return success;
-  }
-
-  /// Check if the device supports SD card storage
-  Future<void> _checkStorageSupport() async {
-    final device = _deviceManager.current;
-    final storage = device?.storage;
-    _hasStorageSupport = storage != null && (await storage.list()).isNotEmpty;
-    if (_hasStorageSupport) {
-      _sdCardSyncService = SdCardSyncService(
-        storage: storage!,
-        readCodec: () => device!.readCodec(),
-      );
-      debugPrint('SD card storage support detected');
-    } else {
-      _sdCardSyncService = null;
-      debugPrint('No SD card storage support');
-    }
-    notifyListeners();
-  }
-
-  /// Explicit, user-initiated disconnect.
-  ///
-  /// Auto-reconnect is switched off here: `autoConnect` would otherwise bring
-  /// the link straight back up and the button would do nothing. A later
-  /// `connectToDevice()` or `scanAndConnectToSavedDevice()` turns it back on.
-  Future<void> disconnectDevice() async {
-    _isAutoReconnectEnabled = false;
-    _reconnectTimer?.cancel();
-    _reconnectTimer = null;
-    _reconnectBackoff.reset();
-    _endAwaitingReconnect();
-    await stopListening();
-    await _deviceManager.disconnect();
-    await _stopBackgroundRunnerWhenIdle();
-    _batteryLevel = null;
-    _notified50 = false;
-    _notified20 = false;
-    notifyListeners();
-  }
-
-  /// Check battery level and show notification at 50% and 20%
-  void _checkBatteryNotification() {
-    if (_batteryLevel == null) return;
-
-    if (_batteryLevel! <= 20 && !_notified20) {
-      _notified20 = true;
-      if (SettingsService.notifyBatteryCritical) {
-        NotificationService().showNotification(
-          'Low Battery Warning',
-          'Omi battery is at $_batteryLevel%. Please charge soon.',
-        );
-      }
-    } else if (_batteryLevel! <= 50 && !_notified50) {
-      _notified50 = true;
-      if (SettingsService.notifyBatteryLow) {
-        NotificationService().showNotification(
-          'Battery Getting Low',
-          'Omi battery is at $_batteryLevel%.',
-        );
-      }
-    }
-
-    // Reset flags when charged above thresholds
-    if (_batteryLevel! > 50) {
-      _notified50 = false;
-      _notified20 = false;
-    } else if (_batteryLevel! > 20) {
-      _notified20 = false;
-    }
-  }
-
-  Future<void> forgetDevice() async {
-    await disconnectDevice();
-    SettingsService.clearSavedDevice();
-    notifyListeners();
-  }
-
   // === Continuous Listening Methods ===
 
-  Future<void> _startListeningIfReady() async {
+  /// The old monolith's `_startListeningIfReady`, called by `DeviceController`
+  /// after a device connects (only if not using the phone mic).
+  Future<void> startListeningIfReady() async {
     if (SettingsService.hasApiKeys) {
       await startListening();
     }
@@ -647,7 +293,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
 
   /// Start continuous listening using Omi device
   Future<void> startListening() async {
-    if (_deviceState != DeviceConnectionState.connected) {
+    if (!_deviceManager.isConnected) {
       throw Exception('No Omi device connected');
     }
     if (_isListening || _isStarting) return;
@@ -685,7 +331,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
         // service back down instead of leaving a notification for a session
         // that is not running. The session has already released whatever it
         // brought up.
-        await _stopBackgroundRunnerWhenIdle();
+        await releaseBackgroundServiceIfIdle();
         rethrow;
       } finally {
         // In a `finally` so a model that fails to load does not leave the
@@ -730,7 +376,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     _isUsingPhoneMic = true;
     // The session continues on the phone mic, so there is no interrupted Omi
     // session left to hold the service open for.
-    _endAwaitingReconnect();
+    endAwaitingReconnect();
 
     // Microphone-type foreground services may only be started while the app is
     // in the foreground on Android 14+ (docs/04 §3/§4), and this method is only
@@ -756,7 +402,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
       // Leaving the flag set would keep auto-reconnect switched off for the
       // rest of the process.
       _isUsingPhoneMic = false;
-      await _stopBackgroundRunnerWhenIdle();
+      await releaseBackgroundServiceIfIdle();
       rethrow;
     } finally {
       _isLoadingModel = false;
@@ -836,7 +482,21 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   /// Takes the foreground service down once the session is no longer
   /// listening. An idle session shows no persistent notification, whether or
   /// not the wearable is still connected (LO-24, `docs/06-roadmap.md`).
-  Future<void> _stopBackgroundRunnerWhenIdle() async {
+  ///
+  /// Reaps a foreground service left behind by a process that did not shut
+  /// down cleanly. Nothing is recording yet at this point, so any service
+  /// still up belongs to a previous process; without this a notification
+  /// claiming to record would survive with no session behind it.
+  ///
+  /// Awaited by the bootstrap in `main.dart` before `DeviceController.init()`,
+  /// because that starts the listener which can auto-start a session -- and
+  /// the reap would then take that session's service down instead.
+  Future<void> reapStaleBackgroundService() => releaseBackgroundServiceIfIdle();
+
+  /// Public because `DeviceController` calls this too: the old monolith's `disconnectDevice()`
+  /// used to call `_stopBackgroundRunnerWhenIdle()` after `stopListening()`,
+  /// and unit 3's equivalent needs the same call.
+  Future<void> releaseBackgroundServiceIfIdle() async {
     if (_isListening) {
       return;
     }
@@ -864,7 +524,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     final now = DateTime.now();
     final candidate = SessionNotificationText.forSession(
       usingPhoneMic: _isUsingPhoneMic,
-      deviceConnected: _deviceState == DeviceConnectionState.connected,
+      deviceConnected: _deviceManager.isConnected,
       conversationLength:
           startedAt == null ? Duration.zero : now.difference(startedAt),
     );
@@ -873,6 +533,14 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
       return;
     }
     unawaited(_backgroundRunner.update(next.text));
+  }
+
+  /// Refreshes the persistent notification after a connection change: the
+  /// old monolith's `_updateSessionNotification()` call at the end of the
+  /// device-state listener. `DeviceController` calls this from its own
+  /// listener once it has finished updating its own state.
+  void onDeviceStateChanged() {
+    _updateSessionNotification();
   }
 
   /// Queues the summarisation of [conversation] and nudges the queue once so a
@@ -911,190 +579,56 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     _isListening = false;
     _isUsingPhoneMic = false;
 
-    await _stopBackgroundRunnerWhenIdle();
+    await releaseBackgroundServiceIfIdle();
 
     notifyListeners();
 
     debugPrint('Stopped continuous listening');
   }
 
-  // === Conversations Methods ===
+  /// What `DeviceController`'s device-state listener calls when the wearable
+  /// goes out of range mid-session: the same `stopListening()` above, kept as
+  /// a separate name so the call site documents *why* it is stopping.
+  Future<void> stopListeningForDeviceLoss() => stopListening();
 
-  Future<void> loadConversations() async {
-    _conversations = await DatabaseService.getConversations();
-    notifyListeners();
+  /// Keeps the foreground service up while an interrupted session waits for
+  /// the wearable to come back, for at most [reconnectGraceWindow].
+  ///
+  /// The `_isAutoReconnectEnabled` / saved-device guards the old monolith used to
+  /// check before calling this now live in `DeviceController`, which owns
+  /// auto-reconnect: it must only call this when both are true.
+  void beginAwaitingReconnect() {
+    _isAwaitingReconnect = true;
+    _reconnectGraceTimer?.cancel();
+    _reconnectGraceTimer = Timer(_reconnectGraceWindow, () {
+      _reconnectGraceTimer = null;
+      _isAwaitingReconnect = false;
+      debugPrint('[LibreOmi/BLE] reconnect grace window expired, stopping background runner');
+      // Stopping the runner takes the notification with it, so there is
+      // nothing left to refresh here.
+      unawaited(releaseBackgroundServiceIfIdle());
+    });
+    _updateSessionNotification();
   }
 
-  Future<void> deleteConversation(String id) async {
-    await DatabaseService.deleteConversation(id);
-    await loadConversations();
+  /// Ends the reconnect grace window, whether it expired on its own or the
+  /// device came back first. Guard-free -- unlike [beginAwaitingReconnect] --
+  /// because ending it is always safe, from whichever side calls it.
+  void endAwaitingReconnect() {
+    _reconnectGraceTimer?.cancel();
+    _reconnectGraceTimer = null;
+    _isAwaitingReconnect = false;
   }
 
-  // === Chat Methods ===
-
-  Future<void> sendChatMessage(String message) async {
-    if (message.trim().isEmpty) return;
-    if (!SettingsService.hasOpenAIKey) {
-      throw Exception('Please configure OpenAI API key in settings');
-    }
-
-    // Add user message
-    _chatMessages.add(
-      ChatMessage(
-        id: const Uuid().v4(),
-        text: message,
-        isUser: true,
-        createdAt: DateTime.now(),
-      ),
-    );
-    _isChatLoading = true;
-    notifyListeners();
-
-    // Build context from recent conversations
-    final context = _buildMemoryContext();
-
-    // Get AI response. Built per call for the same reason every other
-    // [LlmClient] call site here is: see [_newLlmClient].
-    final llmClient = _newLlmClient();
-
-    try {
-      final response = await llmClient.chat(message, context: context);
-
-      _chatMessages.add(
-        ChatMessage(
-          id: const Uuid().v4(),
-          text: response,
-          isUser: false,
-          createdAt: DateTime.now(),
-        ),
-      );
-    } catch (e) {
-      _chatMessages.add(
-        ChatMessage(
-          id: const Uuid().v4(),
-          text: 'Error: ${e.toString()}',
-          isUser: false,
-          createdAt: DateTime.now(),
-        ),
-      );
-    }
-
-    _isChatLoading = false;
-    notifyListeners();
-  }
-
-  String _buildMemoryContext() {
-    final buffer = StringBuffer();
-
-    // Include stored memories first
-    if (_memories.isNotEmpty) {
-      buffer.writeln('Important facts about the user:');
-      for (final memory in _memories.take(20)) {
-        buffer.writeln('• ${memory.content}');
-      }
-      buffer.writeln('');
-    }
-
-    // Then add recent conversation summaries
-    if (_conversations.isNotEmpty) {
-      buffer.writeln('Recent conversation summaries:');
-      final recent = _conversations.take(5);
-      for (final conv in recent) {
-        buffer.writeln('---');
-        buffer.writeln('Date: ${conv.createdAt.toString().substring(0, 16)}');
-        if (conv.title.isNotEmpty) buffer.writeln('Topic: ${conv.title}');
-        if (conv.summary.isNotEmpty) buffer.writeln('Summary: ${conv.summary}');
-      }
-    }
-
-    return buffer.toString();
-  }
-
-  Future<void> loadMemories() async {
-    _memories = await DatabaseService.getMemories();
-    notifyListeners();
-  }
-
-  Future<void> deleteMemory(String id) async {
-    await DatabaseService.deleteMemory(id);
-    await loadMemories();
-  }
-
-  Future<void> updateMemory(String id, String content) async {
-    await DatabaseService.updateMemory(id, content);
-    await loadMemories();
-  }
-
-  Future<void> addMemory(String content, {String? sourceConversationId}) async {
-    final memory = Memory(
-      id: const Uuid().v4(),
-      content: content.trim(),
-      category: 'manual',
-      createdAt: DateTime.now(),
-      sourceConversationId: sourceConversationId,
-    );
-    await DatabaseService.saveMemory(memory);
-    await loadMemories();
-  }
-
-  Future<void> loadTasks() async {
-    _tasks = await DatabaseService.getTasks();
-    notifyListeners();
-  }
-
-  Task? _findTaskById(String id) {
-    final index = _tasks.indexWhere((t) => t.id == id);
-    return index == -1 ? null : _tasks[index];
-  }
-
-  /// Cancels the reminder for [id] if the task is still in memory. The
-  /// notification id derives from the persisted `createdAt`, so a task we
-  /// cannot see is a task whose reminder we cannot address. Every UI path
-  /// operates on a task taken from [tasks], so this is not reachable today;
-  /// LO-35 can drop the caveat by reading the id back from the tasks table.
-  Future<void> _cancelTaskNotification(String id) async {
-    final task = _findTaskById(id);
-    if (task == null) return;
-    await NotificationService().cancelTaskNotification(
-      notificationIdForTask(task),
-    );
-  }
-
-  Future<void> deleteTask(String id) async {
-    // Cancel the notification before the row goes away: the id is derived
-    // from the task's createdAt, which we can only read while it is loaded.
-    await _cancelTaskNotification(id);
-
-    await DatabaseService.deleteTask(id);
-    await loadTasks();
-  }
-
-  Future<void> toggleTaskCompletion(String id, bool isCompleted) async {
-    await DatabaseService.updateTaskCompletion(id, isCompleted);
-
-    // Manage notification
-    if (isCompleted) {
-      await _cancelTaskNotification(id);
-    } else {
-      // Find task to reschedule if needed
-      final task = _findTaskById(id);
-      if (task != null &&
-          task.dueDate != null &&
-          task.dueDate!.isAfter(DateTime.now())) {
-        await NotificationService().scheduleTaskNotification(
-          id: notificationIdForTask(task),
-          title: task.title,
-          dueDate: task.dueDate!,
-        );
-      }
-    }
-
-    await loadTasks();
-  }
-
-  void clearChat() {
-    _chatMessages = [];
-    notifyListeners();
+  /// The body of the old monolith's `_buttonSubscription` listener.
+  /// `DeviceController` owns the subscription on `deviceManager.buttonEvents`
+  /// in unit 3; a command that fails (a database write, a platform channel)
+  /// must not escape into the app zone as an unhandled async error, so it is
+  /// logged here instead.
+  Future<void> handleButtonEvent(ButtonEvent event) async {
+    await _session.handleButton(event).catchError((Object error) {
+      debugPrint('Button command failed: $error');
+    });
   }
 
   /// Process a local audio file from SD card sync
@@ -1188,7 +722,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
       // The same finalizer the live path uses (LO-33): persist first,
       // summarise later, because an SD-card import can run while the phone is
       // offline and the recording must not depend on that call succeeding
-      // (LO-23). The title set above survives — the finalizer only fills in a
+      // (LO-23). The title set above survives -- the finalizer only fills in a
       // placeholder when there is none.
       await _finalizer.finalize(conversation);
 
@@ -1278,13 +812,13 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     // Ensure listening is active
     if (!_isListening) {
       if (SettingsService.savedDeviceId.isNotEmpty) {
-        await scanAndConnectToSavedDevice();
+        await ensureSavedDeviceConnection?.call();
         // Arming autoConnect returns immediately, so wait for the link itself
         // rather than for a fixed delay. A timeout falls through to the
         // not-connected branch below.
         await _waitForConnection(const Duration(seconds: 5));
       }
-      if (_deviceState == DeviceConnectionState.connected) {
+      if (_deviceManager.isConnected) {
         await startListening();
       } else {
         notifyListeners(); // Error?
@@ -1368,38 +902,25 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
       Uint8List(2)..buffer.asByteData().setInt16(0, value, Endian.little);
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    _appLifecycleState = state;
-    debugPrint('App lifecycle state: $state');
-
-    if (state == AppLifecycleState.resumed) {
-      NotificationService().resetGlobalBadge();
-    }
-  }
-
-  @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _reconnectTimer?.cancel();
     _reconnectGraceTimer?.cancel();
-    _stateSubscription?.cancel();
-    _buttonSubscription?.cancel();
     _sessionStateSubscription?.cancel();
     _sessionSegmentsSubscription?.cancel();
     _sessionAnswerSubscription?.cancel();
     // The session's teardown closes the audio transport, which reaches back
-    // into the device manager, so the manager may only go down afterwards.
-    unawaited(
-      _session.dispose().whenComplete(_deviceManager.dispose).catchError(
-        (Object error) {
-          debugPrint('Provider teardown failed: $error');
-        },
-      ),
-    );
+    // into the device manager, so `DeviceController` may only dispose the
+    // manager once this class's `dispose()` (and thus the session's) has
+    // completed. Stored on `_teardown` (exposed as `teardown`) so
+    // `DeviceController.dispose()` has a future to chain onto; still fired
+    // `unawaited` here because this method itself does not wait on it.
+    _teardown = _session.dispose().catchError((Object error) {
+      debugPrint('Session teardown failed: $error');
+    });
+    unawaited(_teardown);
     unawaited(_finalizationQueue.stop());
     // Do not leave a foreground service (and its notification) behind.
     unawaited(_backgroundRunner.stop());
-    _audioPlayer.dispose();
+    _audioPlayerInstance?.dispose();
     super.dispose();
   }
 }

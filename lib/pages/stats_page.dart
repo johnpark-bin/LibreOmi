@@ -1,7 +1,7 @@
 /// Statistics dashboard page
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/app_provider.dart';
+import '../controllers/library_controller.dart';
 import '../services/settings_service.dart';
 
 
@@ -20,7 +20,7 @@ class _StatsPageState extends State<StatsPage> {
       appBar: AppBar(
         title: const Text('Statistics'),
       ),
-      body: Consumer<AppProvider>(
+      body: Consumer<LibraryController>(
         builder: (context, provider, _) {
           final conversations = provider.conversations;
           final memories = provider.memories;

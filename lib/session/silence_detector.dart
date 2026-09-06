@@ -1,6 +1,7 @@
-/// Extracts the 2-minute silence auto-save timer out of `AppProvider`
-/// (`_resetSilenceTimer` / `_cancelSilenceTimer`) into a small, injectable
-/// unit so it can be unit tested without waiting on a real `Timer`.
+/// Extracts the 2-minute silence auto-save timer out of the pre-LO-33
+/// recording monolith (`_resetSilenceTimer` / `_cancelSilenceTimer`) into a
+/// small, injectable unit so it can be unit tested without waiting on a real
+/// `Timer`.
 library;
 
 import 'dart:async';
@@ -19,7 +20,7 @@ Timer defaultSessionTimerFactory(Duration duration, void Function() callback) =>
 /// Watches for silence (no transcript activity) and fires [onSilence] once
 /// [timeout] elapses without a further [noteActivity] call.
 ///
-/// Mirrors the old `AppProvider._resetSilenceTimer` / `_cancelSilenceTimer`
+/// Mirrors the old monolith's `_resetSilenceTimer` / `_cancelSilenceTimer`
 /// pair: every activity cancels and re-arms a single timer, so at most one
 /// timeout is ever pending. [Clock] and [SessionTimerFactory] are both
 /// injectable so tests can drive this deterministically, without any real

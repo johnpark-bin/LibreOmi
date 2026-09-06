@@ -388,7 +388,7 @@ void main() {
       session = await buildSession(
         onStartRequested: () async {
           attempts++;
-          // What `AppProvider.startListening` throws in cloud mode with no key.
+          // What the pre-LO-33 monolith's startListening throws in cloud mode with no key.
           throw Exception('Please configure Deepgram API key in settings');
         },
       );
@@ -633,7 +633,7 @@ void main() {
       await transcriber.emit('half a sentence before the wearable went out of range');
       final conversationId = session.currentConversation!.id;
 
-      // What `AppProvider` does when the device-state listener sees a
+      // What `DeviceController`'s device-state listener does when it sees a
       // disconnect while listening.
       await session.stop();
 
@@ -672,7 +672,7 @@ void main() {
     });
 
     test('a disconnect while answering leaves the session idle, not listening', () async {
-      // `AppProvider` calls stop() fire-and-forget when the wearable drops, so
+      // `SessionController` calls stop() fire-and-forget when the wearable drops, so
       // it can land in the middle of the LLM round-trip. The answer must not
       // write `listening` back over a session that has been torn down.
       final answering = Completer<void>();

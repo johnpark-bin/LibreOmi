@@ -20,9 +20,9 @@ import 'package:http/http.dart' as http;
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
+import '../data/db.dart';
 import '../data/finalization_repo.dart';
 import '../intelligence/llm_client.dart';
-import 'database_service.dart';
 
 export '../data/finalization_repo.dart' show PendingFinalizationRow;
 
@@ -120,7 +120,7 @@ class FinalizationQueue {
     DateTime Function() now = DateTime.now,
   })  : _llmClient = llmClient,
         _applier = applier,
-        _databaseProvider = databaseProvider ?? (() => DatabaseService.database),
+        _databaseProvider = databaseProvider ?? AppDatabase.instance,
         _injectedNetworkRestored = networkRestored,
         _now = now;
 
