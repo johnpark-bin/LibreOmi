@@ -7,7 +7,8 @@ import '../platform/permission_gateway.dart';
 import '../platform/permissions.dart';
 import '../device/device_manager.dart';
 import '../device/omi_device.dart';
-import '../providers/app_provider.dart';
+import '../controllers/device_controller.dart';
+import '../controllers/session_controller.dart';
 import '../services/settings_service.dart';
 import 'battery_guidance_page.dart';
 import 'settings_page.dart';
@@ -114,14 +115,14 @@ class _DeviceTabState extends State<DeviceTab> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     
-    return Consumer<AppProvider>(
-      builder: (context, provider, child) {
+    return Consumer2<DeviceController, SessionController>(
+      builder: (context, deviceController, session, child) {
         return Scaffold(
           appBar: AppBar(
             title: const Text('LibreOmi'),
             backgroundColor: Colors.transparent,
             actions: [
-              if (provider.batteryLevel != null)
+              if (deviceController.batteryLevel != null)
                 Container(
                   margin: const EdgeInsets.only(right: 16),
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -133,15 +134,15 @@ class _DeviceTabState extends State<DeviceTab> {
                   child: Row(
                     children: [
                       Icon(
-                        provider.batteryLevel! > 20
+                        deviceController.batteryLevel! > 20
                             ? Icons.battery_full
                             : Icons.battery_alert,
                         size: 16,
-                        color: provider.batteryLevel! > 20 ? Colors.greenAccent : Colors.redAccent,
+                        color: deviceController.batteryLevel! > 20 ? Colors.greenAccent : Colors.redAccent,
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        '${provider.batteryLevel}%',
+                        '${deviceController.batteryLevel}%',
                         style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                       ),
                     ],
@@ -149,28 +150,31 @@ class _DeviceTabState extends State<DeviceTab> {
                 ),
             ],
           ),
-          body: _buildBody(provider),
+          body: _buildBody(deviceController, session),
         );
       },
     );
   }
 
-  Widget _buildBody(AppProvider provider) {
+  Widget _buildBody(DeviceController deviceController, SessionController session) {
     // Show connected view when listening (either Omi or phone mic)
-    if (provider.isListening || provider.isUsingPhoneMic) {
-      return _buildConnectedView(provider);
+    if (session.isListening || session.isUsingPhoneMic) {
+      return _buildConnectedView(deviceController, session);
     }
     
-    switch (provider.deviceState) {
+    switch (deviceController.deviceState) {
       case DeviceConnectionState.disconnected:
       case DeviceConnectionState.connecting:
-        return _buildDisconnectedView(provider);
+        return _buildDisconnectedView(deviceController, session);
       case DeviceConnectionState.connected:
-        return _buildConnectedView(provider);
+        return _buildConnectedView(deviceController, session);
     }
   }
 
-  Widget _buildDisconnectedView(AppProvider provider) {
+  Widget _buildDisconnectedView(
+    DeviceController deviceController,
+    SessionController session,
+  ) {
     final theme = Theme.of(context);
     
     return ListView(
@@ -238,7 +242,7 @@ class _DeviceTabState extends State<DeviceTab> {
         ],
         
         // Connect to Omi Device
-        _buildOmiCard(provider),
+        _buildOmiCard(deviceController),
         
         const SizedBox(height: 16),
         
@@ -248,16 +252,16 @@ class _DeviceTabState extends State<DeviceTab> {
           subtitle: 'Record directly from your phone',
           icon: Icons.phone_iphone,
           color: const Color(0xFF00b894),
-          onTap: SettingsService.hasApiKeys ? () => _startPhoneMicRecording(provider) : null,
+          onTap: SettingsService.hasApiKeys ? () => _startPhoneMicRecording(session) : null,
         ),
       ],
     );
   }
   
-  Widget _buildOmiCard(AppProvider provider) {
+  Widget _buildOmiCard(DeviceController deviceController) {
     final theme = Theme.of(context);
     // Only show connecting state for user-initiated connections
-    final isConnecting = _isUserConnecting && provider.deviceState == DeviceConnectionState.connecting;
+    final isConnecting = _isUserConnecting && deviceController.deviceState == DeviceConnectionState.connecting;
     
     return Material(
       color: Colors.transparent,
@@ -361,7 +365,7 @@ class _DeviceTabState extends State<DeviceTab> {
                         ),
                       ),
                       ElevatedButton(
-                        onPressed: () => _connectToDevice(device, provider),
+                        onPressed: () => _connectToDevice(device, deviceController),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF6C5CE7),
                           foregroundColor: Colors.white,
@@ -441,7 +445,10 @@ class _DeviceTabState extends State<DeviceTab> {
   }
 
 
-  Widget _buildConnectedView(AppProvider provider) {
+  Widget _buildConnectedView(
+    DeviceController deviceController,
+    SessionController session,
+  ) {
     return Column(
       children: [
         // Connected Header
@@ -456,7 +463,7 @@ class _DeviceTabState extends State<DeviceTab> {
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
-                  provider.isUsingPhoneMic ? Icons.phone_iphone : Icons.check, 
+                  session.isUsingPhoneMic ? Icons.phone_iphone : Icons.check, 
                   color: Colors.green, 
                   size: 20,
                 ),
@@ -467,21 +474,21 @@ class _DeviceTabState extends State<DeviceTab> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      provider.isUsingPhoneMic ? 'Phone Mic Active' : 'Connected',
+                      session.isUsingPhoneMic ? 'Phone Mic Active' : 'Connected',
                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                     Text(
-                      provider.isUsingPhoneMic ? 'Using iPhone Microphone' : 'Omi Device Ready',
+                      session.isUsingPhoneMic ? 'Using iPhone Microphone' : 'Omi Device Ready',
                       style: const TextStyle(color: Colors.grey, fontSize: 12),
                     ),
                   ],
                 ),
               ),
               TextButton(
-                onPressed: provider.isUsingPhoneMic 
-                    ? provider.stopListening 
-                    : provider.disconnectDevice,
-                child: Text(provider.isUsingPhoneMic ? 'Stop' : 'Disconnect'),
+                onPressed: session.isUsingPhoneMic 
+                    ? session.stopListening 
+                    : deviceController.disconnectDevice,
+                child: Text(session.isUsingPhoneMic ? 'Stop' : 'Disconnect'),
               ),
             ],
           ),
@@ -490,14 +497,14 @@ class _DeviceTabState extends State<DeviceTab> {
         // Listening status banner
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          color: provider.isLoadingModel
+          color: session.isLoadingModel
               ? Colors.orange.withOpacity(0.15)
-              : provider.isListening 
+              : session.isListening 
                   ? Colors.deepPurple.withOpacity(0.15) 
                   : Colors.grey.withOpacity(0.1),
           child: Row(
             children: [
-              if (provider.isLoadingModel) ...[
+              if (session.isLoadingModel) ...[
                 const SizedBox(
                   width: 16,
                   height: 16,
@@ -525,7 +532,7 @@ class _DeviceTabState extends State<DeviceTab> {
                     ],
                   ),
                 ),
-              ] else if (provider.isListening) ...[
+              ] else if (session.isListening) ...[
                 const _PulsingDot(),
                 const SizedBox(width: 12),
                 Expanded(
@@ -550,9 +557,9 @@ class _DeviceTabState extends State<DeviceTab> {
                   ),
                 ),
                 // Manual save button
-                if (provider.liveSegments.isNotEmpty)
+                if (session.liveSegments.isNotEmpty)
                   TextButton.icon(
-                    onPressed: provider.manualSaveConversation,
+                    onPressed: session.manualSaveConversation,
                     icon: const Icon(Icons.save, size: 18),
                     label: const Text('Save Now'),
                   ),
@@ -562,7 +569,7 @@ class _DeviceTabState extends State<DeviceTab> {
                 const Expanded(child: Text('Not listening')),
                 ElevatedButton(
                   onPressed: SettingsService.hasApiKeys
-                      ? () => _startListening(provider)
+                      ? () => _startListening(session)
                       : null,
                   child: const Text('Start'),
                 ),
@@ -575,13 +582,13 @@ class _DeviceTabState extends State<DeviceTab> {
         Padding(
           padding: const EdgeInsets.all(16),
           child: ElevatedButton.icon(
-            onPressed: provider.isListening
-                ? provider.stopListening
-                : () => _startListening(provider),
-            icon: Icon(provider.isListening ? Icons.stop : Icons.mic),
-            label: Text(provider.isListening ? 'Stop Listening' : 'Start Listening'),
+            onPressed: session.isListening
+                ? session.stopListening
+                : () => _startListening(session),
+            icon: Icon(session.isListening ? Icons.stop : Icons.mic),
+            label: Text(session.isListening ? 'Stop Listening' : 'Start Listening'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: provider.isListening ? Colors.red : Colors.deepPurple,
+              backgroundColor: session.isListening ? Colors.red : Colors.deepPurple,
               foregroundColor: Colors.white,
               minimumSize: const Size(double.infinity, 60),
             ),
@@ -589,7 +596,7 @@ class _DeviceTabState extends State<DeviceTab> {
         ),
 
         // Live transcript
-        if (provider.liveSegments.isNotEmpty)
+        if (session.liveSegments.isNotEmpty)
           Expanded(
             child: Container(
               margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -612,7 +619,7 @@ class _DeviceTabState extends State<DeviceTab> {
                       ),
                       const Spacer(),
                       Text(
-                        '${provider.liveSegments.length} segments',
+                        '${session.liveSegments.length} segments',
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.grey.shade400,
@@ -623,10 +630,10 @@ class _DeviceTabState extends State<DeviceTab> {
                   const SizedBox(height: 12),
                   Expanded(
                     child: ListView.builder(
-                      itemCount: provider.liveSegments.length,
+                      itemCount: session.liveSegments.length,
                       reverse: false,
                       itemBuilder: (context, index) {
-                        final segment = provider.liveSegments[index];
+                        final segment = session.liveSegments[index];
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 8),
                           child: Row(
@@ -661,7 +668,7 @@ class _DeviceTabState extends State<DeviceTab> {
               ),
             ),
           )
-        else if (provider.isListening)
+        else if (session.isListening)
           const Expanded(
             child: Center(
               child: Column(
@@ -718,21 +725,24 @@ class _DeviceTabState extends State<DeviceTab> {
       _devices = [];
     });
 
-    final provider = context.read<AppProvider>();
+    final deviceController = context.read<DeviceController>();
     
-    await for (final devices in provider.scanForDevices()) {
+    await for (final devices in deviceController.scanForDevices()) {
       setState(() => _devices = devices);
     }
 
     setState(() => _isScanning = false);
   }
 
-  Future<void> _connectToDevice(DiscoveredDevice device, AppProvider provider) async {
+  Future<void> _connectToDevice(
+    DiscoveredDevice device,
+    DeviceController deviceController,
+  ) async {
     setState(() => _isUserConnecting = true);
-    await provider.stopScan();
+    await deviceController.stopScan();
     setState(() => _isScanning = false);
     
-    final success = await provider.connectToDevice(device);
+    final success = await deviceController.connectToDevice(device);
     
     if (mounted) {
       setState(() => _isUserConnecting = false);
@@ -744,11 +754,11 @@ class _DeviceTabState extends State<DeviceTab> {
     }
   }
 
-  Future<void> _startListening(AppProvider provider) async {
+  Future<void> _startListening(SessionController session) async {
     await _maybePromptBatteryOptimization();
     if (!mounted) return;
     try {
-      await provider.startListening();
+      await session.startListening();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -758,7 +768,7 @@ class _DeviceTabState extends State<DeviceTab> {
     }
   }
 
-  Future<void> _startPhoneMicRecording(AppProvider provider) async {
+  Future<void> _startPhoneMicRecording(SessionController session) async {
     // RECORD_AUDIO is only ever needed in phone-mic mode, so it is requested
     // here rather than at launch (docs/04 §3).
     final PermissionOutcome outcome;
@@ -780,7 +790,7 @@ class _DeviceTabState extends State<DeviceTab> {
     await _maybePromptBatteryOptimization();
     if (!mounted) return;
     try {
-      await provider.startListeningWithPhoneMic();
+      await session.startListeningWithPhoneMic();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

@@ -1,7 +1,7 @@
 /// Tasks page - displays extracted tasks from conversations
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/app_provider.dart';
+import '../controllers/library_controller.dart';
 import '../models/conversation.dart';
 
 class TasksPage extends StatelessWidget {
@@ -15,7 +15,7 @@ class TasksPage extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Tasks'),
         actions: [
-          Consumer<AppProvider>(
+          Consumer<LibraryController>(
             builder: (context, provider, _) => provider.tasks.isNotEmpty
                 ? IconButton(
                     icon: const Icon(Icons.refresh),
@@ -26,7 +26,7 @@ class TasksPage extends StatelessWidget {
           ),
         ],
       ),
-      body: Consumer<AppProvider>(
+      body: Consumer<LibraryController>(
         builder: (context, provider, _) {
           if (provider.tasks.isEmpty) {
             return _buildEmptyState(theme);
@@ -87,7 +87,7 @@ class TasksPage extends StatelessWidget {
     );
   }
 
-  Widget _buildTasksList(BuildContext context, AppProvider provider, ThemeData theme) {
+  Widget _buildTasksList(BuildContext context, LibraryController provider, ThemeData theme) {
     final tasks = provider.tasks;
     final pendingTasks = tasks.where((t) => !t.isCompleted).toList();
     final completedTasks = tasks.where((t) => t.isCompleted).toList();
@@ -142,7 +142,7 @@ class TasksPage extends StatelessWidget {
     );
   }
 
-  Widget _buildTaskCard(BuildContext context, AppProvider provider, Task task, ThemeData theme) {
+  Widget _buildTaskCard(BuildContext context, LibraryController provider, Task task, ThemeData theme) {
     final isOverdue = task.dueDate != null && 
                       task.dueDate!.isBefore(DateTime.now()) && 
                       !task.isCompleted;
@@ -276,7 +276,7 @@ class TasksPage extends StatelessWidget {
     return '$dayPart at $timePart';
   }
 
-  void _confirmDelete(BuildContext context, AppProvider provider, String taskId) {
+  void _confirmDelete(BuildContext context, LibraryController provider, String taskId) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(

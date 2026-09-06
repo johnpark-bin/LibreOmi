@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/conversation.dart';
-import '../providers/app_provider.dart';
+import '../controllers/library_controller.dart';
 
 class ConversationDetailPage extends StatefulWidget {
   final Conversation conversation;
@@ -129,7 +129,7 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> {
   void _addAsMemory(BuildContext context) {
     if (_selectedText.isEmpty) return;
     
-    final provider = Provider.of<AppProvider>(context, listen: false);
+    final provider = Provider.of<LibraryController>(context, listen: false);
     provider.addMemory(_selectedText, sourceConversationId: widget.conversation.id);
     
     ScaffoldMessenger.of(context).showSnackBar(

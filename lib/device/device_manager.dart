@@ -1,8 +1,8 @@
 /// Owns scanning, connecting, the saved device and the currently connected
 /// [OmiDevice] (`docs/03-architecture.md` §1).
 ///
-/// The auto-reconnect backoff itself still lives in `providers/app_provider.dart`;
-/// it moves here when `AppProvider` is dissolved in LO-34.
+/// The auto-reconnect backoff itself lives in `controllers/device_controller.dart`
+/// (LO-34).
 library;
 
 import 'dart:async';
@@ -110,7 +110,7 @@ class DeviceManager {
   // Notification streams that outlive a single connection.
   //
   // `current` is null while disconnected, so a caller that subscribed once at
-  // startup (`AppProvider._init()`) cannot hold the device's own streams. The
+  // startup (`DeviceController.init()`) cannot hold the device's own streams. The
   // manager forwards them instead, re-attaching on every connection.
   //
   // `sync: true` so this forwarding hop does not *add* reordering between the

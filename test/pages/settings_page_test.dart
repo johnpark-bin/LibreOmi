@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:libreomi/pages/settings_page.dart';
 import 'package:libreomi/platform/battery_optimization.dart';
-import 'package:libreomi/providers/app_provider.dart';
 import 'package:libreomi/services/secret_store.dart';
 import 'package:libreomi/services/settings_service.dart';
+
+import 'controller_harness.dart';
 
 /// Scripts the platform answers for [BatteryOptimization] so tests never
 /// touch a plugin channel. Shape mirrors
@@ -69,10 +69,10 @@ void main() {
     });
     await SettingsService.init(secretStore: InMemorySecretStore());
 
+    final controllers = await PageControllers.create();
     await tester.pumpWidget(
-      ChangeNotifierProvider(
-        create: (_) => AppProvider(),
-        child: MaterialApp(
+      controllers.wrap(
+        MaterialApp(
           home: SettingsPage(
             batteryOptimizationOverride: batteryOptimizationOverride,
           ),

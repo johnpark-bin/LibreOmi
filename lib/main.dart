@@ -1,9 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'services/settings_service.dart';
 import 'services/notification_service.dart'; // Added
 import 'platform/permission_gateway.dart';
-import 'providers/app_provider.dart';
+import 'controllers/chat_controller.dart';
+import 'controllers/device_controller.dart';
+import 'controllers/library_controller.dart';
+import 'controllers/session_controller.dart';
+import 'device/device_manager.dart';
 import 'pages/home_page.dart';
 
 void main() async {
@@ -36,13 +42,95 @@ void main() async {
   });
 }
 
-class LibreOmiApp extends StatelessWidget {
+class LibreOmiApp extends StatefulWidget {
   const LibreOmiApp({super.key});
 
   @override
+  State<LibreOmiApp> createState() => _LibreOmiAppState();
+}
+
+class _LibreOmiAppState extends State<LibreOmiApp> {
+  late final DeviceManager _deviceManager;
+  late final LibraryController _library;
+  late final ChatController _chat;
+  late final SessionController _session;
+  late final DeviceController _device;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _deviceManager = createDeviceManager();
+    _library = LibraryController();
+    _chat = ChatController(library: _library);
+    _session = SessionController(
+      deviceManager: _deviceManager,
+      library: _library,
+      chat: _chat,
+    );
+    _device = DeviceController(deviceManager: _deviceManager, session: _session);
+    // `DeviceController` owns the auto-reconnect flag and the backoff ladder
+    // and depends on the session rather than the other way round, so the
+    // audio self-test's "connect to my saved device" is wired here.
+    _session.ensureSavedDeviceConnection = _device.scanAndConnectToSavedDevice;
+
+    unawaited(_bootstrap());
+  }
+
+  Future<void> _bootstrap() async {
+    // Nothing is recording yet, so any foreground service still up belongs to
+    // a previous process that did not shut down cleanly. Reap it, otherwise a
+    // notification claiming to record would survive with no session behind
+    // it. Awaited on purpose: it has to finish before the device-state
+    // listener `_device.init()` wires up can start a session, or the reap
+    // could take that session's service down instead.
+    await _session.reapStaleBackgroundService();
+
+    try {
+      // Connection-state + button subscriptions, then the first reconnect
+      // schedule.
+      await _device.init();
+
+      // Load saved conversations, memories, and tasks
+      await _library.loadConversations();
+      await _library.loadMemories();
+      await _library.loadTasks();
+
+      // New in LO-34: chat history is persisted.
+      await _chat.load();
+
+      // Deliberately after the loads: the finalization queue lives entirely
+      // in the database, so starting it before storage has proven usable
+      // would only arm a timer with nothing to drain. Anything left over
+      // from a previous process (killed mid-retry, or queued while offline)
+      // is picked up by this first drain. See `SessionController.init()`.
+      await _session.init();
+    } catch (e) {
+      debugPrint('App init error: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    // The session's teardown closes the audio transport, which reaches back
+    // into the device manager (via `_device.dispose()`), so it must go down
+    // first.
+    _session.dispose();
+    _device.dispose();
+    _chat.dispose();
+    _library.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => AppProvider(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<LibraryController>.value(value: _library),
+        ChangeNotifierProvider<ChatController>.value(value: _chat),
+        ChangeNotifierProvider<SessionController>.value(value: _session),
+        ChangeNotifierProvider<DeviceController>.value(value: _device),
+      ],
       child: MaterialApp(
         title: 'LibreOmi',
         debugShowCheckedModeBanner: false,
@@ -159,9 +247,9 @@ class ListeningOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<AppProvider>(
-      builder: (context, provider, child) {
-        if (!provider.isHoldToAskActive) return const SizedBox.shrink();
+    return Consumer<SessionController>(
+      builder: (context, session, child) {
+        if (!session.isHoldToAskActive) return const SizedBox.shrink();
 
         return Material(
           color: Colors.black.withOpacity(0.7),

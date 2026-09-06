@@ -1,7 +1,7 @@
 /// Memories page - displays extracted facts from conversations
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/app_provider.dart';
+import '../controllers/library_controller.dart';
 
 class MemoriesPage extends StatelessWidget {
   const MemoriesPage({super.key});
@@ -14,7 +14,7 @@ class MemoriesPage extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Memories'),
         actions: [
-          Consumer<AppProvider>(
+          Consumer<LibraryController>(
             builder: (context, provider, _) => provider.memories.isNotEmpty
                 ? IconButton(
                     icon: const Icon(Icons.refresh),
@@ -25,7 +25,7 @@ class MemoriesPage extends StatelessWidget {
           ),
         ],
       ),
-      body: Consumer<AppProvider>(
+      body: Consumer<LibraryController>(
         builder: (context, provider, _) {
           if (provider.memories.isEmpty) {
             return _buildEmptyState(theme);
@@ -86,7 +86,7 @@ class MemoriesPage extends StatelessWidget {
     );
   }
 
-  Widget _buildMemoriesList(BuildContext context, AppProvider provider, ThemeData theme) {
+  Widget _buildMemoriesList(BuildContext context, LibraryController provider, ThemeData theme) {
     final memories = provider.memories;
     
     return ListView.builder(
@@ -183,7 +183,7 @@ class MemoriesPage extends StatelessWidget {
     }
   }
 
-  void _confirmDelete(BuildContext context, AppProvider provider, String memoryId) {
+  void _confirmDelete(BuildContext context, LibraryController provider, String memoryId) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -207,7 +207,7 @@ class MemoriesPage extends StatelessWidget {
     );
   }
 
-  void _showEditDialog(BuildContext context, AppProvider provider, String memoryId, String currentContent) {
+  void _showEditDialog(BuildContext context, LibraryController provider, String memoryId, String currentContent) {
     final controller = TextEditingController(text: currentContent);
     
     showDialog(

@@ -2,10 +2,10 @@
 /// apply insights) happens, for both the live recording path and the
 /// SD-card import path (LO-33, `docs/03-architecture.md` section 4).
 ///
-/// Before this class, `AppProvider._saveCurrentConversation` (live path) and
-/// `AppProvider.processLocalAudioFile` (SD-card path) each persisted a
-/// conversation and queued its summarisation inline, and
-/// `AppProvider._applyFinalizationResult` wrote a finished summarisation back
+/// Before this class, the pre-LO-33 monolith's `_saveCurrentConversation`
+/// (live path) and `processLocalAudioFile` (SD-card path) each persisted a
+/// conversation and queued its summarisation inline, and its
+/// `_applyFinalizationResult` wrote a finished summarisation back
 /// into storage. This class is exactly that behaviour, extracted so both
 /// call sites and the retry queue (`services/finalization_queue.dart`) share
 /// one implementation instead of drifting apart.
@@ -45,7 +45,7 @@ typedef ScheduleReminder = Future<void> Function({
 
 /// Persists conversations and applies their finalization results
 /// (title/summary/memories/tasks), replacing the duplicated logic that used
-/// to live inline in `AppProvider`.
+/// to live inline in the pre-LO-33 monolith.
 class ConversationFinalizer {
   ConversationFinalizer({
     required FinalizationDatabase database,
