@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libreomi/audio/audio_source.dart';
 import 'package:libreomi/models/conversation.dart';
 import 'package:libreomi/transcription/isolate_channel.dart';
+import 'package:libreomi/transcription/model_catalog.dart';
+import 'package:libreomi/transcription/model_store.dart';
 import 'package:libreomi/transcription/sherpa_streaming.dart';
 import 'package:libreomi/transcription/sherpa_worker.dart';
 
@@ -191,6 +194,29 @@ void main() {
     test('stop() without start() is safe', () async {
       await transcriber.stop();
       expect(fake.stopCalls, 0);
+    });
+
+    test('with no modelDir, an uninstalled model fails start and is reported',
+        () async {
+      final support = Directory.systemTemp.createTempSync('sherpa-store-test');
+      addTearDown(() => support.deleteSync(recursive: true));
+
+      fake = _FakeWorkerClient();
+      final t = SherpaStreamingTranscriber(
+        modelStore: ModelStore(supportDirectory: () async => support),
+        workerClient: fake,
+      );
+      final errors = <String>[];
+      t.errors.listen(errors.add);
+
+      await expectLater(
+        t.start(),
+        throwsA(isA<ModelNotInstalledException>()),
+      );
+      // The worker is never spawned when there is no model to load.
+      expect(fake.startedWith, isNull);
+      expect(errors, hasLength(1));
+      expect(errors.single, contains(ModelCatalog.defaultStreaming.displayName));
     });
 
     test('double stop() is safe', () async {

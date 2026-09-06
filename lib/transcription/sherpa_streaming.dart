@@ -10,22 +10,13 @@ library;
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:path_provider/path_provider.dart';
-
 import '../audio/audio_source.dart';
 import '../models/conversation.dart';
 import 'isolate_channel.dart';
+import 'model_catalog.dart';
+import 'model_store.dart';
 import 'sherpa_worker.dart';
 import 'transcriber.dart';
-
-/// Model the upstream service downloaded to, and the layout the default
-/// [SherpaWorkerConfig] file names describe.
-///
-/// Transitional: model download, catalogue and on-disk layout move to
-/// `model_store.dart` (LO-40), which will pass `modelDir` in explicitly and
-/// let this constant and the `path_provider` import go away.
-const String _defaultModelName =
-    'sherpa-onnx-streaming-zipformer-en-20M-2023-02-17';
 
 /// Always consumes raw PCM16: sherpa never sees Opus, because the Omi path
 /// decodes Opus to PCM before handing audio to a transcriber.
@@ -33,16 +24,23 @@ class SherpaStreamingTranscriber implements StreamingTranscriber {
   SherpaStreamingTranscriber({
     String? modelDir,
     int numThreads = 2,
+    ModelStore? modelStore,
     SherpaWorkerClient? workerClient,
   })  : _modelDir = modelDir,
         _numThreads = numThreads,
+        _modelStore = modelStore,
         _client = workerClient ?? IsolateSherpaWorkerClient();
 
-  /// Where the model files live. Null means the upstream location under the
-  /// application documents directory, resolved on [start].
+  /// Where the model files live. Null means "wherever the [ModelStore]
+  /// installed [ModelCatalog.defaultStreaming]", resolved on [start].
   final String? _modelDir;
 
   final int _numThreads;
+
+  /// Only consulted when [_modelDir] is null. Injectable so a test never
+  /// touches `path_provider`.
+  final ModelStore? _modelStore;
+
   final SherpaWorkerClient _client;
 
   StreamSubscription<Object?>? _events;
@@ -68,8 +66,20 @@ class SherpaStreamingTranscriber implements StreamingTranscriber {
     if (_started || _stopped) return;
     _started = true;
 
+    final String modelDir;
+    try {
+      modelDir = _modelDir ??
+          await (_modelStore ?? ModelStore())
+              .requireInstalledDir(ModelCatalog.defaultStreaming);
+    } catch (e) {
+      // ModelNotInstalledException's message names the screen that fixes it,
+      // so it is worth surfacing verbatim.
+      _reportError('$e');
+      rethrow;
+    }
+
     final config = SherpaWorkerConfig(
-      modelDir: _modelDir ?? await _defaultModelDir(),
+      modelDir: modelDir,
       numThreads: _numThreads,
     );
 
@@ -131,10 +141,5 @@ class SherpaStreamingTranscriber implements StreamingTranscriber {
 
   void _reportError(String message) {
     if (!_errorsController.isClosed) _errorsController.add(message);
-  }
-
-  static Future<String> _defaultModelDir() async {
-    final appDir = await getApplicationDocumentsDirectory();
-    return '${appDir.path}/sherpa_models/$_defaultModelName';
   }
 }

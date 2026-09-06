@@ -111,10 +111,10 @@ Transitional exception (LO-32, M3 wave A): `audio/`, `transcription/` and
 `models/conversation.dart` for `TranscriptSegment` until the models move. The
 imports disappear as §6's migration moves each service into its module.
 `transcription/sherpa_streaming.dart` is the first one out: LO-41 rewrote it on
-top of `sherpa_worker.dart` and it no longer imports `services/sherpa_service.dart`.
-It does import `path_provider` — also transitional — to resolve the default model
-directory when the caller passes no `modelDir`; LO-40's `model_store.dart` takes
-that over and the import goes with it.
+top of `sherpa_worker.dart`, so it no longer imports `services/sherpa_service.dart`,
+and it reaches no plugin of its own — a caller-supplied `modelDir` wins, and
+otherwise LO-40's `ModelStore` resolves where `ModelCatalog.defaultStreaming` is
+installed.
 
 Migration status (LO-35, M3 wave B): `data/` exists with `db.dart` (schema v5) and
 five repositories, each an instance class taking an already-open `Database` so the
@@ -380,7 +380,7 @@ Not in scope for v1: boot receiver, companion-device pairing, native Kotlin serv
 | `services/opus_decoder_service.dart` | LO-32 wrapped it as `audio/opus_decoder.dart`; the service still holds the `opus_flutter` code until it moves. |
 | `services/mic_service.dart` | LO-32 put `audio/phone_mic_source.dart` in front of it behind `AudioSource` (via `audio/mic_recorder.dart`); the recorder itself still lives in `services/`. |
 | `services/deepgram_service.dart` | LO-32 wrapped it as `transcription/deepgram_streaming.dart` behind `StreamingTranscriber`. Still to move: the service body, plus fix usage accounting, make the model configurable, add `deepgram_prerecorded.dart`. |
-| `services/sherpa_service.dart`, `whisper_service.dart` | LO-32 wrapped them as `transcription/sherpa_streaming.dart` / `whisper_batch.dart`. LO-41 finished the sherpa side: the decode loop now runs in `transcription/sherpa_worker.dart` on a worker isolate, segments carry wall-clock `startAt/endAt` and token-relative `startTime/endTime`, and `sherpa_service.dart` has no *streaming* caller left. It is still the file-transcription path (`SessionController._transcribeWithSherpa`, for a local audio file) and still owns the model download, so it goes away once LO-40 has moved the download into `model_store.dart` and M5 has put `FileTranscriber` in front of the file path. Still to move: `whisper_service.dart`'s body, model download, VAD for whisper, and whisper's decode into an isolate. |
+| `services/sherpa_service.dart`, `whisper_service.dart` | LO-32 wrapped them as `transcription/sherpa_streaming.dart` / `whisper_batch.dart`. LO-41 finished the sherpa side: the decode loop now runs in `transcription/sherpa_worker.dart` on a worker isolate, segments carry wall-clock `startAt/endAt` and token-relative `startTime/endTime`, and `sherpa_service.dart` has no *streaming* caller left — LO-40 took its model download away and LO-41 its decode loop, leaving only the file-transcription path (`SessionController._transcribeWithSherpa`), so it goes away once M5 puts `FileTranscriber` in front of that. Still to move: `whisper_service.dart`'s body, VAD for whisper, and whisper's decode into an isolate. |
 | `services/openai_service.dart` | LO-32 wrapped it in `intelligence/openai_client.dart` behind `LlmClient` with typed `ConversationInsights` and retryable/permanent errors; the HTTP service itself still lives in `services/` until the base-URL setting lands. |
 | `services/database_service.dart`, `models/` | LO-35 split the SQL into `data/` repos behind an unchanged `DatabaseService` facade; schema v5 adds `tasks.notification_id` (backfilled with the pre-v5 `created_at & 0x7fffffff` derivation) and puts `chat_messages` on the migration path so chat is persisted. `start_at/end_at` on segments live in the transcript JSON, so they needed no table change. LO-34 moved every production caller onto the repositories, leaving the facade with test-only callers. Still to do: move the models to `core/`, and delete the facade once its two test files are rewritten. |
 | `services/settings_service.dart` | Copy → `data/settings_repo.dart`; keys move to secure storage with one-time migration. |
