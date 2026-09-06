@@ -37,10 +37,12 @@ lib/
     openai_client.dart          OpenAI + any OpenAI-compatible base URL
     prompts.dart
   data/
-    db.dart                     sqflite open/migrate (schema v3 → v4)
+    db.dart                     sqflite open/migrate (schema v5)
     conversation_repo.dart
     memory_repo.dart
     task_repo.dart
+    chat_repo.dart              persisted AI chat history
+    finalization_repo.dart      `pending_finalizations` table access (no retry policy)
     settings_repo.dart          SharedPreferences (non-secret) + flutter_secure_storage (keys)
     export_import.dart          JSON export / import
   session/
@@ -75,6 +77,28 @@ Transitional exception (LO-32, M3 wave A): `audio/`, `transcription/` and
 `services/*_service.dart` classes they wrap, and `transcription/` imports
 `models/conversation.dart` for `TranscriptSegment` until the models move. The
 imports disappear as §6's migration moves each service into its module.
+
+Migration status (LO-35, M3 wave B): `data/` exists with `db.dart` (schema v5) and
+five repositories, each an instance class taking an already-open `Database` so the
+tests can drive it through `sqflite_common_ffi`. `services/database_service.dart`
+remains as a static **facade** whose methods forward to those repositories: LO-34
+rewrites the callers (`providers/app_provider.dart`, `pages/*`) onto the repositories
+directly, and the facade is deleted with the provider. Three consequences of that split
+are worth knowing:
+
+- `services/finalization_queue.dart` still owns its own SQL and its own
+  `PendingFinalization` type. `data/finalization_repo.dart` is the policy-free table
+  access it moves onto in LO-23's follow-up; until then the repository has tests but
+  no production caller, which is deliberate rather than an oversight.
+- `core/ids.dart` gained `fallbackNotificationId`, the `created_at & 0x7fffffff`
+  derivation that `tasks.notification_id` is seeded with. Both `data/task_repo.dart`
+  and `services/notification_ids.dart` need it and neither may depend on the other,
+  so it sits in the one layer both are allowed to import.
+- The data models (`Conversation`, `TranscriptSegment`, `Memory`, `Task`,
+  `ChatMessage`) are still in `lib/models/conversation.dart`. LO-30 deferred the move
+  to `core/` to LO-34/LO-35; LO-35 defers it again to LO-34, because moving twenty-odd
+  importers collides with the concurrent LO-31 work on `app_provider.dart` and the
+  pages. The repositories import `models/` in the meantime.
 
 ## 2. Key interfaces
 
@@ -228,9 +252,9 @@ Not in scope for v1: boot receiver, companion-device pairing, native Kotlin serv
 | `services/deepgram_service.dart` | LO-32 wrapped it as `transcription/deepgram_streaming.dart` behind `StreamingTranscriber`. Still to move: the service body, plus fix usage accounting, make the model configurable, add `deepgram_prerecorded.dart`. |
 | `services/sherpa_service.dart`, `whisper_service.dart` | LO-32 wrapped them as `transcription/sherpa_streaming.dart` / `whisper_batch.dart`. Still to move: the service bodies, extract model download into `model_store.dart`, add timestamps, add VAD to whisper, move decode into an isolate (M4). |
 | `services/openai_service.dart` | LO-32 wrapped it in `intelligence/openai_client.dart` behind `LlmClient` with typed `ConversationInsights` and retryable/permanent errors; the HTTP service itself still lives in `services/` until the base-URL setting lands. |
-| `services/database_service.dart`, `models/` | Copy → `data/`, split into repos; schema v4 adds `start_at/end_at` on segments (stored in transcript JSON, no table change) and `chat_messages` persistence. |
+| `services/database_service.dart`, `models/` | LO-35 split the SQL into `data/` repos behind an unchanged `DatabaseService` facade; schema v5 adds `tasks.notification_id` (backfilled with the pre-v5 `created_at & 0x7fffffff` derivation) and puts `chat_messages` on the migration path so chat is persisted. `start_at/end_at` on segments live in the transcript JSON, so they needed no table change. Still to do: move the models to `core/` and delete the facade with `AppProvider` (LO-34). |
 | `services/settings_service.dart` | Copy → `data/settings_repo.dart`; keys move to secure storage with one-time migration. |
-| `services/notification_service.dart` | Copy → `platform/notifications.dart`; stable numeric IDs from a DB column; Android res added. |
+| `services/notification_service.dart` | Copy → `platform/notifications.dart`; stable numeric IDs now come from the `tasks.notification_id` column (LO-35), read via `services/notification_ids.dart`; Android res added. |
 | `services/sdcard_sync_service.dart` | Copy → `device/omi_storage.dart` (transfer) + `session/sdcard_import.dart` (post-processing via `FileTranscriber` + `ConversationFinalizer`). |
 | `providers/app_provider.dart` | Dissolve into `session/*` + three thin `ChangeNotifier`s for UI: `DeviceController`, `SessionController`, `LibraryController` (+ `ChatController`). |
 | `pages/*` | Port unchanged in M1; re-point to the new controllers in M3. |

@@ -237,11 +237,11 @@ Omi → Android 폰 → Deepgram → 화면에 자막. 앱은 포그라운드 �
 
 **완료 기준** 모든 페이지 동작, `AppProvider` 파일 없음.
 
-### LO-35 · 리포지토리 분리 + 스키마 v4 마이그레이션
+### LO-35 · 리포지토리 분리 + 스키마 v5 마이그레이션
 라벨: area:data, size:S
-**작업** `tasks.notification_id INTEGER`, `chat_messages` 영속화, v3→v4 마이그레이션 테스트(`sqflite_common_ffi`).
+**작업** `lib/data/` 리포 분리(`DatabaseService` 는 파사드로 유지), `tasks.notification_id INTEGER`, `chat_messages` 영속화, v3→v4→v5 마이그레이션 테스트(`sqflite_common_ffi`).
 
-**완료 기준** v3 DB 업그레이드 시 데이터 보존.
+**완료 기준** v3 DB 업그레이드 시 데이터 보존과 `notification_id` 백필.
 
 ## M4 — Android 온디바이스 음성인식
 

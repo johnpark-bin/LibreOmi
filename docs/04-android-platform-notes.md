@@ -275,11 +275,14 @@ orphaned by a process that died without stopping it.
   real file in `res/raw/` or be removed. Remove for v1.
 - Channels: `session` (low, persistent FGS), `ai_responses` (max), `task_reminders` (high),
   `device` (default: battery, disconnect).
-- Reminder IDs: add an integer `notification_id` column (autoincrement) to `tasks` instead
-  of `String.hashCode`. That column arrives with LO-35; until then LO-16 derives the id from
-  the persisted `created_at` in `lib/services/notification_ids.dart`, because `String.hashCode`
-  is not stable across restarts and a reminder scheduled before one could not be cancelled
-  after it.
+- Reminder IDs: `tasks.notification_id` (schema v5, LO-35) instead of `String.hashCode`,
+  which is not stable across restarts — a reminder scheduled before one could not be
+  cancelled after it. The column is not autoincrement: it is seeded, both by the v5 backfill
+  and by `TaskRepo.save`, with `created_at & 0x7fffffff` (`fallbackNotificationId` in
+  `lib/core/ids.dart`), which is the id LO-16 derived at call time before the column existed,
+  so reminders scheduled before the upgrade stay cancellable after it.
+  `lib/services/notification_ids.dart` reads the column and falls back to that derivation for
+  a task that has not been through the database.
 - Task reminders are scheduled inexact (`preciseAlarm: false`, `allowWhileIdle: true`) so the
   app needs neither `SCHEDULE_EXACT_ALARM` nor `USE_FULL_SCREEN_INTENT`. Delivery may lag the
   due time by minutes; an exact-alarm opt-in is a follow-up.
