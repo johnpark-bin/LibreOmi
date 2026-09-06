@@ -1,0 +1,8 @@
+# Test tags used in this repository. Declaring them here keeps package:test
+# from warning about unknown tags; it does not by itself change what runs.
+#
+# `network` marks a test that talks to a real server. Those tests also guard
+# themselves with an environment variable so a plain `flutter test` — the one
+# CI runs (docs/08-dev-workflow.md §2) — skips them without any extra flags.
+tags:
+  network:

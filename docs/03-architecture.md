@@ -38,6 +38,7 @@ lib/
     deepgram_prerecorded.dart   file transcription (SD-card)
     sherpa_streaming.dart       zipformer, runs in isolate
     whisper_batch.dart          offline whisper + Silero VAD, runs in isolate
+    model_catalog.dart          catalog of installable models: id, url, required files, sizes
     model_store.dart            model download / verify / delete, progress
   intelligence/
     llm_client.dart             abstract LlmClient (chat, summarize → ConversationInsights)
@@ -90,6 +91,17 @@ mode, holds the microphone permission and the foreground service, and delegates 
 `RecordingSession`. `ConversationFinalizer` still takes a `Future<Database>` and builds the
 three repos per call, because the process-wide database is opened lazily; injecting the
 repos themselves is still open.
+
+Migration status (LO-40, M4 wave A): `transcription/model_store.dart` and
+`model_catalog.dart` now exist and own model download, verification and delete.
+`services/sherpa_service.dart` and `services/whisper_service.dart` no longer download
+anything: each takes an optional model directory and, when none is injected, falls back to
+resolving the installed directory from a `ModelStore` itself. That last fallback makes the
+transitional arrow below temporarily bidirectional — `transcription/` adapters wrap the two
+services, and those services now import `transcription/model_store.dart` back. It
+disappears with the same migration: once the services move under `transcription/`, only one
+direction is left. Taking a required directory instead would have removed it today, but at
+the cost of editing the two adapter files LO-41 is rewriting in parallel.
 
 Transitional exception (LO-32, M3 wave A): `audio/`, `transcription/` and
 `intelligence/` were introduced as adapters, so they still import the upstream

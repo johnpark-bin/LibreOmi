@@ -7,6 +7,12 @@
 
   Both transfer types are spelled out because they are independent: omitting a
   section would leave that path backing up everything.
+
+  `path="models"` (LO-40) excludes `getApplicationSupportDirectory()/models/`,
+  where `transcription/model_store.dart` installs on-device speech models
+  (`file` domain: `PathUtils.getFilesDir()` on Android). Those are ~90-290 MB of
+  re-downloadable weights per model; backing them up would blow the backup
+  quota for data a tap in Settings → Models fetches again.
 -->
 <data-extraction-rules>
     <cloud-backup>
@@ -15,6 +21,7 @@
         <exclude domain="sharedpref" path="FlutterSecureStorageConfiguration.xml"/>
         <exclude domain="sharedpref" path="FlutterSecureStorageConfiguration:FlutterSecureStorage.xml"/>
         <exclude domain="sharedpref" path="FlutterSharedPreferences.xml"/>
+        <exclude domain="file" path="models"/>
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="FlutterSecureStorage.xml"/>
@@ -22,5 +29,6 @@
         <exclude domain="sharedpref" path="FlutterSecureStorageConfiguration.xml"/>
         <exclude domain="sharedpref" path="FlutterSecureStorageConfiguration:FlutterSecureStorage.xml"/>
         <exclude domain="sharedpref" path="FlutterSharedPreferences.xml"/>
+        <exclude domain="file" path="models"/>
     </device-transfer>
 </data-extraction-rules>

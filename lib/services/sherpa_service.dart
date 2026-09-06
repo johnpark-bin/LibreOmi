@@ -1,123 +1,62 @@
 /// Sherpa-ONNX transcription service with real-time streaming ASR
-/// Using streaming-zipformer-en-20M model for English
+/// Using streaming-zipformer-en-20M model for English.
+///
+/// Model files are no longer downloaded here: they come from the
+/// `ModelStore` in `transcription/model_store.dart`, which the models page
+/// installs into ahead of time (see `transcription/model_catalog.dart` for
+/// which model this service uses).
+library;
+
 import 'dart:async';
-import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
-import 'package:path_provider/path_provider.dart';
-import 'package:http/http.dart' as http;
-import 'package:archive/archive.dart';
 import '../models/conversation.dart';
+import '../transcription/model_catalog.dart';
+import '../transcription/model_store.dart';
 
 class SherpaService {
   sherpa.OnlineRecognizer? _recognizer;
   sherpa.OnlineStream? _stream;
   bool _isInitialized = false;
   bool _isProcessing = false;
-  
+
   final Function(List<TranscriptSegment>)? onTranscript;
   final Function(String)? onError;
-  
+
+  /// Overrides model resolution for tests. When null, [initialize] asks
+  /// [modelStore] (or a fresh [ModelStore]) for the installed directory.
+  final String? modelDir;
+  final ModelStore? modelStore;
+
   // Audio format settings
   static const int sampleRate = 16000;
-  
-  // Model info
-  static const String modelName = 'sherpa-onnx-streaming-zipformer-en-20M-2023-02-17';
-  static const String modelUrl = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/$modelName.tar.bz2';
-  
+
   // State for buffering
   String _lastText = '';
   Timer? _emitTimer;
-  
+
   SherpaService({
     this.onTranscript,
     this.onError,
+    this.modelDir,
+    this.modelStore,
   });
 
   bool get isInitialized => _isInitialized;
   bool get isProcessing => _isProcessing;
 
-  /// Get the model directory path
-  Future<String> _getModelDir() async {
-    final appDir = await getApplicationDocumentsDirectory();
-    return '${appDir.path}/sherpa_models/$modelName';
-  }
-
-  /// Check if model is downloaded
-  Future<bool> _isModelDownloaded() async {
-    final modelDir = await _getModelDir();
-    final encoderFile = File('$modelDir/encoder-epoch-99-avg-1.onnx');
-    return encoderFile.existsSync();
-  }
-
-  /// Download and extract the model
-  Future<void> _downloadModel() async {
-    debugPrint('Downloading Sherpa-ONNX model...');
-    
-    try {
-      final modelDir = await _getModelDir();
-      final modelDirPath = Directory(modelDir);
-      if (!modelDirPath.existsSync()) {
-        modelDirPath.createSync(recursive: true);
-      }
-      
-      // Download tar.bz2 file
-      final response = await http.get(Uri.parse(modelUrl));
-      if (response.statusCode != 200) {
-        throw Exception('Failed to download model: ${response.statusCode}');
-      }
-      
-      debugPrint('Model downloaded, extracting...');
-      
-      // Save and extract
-      final archivePath = '$modelDir/model.tar.bz2';
-      await File(archivePath).writeAsBytes(response.bodyBytes);
-      
-      // Extract using bzip2 + tar
-      final bytes = await File(archivePath).readAsBytes();
-      final bz2Decoded = BZip2Decoder().decodeBytes(bytes);
-      final archive = TarDecoder().decodeBytes(bz2Decoded);
-      
-      for (final file in archive) {
-        final filename = file.name;
-        if (file.isFile) {
-          // Remove the top-level directory from path
-          final relativePath = filename.split('/').skip(1).join('/');
-          if (relativePath.isNotEmpty) {
-            final outFile = File('$modelDir/$relativePath');
-            outFile.createSync(recursive: true);
-            outFile.writeAsBytesSync(file.content as List<int>);
-          }
-        }
-      }
-      
-      // Cleanup archive
-      await File(archivePath).delete();
-      debugPrint('Model extraction complete');
-      
-    } catch (e) {
-      debugPrint('Model download error: $e');
-      rethrow;
-    }
-  }
-
   /// Initialize Sherpa-ONNX with streaming ASR model
   Future<void> initialize() async {
     if (_isInitialized) return;
-    
+
     try {
       debugPrint('Initializing Sherpa-ONNX...');
-      
-      // Check if model is downloaded
-      if (!await _isModelDownloaded()) {
-        debugPrint('Model not found, downloading...');
-        await _downloadModel();
-      }
-      
-      final modelDir = await _getModelDir();
+
+      final modelDir = this.modelDir ??
+          await (modelStore ?? ModelStore())
+              .requireInstalledDir(ModelCatalog.defaultStreaming);
       debugPrint('Using model from: $modelDir');
-      
+
       // Initialize sherpa-onnx bindings first
       sherpa.initBindings();
       
@@ -146,6 +85,10 @@ class SherpaService {
       _isInitialized = true;
       debugPrint('Sherpa-ONNX initialized successfully');
       
+    } on ModelNotInstalledException catch (e) {
+      debugPrint('Failed to initialize Sherpa-ONNX: ${e.message}');
+      onError?.call(e.message);
+      rethrow;
     } catch (e) {
       debugPrint('Failed to initialize Sherpa-ONNX: $e');
       onError?.call('Failed to initialize Sherpa-ONNX: $e');
