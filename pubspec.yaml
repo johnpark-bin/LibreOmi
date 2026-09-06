@@ -55,6 +55,14 @@ dependencies:
   # OpenAI API
   http: ^1.2.0
 
+  # Network reachability for the finalization retry queue (LO-23). Only used to
+  # kick a drain when connectivity comes back; the queue never trusts it as
+  # proof that the API is reachable.
+  # Exact pin: no new `^` ranges on native plugins (docs/08 §3). 7.x tracks the
+  # app's own `compileSdk` (36) instead of pinning its own, and its AGP/Gradle/
+  # Kotlin floors (8.12.1 / 8.13 / 2.2.0) are below this project's.
+  connectivity_plus: 7.3.1
+
   # State management
   provider: ^6.1.0
 
@@ -97,6 +105,10 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.14.4
+
+  # Runs the real SQLite engine on the host so database and migration tests
+  # need no device (docs/08 §6). Exact pin, like the runtime native plugins.
+  sqflite_common_ffi: 2.4.2+1
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

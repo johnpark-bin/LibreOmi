@@ -59,7 +59,7 @@ Goal: dissolve `AppProvider` into the architecture in `03-architecture.md` so la
 | LO-32 | `AudioSource`, `StreamingTranscriber`, `LlmClient` interfaces; existing services adapted | M | no behaviour change on device |
 | LO-33 | `RecordingSession` + `ButtonHandler` + `SilenceDetector` state machines with unit tests; single `ConversationFinalizer` (removes duplication) | L | hold-to-ask and double-tap pass tests + device smoke |
 | LO-34 | Split UI controllers (`DeviceController`, `SessionController`, `LibraryController`, `ChatController`); pages re-pointed | M | all pages work; `AppProvider` deleted |
-| LO-35 | Repos + schema v4 (`notification_id` column, persisted chat) with migration test | S | upgrade from v3 DB keeps data |
+| LO-35 | Repos + schema v5 (`notification_id` column, persisted chat) with migration test | S | upgrade from v4 DB keeps data |
 
 ## M4 — On-device transcription on Android
 

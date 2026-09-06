@@ -12,6 +12,7 @@ import '../services/ble/reconnect_backoff.dart';
 import '../services/ble_service.dart';
 import '../services/database_service.dart';
 import '../services/deepgram_service.dart';
+import '../services/finalization_queue.dart';
 import '../services/openai_service.dart';
 import '../services/settings_service.dart';
 import '../services/sherpa_service.dart';
@@ -34,6 +35,12 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   /// foreground service on Android, inert everywhere else. Injectable so a
   /// test can pass a `FakeBackgroundRunner`.
   final BackgroundRunner _backgroundRunner;
+
+  /// Holds summarisation requests that could not run yet and retries them when
+  /// the network comes back (LO-23, `docs/06-roadmap.md`). A conversation is
+  /// always persisted before its request is queued, so nothing is lost when the
+  /// phone is offline or dozing.
+  late final FinalizationQueue _finalizationQueue;
 
   /// Rate-limits rewrites of the persistent notification so a burst of
   /// transcript segments does not produce a burst of platform calls.
@@ -142,9 +149,40 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   StreamSubscription? _audioSubscription;
   StreamSubscription? _buttonSubscription;
 
-  AppProvider({BackgroundRunner? backgroundRunner})
+  AppProvider({BackgroundRunner? backgroundRunner, FinalizationQueue? finalizationQueue})
       : _backgroundRunner = backgroundRunner ?? createBackgroundRunner() {
+    _finalizationQueue = finalizationQueue ??
+        FinalizationQueue(
+          summarizer: _summarizeForQueue,
+          applier: _applyFinalizationResult,
+        );
     _init();
+  }
+
+  /// The queue's summariser. Built per call because the key and the model can
+  /// change in settings between a conversation being queued and being retried.
+  ///
+  /// Deliberately a local, not the shared [_openaiService] field: a drain runs
+  /// in the background and would otherwise be able to swap the instance out
+  /// from under a chat request that is between its own assignment and its use.
+  Future<Map<String, dynamic>> _summarizeForQueue(String transcript) {
+    final client = OpenAIService(
+      apiKey: SettingsService.openaiApiKey,
+      model: SettingsService.openaiModel,
+    );
+    return client.summarizeConversation(transcript);
+  }
+
+  /// Kicks the queue without letting its failure escape into the app zone.
+  /// `drainOnce` can throw before its first await (opening the database), so a
+  /// bare `unawaited` here would become an unhandled async error.
+  void _drainFinalizationQueue() {
+    unawaited(
+      _finalizationQueue.drainOnce().catchError((Object error) {
+        debugPrint('Finalization drain failed: $error');
+        return 0;
+      }),
+    );
   }
 
   Future<void> _init() async {
@@ -232,6 +270,14 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
       await loadConversations();
       await loadMemories();
       await loadTasks();
+
+      // Deliberately after the loads: the queue lives entirely in the
+      // database, so starting it before storage has proven usable would only
+      // arm a timer with nothing to drain. Anything left over from a previous
+      // process (killed mid-retry, or queued while offline) is picked up by
+      // this first drain.
+      _finalizationQueue.start();
+      _drainFinalizationQueue();
     } catch (e) {
       debugPrint('AppProvider init error: $e');
     }
@@ -760,7 +806,13 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     _silenceTimer = null;
   }
 
-  /// Save current conversation and start a new one
+  /// Save current conversation and start a new one.
+  ///
+  /// The conversation is written to the database with a placeholder title
+  /// *before* any network call, and the summarisation is handed to
+  /// [_finalizationQueue] (LO-23). A conversation recorded in a tunnel is
+  /// therefore never lost; its title and summary fill in later, so History can
+  /// show a placeholder row for a while.
   Future<void> _saveCurrentConversation() async {
     if (_currentConversation == null || _liveSegments.isEmpty) {
       _startNewConversation();
@@ -775,104 +827,137 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     _startNewConversation();
     notifyListeners();
 
-    // Generate summary and extract memories with OpenAI (in background)
-    if (SettingsService.openaiApiKey.isNotEmpty) {
-      _openaiService = OpenAIService(
-        apiKey: SettingsService.openaiApiKey,
-        model: SettingsService.openaiModel,
-      );
+    conversationToSave.title =
+        'Conversation ${conversationToSave.createdAt.toString().substring(0, 16)}';
 
-      try {
-        final result = await _openaiService!.summarizeConversation(
-          conversationToSave.transcript,
-        );
-        conversationToSave.title = result['title'] ?? 'Untitled';
-        conversationToSave.summary = result['summary'] ?? '';
-
-        // Save extracted memories (with deduplication)
-        final memories = result['memories'] as List<String>? ?? [];
-        for (final memoryContent in memories) {
-          if (memoryContent.trim().isNotEmpty) {
-            final hasSimilar = await DatabaseService.hasSimilarMemory(
-              memoryContent,
-            );
-            if (!hasSimilar) {
-              final memory = Memory(
-                id: const Uuid().v4(),
-                content: memoryContent.trim(),
-                category: 'fact',
-                createdAt: DateTime.now(),
-                sourceConversationId: conversationToSave.id,
-              );
-              await DatabaseService.saveMemory(memory);
-              debugPrint('Saved memory: ${memory.content}');
-            } else {
-              debugPrint('Skipped duplicate memory: $memoryContent');
-            }
-          }
-        }
-        await loadMemories();
-
-        // Save extracted tasks (with deduplication)
-        final tasks = result['tasks'] as List? ?? [];
-        for (final taskData in tasks) {
-          if (taskData is Map && taskData['title'] != null) {
-            final title = taskData['title'].toString().trim();
-            if (title.isNotEmpty) {
-              final hasSimilar = await DatabaseService.hasSimilarTask(title);
-              if (!hasSimilar) {
-                DateTime? dueDate;
-                if (taskData['due_date'] != null) {
-                  try {
-                    dueDate = DateTime.parse(taskData['due_date'].toString());
-                  } catch (e) {
-                    debugPrint(
-                      'Failed to parse due date: ${taskData['due_date']}',
-                    );
-                  }
-                }
-                final task = Task(
-                  id: const Uuid().v4(),
-                  title: title,
-                  description: taskData['description']?.toString(),
-                  dueDate: dueDate,
-                  createdAt: DateTime.now(),
-                  sourceConversationId: conversationToSave.id,
-                );
-                await DatabaseService.saveTask(task);
-
-                // Schedule notification if due date is set
-                if (task.dueDate != null) {
-                  await NotificationService().scheduleTaskNotification(
-                    id: notificationIdForTask(task),
-                    title: task.title,
-                    dueDate: task.dueDate!,
-                  );
-                }
-
-                debugPrint('Saved task: ${task.title} (due: ${task.dueDate})');
-              } else {
-                debugPrint('Skipped duplicate task: $title');
-              }
-            }
-          }
-        }
-        await loadTasks();
-      } catch (e) {
-        debugPrint('Failed to summarize: $e');
-        conversationToSave.title =
-            'Conversation ${conversationToSave.createdAt.toString().substring(0, 16)}';
-      }
-    } else {
-      conversationToSave.title =
-          'Conversation ${conversationToSave.createdAt.toString().substring(0, 16)}';
-    }
-
-    // Save to database
     await DatabaseService.saveConversation(conversationToSave);
     await loadConversations();
 
+    await _enqueueFinalization(conversationToSave);
+
     debugPrint('Saved conversation: ${conversationToSave.title}');
+  }
+
+  /// Queues the summarisation of [conversation] and nudges the queue once so a
+  /// phone that is online does not wait for the next poll.
+  ///
+  /// Without an OpenAI key there is nothing to summarise, so the placeholder
+  /// title stays as the final one and no row is queued.
+  Future<void> _enqueueFinalization(Conversation conversation) async {
+    if (SettingsService.openaiApiKey.isEmpty) return;
+    if (conversation.transcript.trim().isEmpty) return;
+
+    try {
+      await _finalizationQueue.enqueue(
+        conversationId: conversation.id,
+        transcript: conversation.transcript,
+      );
+      // Fire and forget: if this attempt fails the queue keeps the row and
+      // retries it on the next connectivity event or poll.
+      _drainFinalizationQueue();
+    } catch (e) {
+      debugPrint('Failed to queue finalization: $e');
+    }
+  }
+
+  /// Writes a finished summarisation back into storage. Called by
+  /// [_finalizationQueue] once a request finally succeeds, which can be long
+  /// after the conversation itself was saved.
+  ///
+  /// This is the memory/task extraction both save paths used to run inline; it
+  /// only moved to one place inside this provider. Folding it (and this whole
+  /// method) into `session/conversation_finalizer.dart` is LO-33 in M3.
+  Future<void> _applyFinalizationResult(
+    String conversationId,
+    Map<String, dynamic> result,
+  ) async {
+    final conversation = await DatabaseService.getConversation(conversationId);
+    if (conversation == null) {
+      // Deleted while the request sat in the queue: nothing left to fill in.
+      debugPrint('Finalization result for a deleted conversation: $conversationId');
+      return;
+    }
+
+    final title = (result['title'] as String?)?.trim();
+    if (title != null && title.isNotEmpty) {
+      conversation.title = title;
+    }
+    conversation.summary = (result['summary'] as String?) ?? '';
+    await DatabaseService.saveConversation(conversation);
+
+    // Save extracted memories (with deduplication)
+    final memories = (result['memories'] as List?)?.cast<String>() ?? const <String>[];
+    for (final memoryContent in memories) {
+      if (memoryContent.trim().isNotEmpty) {
+        final hasSimilar = await DatabaseService.hasSimilarMemory(
+          memoryContent,
+        );
+        if (!hasSimilar) {
+          final memory = Memory(
+            id: const Uuid().v4(),
+            content: memoryContent.trim(),
+            category: 'fact',
+            createdAt: DateTime.now(),
+            sourceConversationId: conversation.id,
+          );
+          await DatabaseService.saveMemory(memory);
+          debugPrint('Saved memory: ${memory.content}');
+        } else {
+          debugPrint('Skipped duplicate memory: $memoryContent');
+        }
+      }
+    }
+
+    // Save extracted tasks (with deduplication)
+    final tasks = result['tasks'] as List? ?? const [];
+    for (final taskData in tasks) {
+      if (taskData is Map && taskData['title'] != null) {
+        final taskTitle = taskData['title'].toString().trim();
+        if (taskTitle.isNotEmpty) {
+          final hasSimilar = await DatabaseService.hasSimilarTask(taskTitle);
+          if (!hasSimilar) {
+            DateTime? dueDate;
+            if (taskData['due_date'] != null) {
+              try {
+                dueDate = DateTime.parse(taskData['due_date'].toString());
+              } catch (e) {
+                debugPrint(
+                  'Failed to parse due date: ${taskData['due_date']}',
+                );
+              }
+            }
+            final task = Task(
+              id: const Uuid().v4(),
+              title: taskTitle,
+              description: taskData['description']?.toString(),
+              dueDate: dueDate,
+              createdAt: DateTime.now(),
+              sourceConversationId: conversation.id,
+            );
+            await DatabaseService.saveTask(task);
+
+            // Schedule notification if due date is set
+            if (task.dueDate != null) {
+              await NotificationService().scheduleTaskNotification(
+                id: notificationIdForTask(task),
+                title: task.title,
+                dueDate: task.dueDate!,
+              );
+            }
+
+            debugPrint('Saved task: ${task.title} (due: ${task.dueDate})');
+          } else {
+            debugPrint('Skipped duplicate task: $taskTitle');
+          }
+        }
+      }
+    }
+
+    await loadConversations();
+    await loadMemories();
+    await loadTasks();
+
+    debugPrint('Finalized conversation: ${conversation.title}');
   }
 
   /// Manually save current conversation without waiting for silence
@@ -1200,78 +1285,13 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
         ],
       );
 
-      // Try to summarize with OpenAI
-      if (SettingsService.openaiApiKey.isNotEmpty) {
-        _openaiService = OpenAIService(
-          apiKey: SettingsService.openaiApiKey,
-          model: SettingsService.openaiModel,
-        );
-
-        try {
-          final result = await _openaiService!.summarizeConversation(
-            transcript,
-          );
-          conversation.title = result['title'] ?? 'SD Card Recording';
-          conversation.summary = result['summary'] ?? '';
-
-          // Extract memories
-          final memories = result['memories'] as List<String>? ?? [];
-          for (final memoryContent in memories) {
-            if (memoryContent.trim().isNotEmpty) {
-              final hasSimilar = await DatabaseService.hasSimilarMemory(
-                memoryContent,
-              );
-              if (!hasSimilar) {
-                final memory = Memory(
-                  id: const Uuid().v4(),
-                  content: memoryContent.trim(),
-                  category: 'fact',
-                  createdAt: DateTime.now(),
-                  sourceConversationId: conversation.id,
-                );
-                await DatabaseService.saveMemory(memory);
-              }
-            }
-          }
-          await loadMemories();
-
-          // Extract tasks
-          final tasks = result['tasks'] as List? ?? [];
-          for (final taskData in tasks) {
-            if (taskData is Map && taskData['title'] != null) {
-              final title = taskData['title'].toString().trim();
-              if (title.isNotEmpty) {
-                final hasSimilar = await DatabaseService.hasSimilarTask(title);
-                if (!hasSimilar) {
-                  DateTime? dueDate;
-                  if (taskData['due_date'] != null) {
-                    try {
-                      dueDate = DateTime.parse(taskData['due_date'].toString());
-                    } catch (e) {
-                      debugPrint('Failed to parse due date');
-                    }
-                  }
-                  final task = Task(
-                    id: const Uuid().v4(),
-                    title: title,
-                    description: taskData['description']?.toString(),
-                    dueDate: dueDate,
-                    createdAt: DateTime.now(),
-                    sourceConversationId: conversation.id,
-                  );
-                  await DatabaseService.saveTask(task);
-                }
-              }
-            }
-          }
-          await loadTasks();
-        } catch (e) {
-          debugPrint('Failed to summarize SD card recording: $e');
-        }
-      }
-
+      // Persist first, summarise later: an SD-card import can run while the
+      // phone is offline, and the recording must not depend on that call
+      // succeeding (LO-23).
       await DatabaseService.saveConversation(conversation);
       await loadConversations();
+
+      await _enqueueFinalization(conversation);
 
       debugPrint(
         'Saved SD card recording as conversation: ${conversation.title}',
@@ -1690,6 +1710,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     _silenceTimer?.cancel();
     _bleService.dispose();
     _deepgramService?.disconnect();
+    unawaited(_finalizationQueue.stop());
     // Do not leave a foreground service (and its notification) behind.
     unawaited(_backgroundRunner.stop());
     _audioPlayer.dispose();
