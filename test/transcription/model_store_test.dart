@@ -13,6 +13,21 @@ import 'package:libreomi/transcription/model_store.dart';
 /// never touch the network or a 120 MB archive. Shaped exactly like a real
 /// entry: everything nested under one top directory, only some of which the
 /// store is supposed to extract.
+/// A single-file entry, shaped like [ModelCatalog.sileroVad]: the URL is the
+/// model itself, there is no archive to unpack, and the one required file is
+/// the name it is stored under.
+const ModelSpec _singleFileSpec = ModelSpec(
+  id: 'test-vad',
+  kind: ModelKind.vad,
+  displayName: 'Test VAD',
+  url: 'https://example.invalid/test_vad.onnx',
+  archiveTopDir: '',
+  requiredFiles: ['test_vad.onnx'],
+  archiveBytes: 16,
+  installedBytes: 16,
+  languages: ['multi'],
+);
+
 const ModelSpec _spec = ModelSpec(
   id: 'test-model',
   kind: ModelKind.whisper,
@@ -179,6 +194,41 @@ void main() {
           ModelInstallPhase.done,
         ]),
       );
+    });
+
+    test('stores a single-file model under its required name', () async {
+      final body = List<int>.filled(16, 7);
+      final client = _FakeClient(body);
+      final store = buildStore(client);
+
+      final progress = await store.install(_singleFileSpec).toList();
+
+      expect(client.requestedUrls.single.toString(), _singleFileSpec.url);
+      expect(await store.isInstalled(_singleFileSpec), isTrue);
+      final installed = File('${support.path}/models/'
+          '${_singleFileSpec.id}/${_singleFileSpec.requiredFiles.single}');
+      expect(installed.existsSync(), isTrue);
+      expect(installed.readAsBytesSync(), body);
+      // The archive-shaped download name must not survive the install.
+      expect(
+        Directory('${support.path}/models/${_singleFileSpec.id}')
+            .listSync()
+            .map((e) => e.path.split(Platform.pathSeparator).last)
+            .toList(),
+        [_singleFileSpec.requiredFiles.single],
+      );
+      expect(progress.last.phase, ModelInstallPhase.done);
+    });
+
+    test('a single-file download of nothing fails without installing',
+        () async {
+      final store = buildStore(_FakeClient(const <int>[]));
+
+      await expectLater(
+        store.install(_singleFileSpec).toList(),
+        throwsA(isA<ModelInstallException>()),
+      );
+      expect(await store.isInstalled(_singleFileSpec), isFalse);
     });
 
     test('reports monotonic download progress that ends at the total',

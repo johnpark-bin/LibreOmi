@@ -15,18 +15,26 @@ enum ModelKind {
   /// sherpa-onnx offline Whisper (encoder/decoder + tokens).
   whisper,
 
-  /// Voice activity detection (Silero). No catalog entry yet: the VAD model
-  /// arrives with LO-42, which is what will need it.
+  /// Voice activity detection (Silero), used by the Whisper batch path to
+  /// cut audio at speech boundaries instead of on a fixed timer (LO-42).
   vad,
 }
 
 /// One installable model.
 ///
-/// [url] points at a `.tar.bz2` whose entries all sit under a single
-/// [archiveTopDir]; [requiredFiles] are paths *relative to that directory*.
-/// The store extracts exactly those and nothing else, which is why the
-/// installed size is far below the archive size — the upstream archives ship
-/// int8 copies of every weight plus `test_wavs/` that this app never opens.
+/// Two shapes, distinguished by [isSingleFile]:
+///
+/// * **Archive** (the default). [url] points at a `.tar.bz2` whose entries all
+///   sit under a single [archiveTopDir]; [requiredFiles] are paths *relative
+///   to that directory*. The store extracts exactly those and nothing else,
+///   which is why the installed size is far below the archive size — the
+///   upstream archives ship int8 copies of every weight plus `test_wavs/`
+///   that this app never opens.
+/// * **Single file** ([archiveTopDir] empty). [url] *is* the file, and
+///   [requiredFiles] holds the single name to save it under. k2-fsa publishes
+///   the Silero VAD weights as a bare `.onnx` release asset with no archive
+///   of any kind, so [ModelCatalog.sileroVad] can only be described this
+///   way.
 class ModelSpec {
   const ModelSpec({
     required this.id,
@@ -50,11 +58,16 @@ class ModelSpec {
   /// Shown in the models page.
   final String displayName;
 
-  /// Download location of the `.tar.bz2` archive.
+  /// Download location: the `.tar.bz2` archive, or — for a single-file spec
+  /// — the model file itself.
   final String url;
 
-  /// The single top-level directory every archive entry is nested under.
+  /// The single top-level directory every archive entry is nested under, or
+  /// the empty string for a single-file spec (see the class doc).
   final String archiveTopDir;
+
+  /// True when [url] is the model file itself rather than an archive.
+  bool get isSingleFile => archiveTopDir.isEmpty;
 
   /// Paths inside [archiveTopDir] that must exist after extraction, and the
   /// only ones extracted. Order is irrelevant.
@@ -88,16 +101,17 @@ class ModelSpec {
   /// which is out of scope here.
   final String? sha256;
 
-  /// Directory name the archive's files land in, relative to the models root.
+  /// Directory name the model's files land in, relative to the models root.
   String get directoryName => id;
 }
 
 /// The models shipped in the app's catalog.
 ///
-/// The three entries are the ones the current transcription paths already
+/// The three ASR entries are the ones the current transcription paths already
 /// expect by name (`services/sherpa_service.dart`,
-/// `services/whisper_service.dart`); file names and sizes were read off the
-/// upstream repositories rather than guessed.
+/// `services/whisper_service.dart`) and [sileroVad] is what the Whisper path
+/// segments with; file names and sizes were read off the upstream
+/// repositories rather than guessed.
 class ModelCatalog {
   const ModelCatalog._();
 
@@ -157,11 +171,36 @@ class ModelCatalog {
     languages: ['multi'],
   );
 
+  /// Silero voice activity detection, the model the Whisper batch path cuts
+  /// utterances with (LO-42).
+  ///
+  /// A bare `.onnx` release asset, not an archive: the `asr-models` release
+  /// publishes `silero_vad.onnx` on its own and no `silero_vad.tar.bz2`
+  /// exists, so this is a single-file spec ([ModelSpec.isSingleFile]).
+  /// [archiveBytes] and [installedBytes] are the same number and were read
+  /// off the asset itself rather than estimated.
+  static const ModelSpec sileroVad = ModelSpec(
+    id: 'silero-vad',
+    kind: ModelKind.vad,
+    displayName: 'Silero VAD',
+    url: '$_releaseBase/silero_vad.onnx',
+    archiveTopDir: '',
+    requiredFiles: [sileroVadFileName],
+    archiveBytes: 643854,
+    installedBytes: 643854,
+    languages: ['multi'],
+  );
+
+  /// The name [sileroVad] is installed under, and so the file
+  /// `transcription/vad.dart` opens inside its installed directory.
+  static const String sileroVadFileName = 'silero_vad.onnx';
+
   /// Every entry, in the order the models page lists them.
   static const List<ModelSpec> all = [
     streamingZipformerEn20M,
     whisperTiny,
     whisperBase,
+    sileroVad,
   ];
 
   /// The spec with [id], or null if the catalog has no such entry — which is

@@ -209,7 +209,8 @@ void main() {
     expect(find.textContaining('HTTP 500'), findsOneWidget);
     expect(await store.isInstalled(spec), isFalse);
     expect(find.widgetWithText(TextButton, 'Cancel'), findsNothing);
-    expect(find.widgetWithText(ElevatedButton, 'Download'), findsNWidgets(3));
+    expect(find.widgetWithText(ElevatedButton, 'Download'),
+        findsNWidgets(ModelCatalog.all.length));
   });
 
   testWidgets('a download in flight shows a progress bar, a percentage and Cancel', (
@@ -229,7 +230,9 @@ void main() {
     expect(find.byType(LinearProgressIndicator), findsOneWidget);
     expect(find.widgetWithText(TextButton, 'Cancel'), findsOneWidget);
     expect(find.text('1 / 4 MB (25%)'), findsOneWidget);
-    expect(find.widgetWithText(ElevatedButton, 'Download'), findsNWidgets(2));
+    // Every row but the one installing still offers Download.
+    expect(find.widgetWithText(ElevatedButton, 'Download'),
+        findsNWidgets(ModelCatalog.all.length - 1));
 
     await tester.runAsync(() async {
       await client.body.close();
@@ -265,7 +268,8 @@ void main() {
     expect(await store.isInstalled(spec), isFalse);
     expect(find.widgetWithText(TextButton, 'Cancel'), findsNothing);
     expect(find.byType(LinearProgressIndicator), findsNothing);
-    expect(find.widgetWithText(ElevatedButton, 'Download'), findsNWidgets(3));
+    expect(find.widgetWithText(ElevatedButton, 'Download'),
+        findsNWidgets(ModelCatalog.all.length));
     // A cancel is the user's own doing, so it is not reported as a failure.
     expect(find.byType(SnackBar), findsNothing);
   });
