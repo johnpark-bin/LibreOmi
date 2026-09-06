@@ -107,11 +107,11 @@ class ModelSpec {
 
 /// The models shipped in the app's catalog.
 ///
-/// The three ASR entries are the ones the current transcription paths already
-/// expect by name (`services/sherpa_service.dart`,
-/// `services/whisper_service.dart`) and [sileroVad] is what the Whisper path
-/// segments with; file names and sizes were read off the upstream
-/// repositories rather than guessed.
+/// The ASR entries are the ones the current transcription paths expect —
+/// two streaming Zipformers, one per language the local modes offer
+/// ([localSttLanguages]), plus the two multilingual Whispers — and
+/// [sileroVad] is what the Whisper path segments with; file names and sizes
+/// were read off the upstream release assets and docs rather than guessed.
 class ModelCatalog {
   const ModelCatalog._();
 
@@ -135,6 +135,36 @@ class ModelCatalog {
     archiveBytes: 127887156,
     installedBytes: 91928372,
     languages: ['en'],
+  );
+
+  /// Korean streaming transducer, the Sherpa mode's model when
+  /// `SettingsService.localSttLanguage` is `'ko'` (LO-44).
+  ///
+  /// Deliberately the same four file names as [streamingZipformerEn20M], so
+  /// `SherpaWorkerConfig`'s defaults load either model unchanged — a
+  /// catalog test pins that. The archive also ships `bpe.model`, int8 copies
+  /// of all three weights and `test_wavs/`; none of those are extracted.
+  ///
+  /// [archiveBytes] is the exact asset size from the `asr-models` release;
+  /// [installedBytes] is approximate, added up from the `ls -lh` listing in
+  /// the upstream docs (279M + 11M + 9.8M + 59K), because the per-file byte
+  /// counts are not published anywhere machine-readable.
+  static const ModelSpec streamingZipformerKo = ModelSpec(
+    id: 'sherpa-onnx-streaming-zipformer-korean-2024-06-16',
+    kind: ModelKind.streamingZipformer,
+    displayName: 'Streaming Zipformer (Korean)',
+    url: '$_releaseBase/'
+        'sherpa-onnx-streaming-zipformer-korean-2024-06-16.tar.bz2',
+    archiveTopDir: 'sherpa-onnx-streaming-zipformer-korean-2024-06-16',
+    requiredFiles: [
+      'encoder-epoch-99-avg-1.onnx',
+      'decoder-epoch-99-avg-1.onnx',
+      'joiner-epoch-99-avg-1.onnx',
+      'tokens.txt',
+    ],
+    archiveBytes: 418218652,
+    installedBytes: 314423500,
+    languages: ['ko'],
   );
 
   /// Offline multilingual Whisper, tiny.
@@ -198,6 +228,7 @@ class ModelCatalog {
   /// Every entry, in the order the models page lists them.
   static const List<ModelSpec> all = [
     streamingZipformerEn20M,
+    streamingZipformerKo,
     whisperTiny,
     whisperBase,
     sileroVad,
@@ -227,6 +258,29 @@ class ModelCatalog {
     return whisperSize(size) == 'base' ? whisperBase : whisperTiny;
   }
 
-  /// The model the streaming (Sherpa) transcription mode uses.
+  /// The languages the local (on-device) transcription modes offer, in the
+  /// order the settings page lists them. `'en'` is first because it is the
+  /// default and the only language the app shipped with before LO-44.
+  static const List<String> localSttLanguages = ['en', 'ko'];
+
+  /// `SettingsService.localSttLanguage` reduced to a language this catalog
+  /// has a streaming model for, so a stale or corrupted preference cannot
+  /// leave the Sherpa mode pointing at a model that does not exist.
+  ///
+  /// Same contract as [whisperSize]: callers must go through this rather
+  /// than the raw preference.
+  static String localSttLanguage(String language) =>
+      localSttLanguages.contains(language) ? language : 'en';
+
+  /// The streaming model for [language] (`'en'` or `'ko'`), via
+  /// [localSttLanguage].
+  static ModelSpec streaming(String language) {
+    return localSttLanguage(language) == 'ko'
+        ? streamingZipformerKo
+        : streamingZipformerEn20M;
+  }
+
+  /// The model the streaming (Sherpa) transcription mode uses when no
+  /// language is stated. Equivalent to `streaming('en')`.
   static ModelSpec get defaultStreaming => streamingZipformerEn20M;
 }

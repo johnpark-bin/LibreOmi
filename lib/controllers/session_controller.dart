@@ -439,20 +439,25 @@ class SessionController extends ChangeNotifier {
     switch (transcriptionMode) {
       case 'sherpa':
         debugPrint(
-          'Starting with LOCAL Sherpa-ONNX transcription (with diarization)',
+          'Starting with LOCAL Sherpa-ONNX transcription (with diarization, '
+          '${SettingsService.localSttLanguage})',
         );
         _isLoadingModel = true;
         notifyListeners();
-        return SherpaStreamingTranscriber();
+        return SherpaStreamingTranscriber(
+          language: SettingsService.localSttLanguage,
+        );
 
       case 'whisper':
         debugPrint(
-          'Starting with LOCAL Whisper transcription (${SettingsService.whisperModelSize})',
+          'Starting with LOCAL Whisper transcription '
+          '(${SettingsService.whisperModelSize}, ${SettingsService.localSttLanguage})',
         );
         _isLoadingModel = true;
         notifyListeners();
         return WhisperBatchTranscriber(
           modelSize: SettingsService.whisperModelSize,
+          language: SettingsService.localSttLanguage,
         );
 
       default: // 'cloud'

@@ -24,6 +24,7 @@ class SherpaStreamingTranscriber implements StreamingTranscriber {
   SherpaStreamingTranscriber({
     String? modelDir,
     int numThreads = 2,
+    this.language = 'en',
     ModelStore? modelStore,
     SherpaWorkerClient? workerClient,
   })  : _modelDir = modelDir,
@@ -32,10 +33,21 @@ class SherpaStreamingTranscriber implements StreamingTranscriber {
         _client = workerClient ?? IsolateSherpaWorkerClient();
 
   /// Where the model files live. Null means "wherever the [ModelStore]
-  /// installed [ModelCatalog.defaultStreaming]", resolved on [start].
+  /// installed `ModelCatalog.streaming(language)`", resolved on [start].
   final String? _modelDir;
 
   final int _numThreads;
+
+  /// Language to load the streaming model for (`'en'` or `'ko'`, LO-44).
+  /// Reduced through [ModelCatalog.localSttLanguage] in [start]. Only
+  /// consulted when [_modelDir] is null — an injected directory always wins.
+  ///
+  /// Not forwarded into [SherpaWorkerConfig]: both catalog specs
+  /// ([ModelCatalog.streamingZipformerEn20M] and
+  /// [ModelCatalog.streamingZipformerKo]) use the same four file names, so
+  /// the worker's default encoder/decoder/joiner/tokens names already load
+  /// either model unchanged (pinned by a `model_catalog_test.dart` case).
+  final String language;
 
   /// Only consulted when [_modelDir] is null. Injectable so a test never
   /// touches `path_provider`.
@@ -70,7 +82,7 @@ class SherpaStreamingTranscriber implements StreamingTranscriber {
     try {
       modelDir = _modelDir ??
           await (_modelStore ?? ModelStore())
-              .requireInstalledDir(ModelCatalog.defaultStreaming);
+              .requireInstalledDir(ModelCatalog.streaming(language));
     } catch (e) {
       // ModelNotInstalledException's message names the screen that fixes it,
       // so it is worth surfacing verbatim.

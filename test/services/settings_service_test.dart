@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:libreomi/services/settings_service.dart';
 import 'package:libreomi/services/secret_store.dart';
+import 'package:libreomi/transcription/model_catalog.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -237,6 +238,57 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString('deepgram_api_key'), 'dg-legacy');
       expect(prefs.getString('openai_api_key'), 'oa-legacy');
+    });
+  });
+
+  group('SettingsService.localSttLanguage', () {
+    Future<void> boot([Map<String, Object> values = const {}]) async {
+      SharedPreferences.setMockInitialValues(Map<String, Object>.from(values));
+      await SettingsService.init(secretStore: InMemorySecretStore());
+    }
+
+    test('defaults to English, independently of the Deepgram language',
+        () async {
+      await boot(<String, Object>{'language': 'de'});
+
+      expect(SettingsService.localSttLanguage, 'en');
+      expect(SettingsService.language, 'de',
+          reason: 'the cloud language is a separate preference');
+    });
+
+    test('setting to ko persists and reads back', () async {
+      await boot();
+
+      SettingsService.localSttLanguage = 'ko';
+
+      expect(SettingsService.localSttLanguage, 'ko');
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('local_stt_language'), 'ko');
+    });
+
+    test('a value the catalog has no model for reduces to en', () async {
+      // Written by a future build, or corrupted. Returning it verbatim would
+      // send the Sherpa mode looking for a model directory that cannot exist.
+      await boot(<String, Object>{'local_stt_language': 'jp'});
+      expect(SettingsService.localSttLanguage, 'en');
+
+      await boot(<String, Object>{'local_stt_language': ''});
+      expect(SettingsService.localSttLanguage, 'en');
+    });
+
+    test('sherpaModelId follows the language', () async {
+      await boot();
+      expect(SettingsService.sherpaModelId,
+          ModelCatalog.streamingZipformerEn20M.id);
+
+      SettingsService.localSttLanguage = 'ko';
+      expect(SettingsService.sherpaModelId,
+          ModelCatalog.streamingZipformerKo.id);
+    });
+
+    test('sherpaModelId is always a real catalog entry', () async {
+      await boot(<String, Object>{'local_stt_language': 'jp'});
+      expect(ModelCatalog.byId(SettingsService.sherpaModelId), isNotNull);
     });
   });
 }

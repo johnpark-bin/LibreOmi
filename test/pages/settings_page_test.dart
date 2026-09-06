@@ -61,6 +61,7 @@ void main() {
   Future<void> pumpSettingsPage(
     WidgetTester tester, {
     String? storedModel,
+    String transcriptionMode = 'cloud',
     BatteryOptimization? batteryOptimizationOverride,
   }) async {
     // LO-40 added a "Manage models" row (and, conditionally, a hint line) to
@@ -76,7 +77,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     SharedPreferences.setMockInitialValues(<String, Object>{
-      'transcription_mode': 'cloud',
+      'transcription_mode': transcriptionMode,
       if (storedModel != null) 'deepgram_model': storedModel,
     });
     await SettingsService.init(secretStore: InMemorySecretStore());
@@ -159,6 +160,81 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(SettingsService.deepgramModel, 'nova-3');
+  });
+
+  group('Local STT language picker (LO-44)', () {
+    testWidgets('shows English and 한국어 segments for sherpa mode, defaulting to English', (
+      WidgetTester tester,
+    ) async {
+      await pumpSettingsPage(tester, transcriptionMode: 'sherpa');
+
+      final englishFinder = find.text('English');
+      await tester.scrollUntilVisible(
+        englishFinder,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+
+      expect(englishFinder, findsOneWidget);
+      expect(find.text('한국어'), findsOneWidget);
+
+      final segmentedButton = tester.widget<SegmentedButton<String>>(
+        find.byType(SegmentedButton<String>),
+      );
+      expect(segmentedButton.selected, {'en'});
+    });
+
+    testWidgets('tapping 한국어 sets SettingsService.localSttLanguage to ko', (
+      WidgetTester tester,
+    ) async {
+      await pumpSettingsPage(tester, transcriptionMode: 'sherpa');
+
+      final koreanFinder = find.text('한국어');
+      await tester.scrollUntilVisible(
+        koreanFinder,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(koreanFinder);
+      await tester.pumpAndSettle();
+
+      expect(SettingsService.localSttLanguage, 'ko');
+      final segmentedButton = tester.widget<SegmentedButton<String>>(
+        find.byType(SegmentedButton<String>),
+      );
+      expect(segmentedButton.selected, {'ko'});
+    });
+
+    testWidgets('hides the language picker in cloud mode', (
+      WidgetTester tester,
+    ) async {
+      await pumpSettingsPage(tester, transcriptionMode: 'cloud');
+
+      expect(find.text('Language:'), findsNothing);
+      expect(find.text('한국어'), findsNothing);
+    });
+
+    testWidgets('shows both the language picker and the Model Size picker in whisper mode', (
+      WidgetTester tester,
+    ) async {
+      await pumpSettingsPage(tester, transcriptionMode: 'whisper');
+
+      final modelSizeFinder = find.text('Model Size:');
+      await tester.scrollUntilVisible(
+        modelSizeFinder,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+
+      expect(modelSizeFinder, findsOneWidget);
+      expect(find.text('Language:'), findsOneWidget);
+      expect(find.text('English'), findsOneWidget);
+      expect(find.text('한국어'), findsOneWidget);
+    });
   });
 
   group('Background reliability section', () {

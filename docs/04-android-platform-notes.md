@@ -359,8 +359,16 @@ process that died without stopping it.
   extracted files land in `<models>/.staging-<id>/` and are verified (every required file
   present and non-empty) before an atomic rename promotes them to `<models>/<id>/`; a failed
   or cancelled install leaves any previously installed copy untouched. Catalog sizes: the
-  streaming zipformer archive is ~122 MB and installs to ~88 MB; Whisper tiny is ~111 MB
-  archived / ~146 MB installed; Whisper base is ~198 MB archived / ~279 MB installed. A
+  English streaming zipformer archive is ~122 MB and installs to ~88 MB; the Korean one
+  (LO-44) is much larger at ~399 MB archived / ~300 MB installed, so the Korean local mode
+  is a deliberate opt-in rather than something a user downloads by accident; Whisper tiny is
+  ~111 MB archived / ~146 MB installed; Whisper base is ~198 MB archived / ~279 MB installed. A
+  Since LO-44 the local modes also carry a language (`SettingsService.localSttLanguage`,
+  `'en'` or `'ko'`): Sherpa picks the streaming model for it, and Whisper — whose tiny/base
+  entries are the multilingual variants — receives it as `OfflineWhisperModelConfig.language`
+  with `task: 'transcribe'`. That pins local Whisper to the picked language rather than
+  letting it auto-detect, which is what the pre-LO-44 code did; a third language needs a new
+  entry in `ModelCatalog.localSttLanguages`. A
   one-time migration (`ModelStore.migrateLegacyInstalls`) moves models left by pre-LO-40
   builds in `getApplicationDocumentsDirectory()/sherpa_models/` and `/whisper_models/` into
   the new layout, preferring an already-installed copy in the new layout and discarding the

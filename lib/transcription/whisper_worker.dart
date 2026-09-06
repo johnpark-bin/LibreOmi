@@ -41,6 +41,8 @@ class WhisperWorkerConfig {
     this.numThreads = 2,
     this.sampleRate = 16000,
     this.nativeLibraryDir,
+    this.language = '',
+    this.task = '',
   });
 
   /// Directory holding the model files. Supplied by the caller — model
@@ -66,6 +68,19 @@ class WhisperWorkerConfig {
   /// bundled library is already on the loader's search path; set only by the
   /// desktop integration test, which runs outside a Flutter app bundle.
   final String? nativeLibraryDir;
+
+  /// BCP-47-ish language code forwarded to
+  /// `sherpa.OfflineWhisperModelConfig.language` (e.g. `'en'`, `'ko'`).
+  /// The Whisper tiny/base models this catalog installs are the
+  /// multilingual variants, not the `.en`-suffixed English-only ones, so a
+  /// language is meaningful here. The default `''` means Whisper
+  /// auto-detects the language from the audio, which is today's behaviour.
+  final String language;
+
+  /// Forwarded to `sherpa.OfflineWhisperModelConfig.task`. `''` (the
+  /// default) and `'transcribe'` behave the same; `'translate'` would ask
+  /// Whisper to translate into English instead, which nothing here does.
+  final String task;
 
   String get encoderPath => '$modelDir/$modelSize-encoder.onnx';
   String get decoderPath => '$modelDir/$modelSize-decoder.onnx';
@@ -330,6 +345,8 @@ class WhisperOnnxRecognizer implements WhisperRecognizerApi {
           whisper: sherpa.OfflineWhisperModelConfig(
             encoder: config.encoderPath,
             decoder: config.decoderPath,
+            language: config.language,
+            task: config.task,
           ),
           tokens: config.tokensPath,
           numThreads: config.numThreads,

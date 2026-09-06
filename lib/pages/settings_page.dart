@@ -290,10 +290,35 @@ class _SettingsPageState extends State<SettingsPage> {
                     SettingsService.transcriptionMode == 'sherpa') ...[
                   Divider(height: 1, color: theme.dividerColor.withOpacity(0.1)),
                   Padding(
+                    // Follows a divider rather than a tile, so unlike the
+                    // Whisper size row above this one needs its own top inset.
+                    padding: const EdgeInsets.fromLTRB(56, 12, 16, 4),
+                    child: Row(
+                      children: [
+                        Text('Language:', style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7))),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: SegmentedButton<String>(
+                            segments: const [
+                              ButtonSegment(value: 'en', label: Text('English')),
+                              ButtonSegment(value: 'ko', label: Text('한국어')),
+                            ],
+                            selected: {SettingsService.localSttLanguage},
+                            onSelectionChanged: (values) => setState(() => SettingsService.localSttLanguage = values.first),
+                            style: ButtonStyle(
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
                     padding: const EdgeInsets.fromLTRB(56, 12, 16, 12),
                     child: Text(
                       'Local modes transcribe on the phone and need their '
-                      'model downloaded first — see Manage models below.',
+                      'model downloaded first — see Manage models below. '
+                      'Korean needs its own model downloaded (~399 MB).',
                       style: TextStyle(
                         color: theme.colorScheme.onSurface.withOpacity(0.6),
                         fontSize: 12,
