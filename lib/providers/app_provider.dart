@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
-import '../audio/audio_routing.dart';
 import '../audio/audio_source.dart';
 import '../audio/omi_audio_source.dart';
 import '../audio/opus_decoder.dart';
@@ -13,7 +12,6 @@ import '../audio/phone_mic_source.dart';
 import '../device/device_manager.dart';
 import '../device/omi_ble_device.dart';
 import '../device/omi_device.dart';
-import '../device/omi_gatt.dart';
 import '../intelligence/llm_client.dart';
 import '../intelligence/openai_client.dart';
 import '../models/conversation.dart';
@@ -31,6 +29,9 @@ import '../services/notification_ids.dart';
 import '../services/notification_service.dart';
 import '../services/mic_service.dart';
 import '../services/sdcard_sync_service.dart';
+import '../session/conversation_finalizer.dart';
+import '../session/recording_session.dart';
+import '../session/session_state.dart';
 import '../transcription/deepgram_streaming.dart';
 import '../transcription/sherpa_streaming.dart';
 import '../transcription/transcriber.dart';
@@ -63,6 +64,20 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   /// phone is offline or dozing.
   late final FinalizationQueue _finalizationQueue;
 
+  /// The one place a conversation is persisted and its insights applied, for
+  /// both the live path and the SD-card import path (LO-33).
+  late final ConversationFinalizer _finalizer;
+
+  /// The session state machine (`docs/03-architecture.md` §4). Everything
+  /// this provider used to do between "audio is flowing" and "the
+  /// conversation has been handed off" now lives there; what stays here is
+  /// what needs settings, permissions or the foreground service.
+  late final RecordingSession _session;
+
+  StreamSubscription<SessionState>? _sessionStateSubscription;
+  StreamSubscription<List<TranscriptSegment>>? _sessionSegmentsSubscription;
+  StreamSubscription<AiAnswer>? _sessionAnswerSubscription;
+
   /// Rate-limits rewrites of the persistent notification so a burst of
   /// transcript segments does not produce a burst of platform calls.
   final SessionNotificationThrottle _sessionNotificationThrottle =
@@ -70,18 +85,6 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
 
   // App lifecycle state
   AppLifecycleState _appLifecycleState = AppLifecycleState.resumed;
-  /// The one transcription backend for the current session, whichever mode
-  /// settings selected. Built in [_startTranscriptionServices] and torn down
-  /// in [stopListening].
-  StreamingTranscriber? _transcriber;
-  StreamSubscription<TranscriptSegment>? _segmentsSubscription;
-  StreamSubscription<String>? _transcriberErrorsSubscription;
-
-  /// The audio producer feeding [_transcriber]: an [OmiAudioSource] over the
-  /// BLE notification stream, or a [PhoneMicSource] over the phone mic.
-  AudioSource? _audioSource;
-
-  OpusDecoder? _opusDecoder;
 
   // Device state
   DeviceConnectionState _deviceState = DeviceConnectionState.disconnected;
@@ -96,21 +99,26 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   bool _isListening = false;
   bool get isListening => _isListening;
 
+  /// True from the first line of a `startListening*` until it finishes.
+  ///
+  /// [_isListening] is only set once the session is actually up, so without
+  /// this a second start arriving in between would sail past the guard below:
+  /// it would overwrite the first session's transcriber and subscriptions,
+  /// and its own rollback would take the foreground service down under a
+  /// session that is about to declare itself live.
+  bool _isStarting = false;
+
   // Phone mic state
   bool _isUsingPhoneMic = false;
   bool get isUsingPhoneMic => _isUsingPhoneMic;
 
-  // Current conversation being recorded
-  Conversation? _currentConversation;
-  Conversation? get currentConversation => _currentConversation;
+  /// The conversation being recorded, owned by [_session].
+  Conversation? get currentConversation => _session.currentConversation;
+
+  /// Mirror of the session's live segments, kept so the pages can read them
+  /// synchronously off a `Consumer` rebuild.
   List<TranscriptSegment> _liveSegments = [];
   List<TranscriptSegment> get liveSegments => _liveSegments;
-
-  // Silence detection for auto-save
-  static const Duration silenceTimeout = Duration(minutes: 2);
-  Timer? _silenceTimer;
-  DateTime? _lastTranscriptTime;
-  bool _hasActiveConversation = false;
 
   // Auto-reconnect scheduling (LO-22). Upstream polled every 5 s forever;
   // the saved device is now armed with `autoConnect`, so this timer only
@@ -130,14 +138,9 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   bool _isAwaitingReconnect = false;
   Timer? _reconnectGraceTimer;
 
-  // Hold-to-Ask AI
-  DateTime? _buttonPressStartTime;
-  String _aiQueryTranscript = ''; // Captured text from active transcriber
-  bool _isHoldToAskActive = false;
-  bool _isAiQueryProcessing = false; // Pauses main conversation transcription
-  bool _isProcessingButtonEvent = false; // Debounce for button events
-  bool get isHoldToAskActive => _isHoldToAskActive;
-  bool get isAiQueryProcessing => _isAiQueryProcessing;
+  // Hold-to-Ask AI, owned by [_session].
+  bool get isHoldToAskActive => _session.isHoldToAskActive;
+  bool get isAiQueryProcessing => _session.isAnswering;
 
   // Conversations list
   List<Conversation> _conversations = [];
@@ -174,7 +177,6 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
 
   // Subscriptions
   StreamSubscription? _stateSubscription;
-  StreamSubscription? _audioSubscription;
   StreamSubscription? _buttonSubscription;
 
   AppProvider({
@@ -190,44 +192,86 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
                 enabled: () => SettingsService.captureBleSession,
               ),
             ) {
+    _finalizer = ConversationFinalizer(
+      database: () => DatabaseService.database,
+      enqueue: _enqueueFinalization,
+      scheduleReminder: NotificationService().scheduleTaskNotification,
+      onConversationSaved: loadConversations,
+      onInsightsApplied: _reloadFinalizedData,
+    );
     _finalizationQueue = finalizationQueue ??
         FinalizationQueue(
-          summarizer: _summarizeForQueue,
-          applier: _applyFinalizationResult,
+          llmClient: _newLlmClient,
+          applier: _finalizer.applyInsights,
         );
+    _session = RecordingSession(
+      transcriberFactory: _buildTranscriber,
+      finalizer: _finalizer,
+      llmClientFactory: _newLlmClient,
+      device: () => _deviceManager.current,
+      feedback: const _PlatformSessionFeedback(),
+      // A single tap on an idle session means "record and ask"; only this
+      // class knows how to bring the foreground service up first.
+      onStartRequested: startListening,
+    );
+    _watchSession();
     _init();
   }
 
-  /// The queue's summariser. Built per call because the key and the model can
-  /// change in settings between a conversation being queued and being retried.
+  /// Builds the LLM client for one call.
   ///
-  /// Deliberately a local: a drain runs in the background and would otherwise
-  /// be able to swap a shared client out from under a chat request that is
-  /// between its own assignment and its use. Every [LlmClient] call site in
-  /// this class follows the same rule, so no shared field exists at all.
-  ///
-  /// TODO(LO-23): the queue still consumes an untyped map and reads the
-  /// "Untitled Conversation" sentinel as "retry this later", so a failed
-  /// summarisation is folded back into that sentinel here instead of being
-  /// surfaced as the [LlmException] the client now throws. LO-23 makes the
-  /// queue take typed errors and this bridge goes away with it.
-  Future<Map<String, dynamic>> _summarizeForQueue(String transcript) async {
-    final client = OpenAiClient.fromApiKey(
-      apiKey: SettingsService.openaiApiKey,
-      model: SettingsService.openaiModel,
+  /// Deliberately not a shared field: a background drain would otherwise be
+  /// able to swap the client out from under a chat request that is between
+  /// its own assignment and its use, and the key and model can change in
+  /// settings between a conversation being queued and being retried.
+  LlmClient _newLlmClient() => OpenAiClient.fromApiKey(
+        apiKey: SettingsService.openaiApiKey,
+        model: SettingsService.openaiModel,
+      );
+
+  /// Mirrors the session's outputs into the provider state the pages read.
+  void _watchSession() {
+    _sessionStateSubscription = _session.states.listen((_) {
+      _updateSessionNotification();
+      notifyListeners();
+    });
+    _sessionSegmentsSubscription = _session.liveSegments.listen((segments) {
+      _liveSegments = segments;
+      // Keeps the persistent notification's conversation length roughly
+      // current; the throttle drops updates that only move the clock.
+      _updateSessionNotification();
+      notifyListeners();
+    });
+    // The hold-to-ask answer is delivered as a notification by the session
+    // and, since #33, also recorded on the chat page.
+    _sessionAnswerSubscription = _session.aiAnswers.listen(_recordAiAnswer);
+  }
+
+  void _recordAiAnswer(AiAnswer answer) {
+    _chatMessages.add(
+      ChatMessage(
+        id: const Uuid().v4(),
+        text: answer.question,
+        isUser: true,
+        createdAt: DateTime.now(),
+      ),
     );
-    try {
-      final insights = await client.summarize(transcript);
-      return insights.toMap();
-    } on LlmException catch (e) {
-      debugPrint('OpenAI summarize error: $e');
-      return <String, dynamic>{
-        'title': 'Untitled Conversation',
-        'summary': '',
-        'memories': <String>[],
-        'tasks': <dynamic>[],
-      };
-    }
+    _chatMessages.add(
+      ChatMessage(
+        id: const Uuid().v4(),
+        text: answer.answer,
+        isUser: false,
+        createdAt: DateTime.now(),
+      ),
+    );
+    notifyListeners();
+  }
+
+  /// Reloads everything a finished summarisation can have touched.
+  Future<void> _reloadFinalizedData() async {
+    await loadConversations();
+    await loadMemories();
+    await loadTasks();
   }
 
   /// Kicks the queue without letting its failure escape into the app zone.
@@ -320,8 +364,16 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
         notifyListeners();
       });
 
-      // Listen to button events
-      _buttonSubscription = _deviceManager.buttonEvents.listen(_handleButtonPress);
+      // Listen to button events. A command that fails (a database write, a
+      // platform channel) must not escape into the app zone as an unhandled
+      // async error, so it is logged here instead.
+      _buttonSubscription = _deviceManager.buttonEvents.listen((event) {
+        unawaited(
+          _session.handleButton(event).catchError((Object error) {
+            debugPrint('Button command failed: $error');
+          }),
+        );
+      });
 
       // Load saved conversations, memories, and tasks
       await loadConversations();
@@ -598,55 +650,63 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     if (_deviceState != DeviceConnectionState.connected) {
       throw Exception('No Omi device connected');
     }
-    if (_isListening) return;
+    if (_isListening || _isStarting) return;
 
-    _isUsingPhoneMic = false;
-
-    // The foreground service goes up before any audio flows, so the process is
-    // never killed mid-setup (docs/04 §4). An Omi session only needs the
-    // connectedDevice type; the microphone type is reserved for the phone-mic
-    // path, which Android 14+ allows to start from the foreground only.
-    await _startBackgroundRunner(<BackgroundReason>{
-      BackgroundReason.connectedDevice,
-    });
-
+    _isStarting = true;
     try {
-      await _startTranscriptionServices(useOpusEncoding: true);
+      _isUsingPhoneMic = false;
 
-      // Start audio stream from Omi device
-      await _deviceManager.current?.startAudioStream();
+      // The foreground service goes up before any audio flows, so the process
+      // is never killed mid-setup (docs/04 §4). An Omi session only needs the
+      // connectedDevice type; the microphone type is reserved for the
+      // phone-mic path, which Android 14+ allows to start from the foreground
+      // only.
+      await _startBackgroundRunner(<BackgroundReason>{
+        BackgroundReason.connectedDevice,
+      });
 
-      // Initialize Opus decoder for Omi device (needed for local transcription and debug playback)
-      _opusDecoder = OpusDecoder();
-      await _opusDecoder!.initialize();
+      try {
+        // The source only transforms the BLE notification stream (header
+        // strip, encoding tag); starting and stopping the stream itself stays
+        // with the device, which is why the session gets it as a separate
+        // transport pair.
+        await _session.start(
+          source: OmiAudioSource(_deviceManager.audioPackets),
+          useOpusEncoding: true,
+          openTransport: () async {
+            await _deviceManager.current?.startAudioStream();
+          },
+          closeTransport: () async {
+            await _deviceManager.current?.stopAudioStream();
+          },
+        );
+      } catch (_) {
+        // Setup failed, so the session never reaches listening: take the
+        // service back down instead of leaving a notification for a session
+        // that is not running. The session has already released whatever it
+        // brought up.
+        await _stopBackgroundRunnerWhenIdle();
+        rethrow;
+      } finally {
+        // In a `finally` so a model that fails to load does not leave the
+        // spinner up for the rest of the process.
+        _isLoadingModel = false;
+      }
 
-      // The source only transforms the BLE notification stream (header strip,
-      // encoding tag); starting and stopping the stream itself stays with
-      // the device, so the session lifecycle above is unchanged.
-      final source = OmiAudioSource(_deviceManager.audioPackets);
-      _audioSource = source;
-      _audioSubscription = source.start().listen(_handleOmiAudioChunk);
-    } catch (_) {
-      // Setup failed, so the session never reaches listening: take the service
-      // back down instead of leaving a notification for a session that is not
-      // running.
-      await _discardHalfStartedSession();
-      await _stopBackgroundRunnerWhenIdle();
-      rethrow;
+      _isListening = true;
+      notifyListeners();
+
+      debugPrint(
+        'Started continuous listening with Omi device (${SettingsService.transcriptionMode})',
+      );
+    } finally {
+      _isStarting = false;
     }
-
-    _isListening = true;
-    _startNewConversation();
-    notifyListeners();
-
-    debugPrint(
-      'Started continuous listening with Omi device (${SettingsService.transcriptionMode})',
-    );
   }
 
   /// Start continuous listening using iPhone microphone
   Future<void> startListeningWithPhoneMic() async {
-    if (_isListening) return;
+    if (_isListening || _isStarting) return;
 
     // Check mic permission
     final hasPermission = await _micService.hasPermission();
@@ -656,6 +716,17 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
       );
     }
 
+    _isStarting = true;
+    try {
+      await _startPhoneMicSession();
+    } finally {
+      _isStarting = false;
+    }
+  }
+
+  /// The body of [startListeningWithPhoneMic], split out only so the
+  /// re-entrancy flag can be released in one `finally` around all of it.
+  Future<void> _startPhoneMicSession() async {
     _isUsingPhoneMic = true;
     // The session continues on the phone mic, so there is no interrupted Omi
     // session left to hold the service open for.
@@ -670,27 +741,28 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     });
 
     try {
-      await _startTranscriptionServices(useOpusEncoding: false);
-
-      // Start phone mic recording. `prepare()` rather than relying on
-      // `start()` to kick the recorder off, because only an awaited call can
-      // surface a recorder failure as an exception here, which is what rolls
-      // the half-open session back below.
+      // `prepare()` rather than relying on `start()` to kick the recorder off,
+      // because only an awaited call can surface a recorder failure as an
+      // exception here, which is what rolls the half-open session back below.
+      // Handed to the session as the transport so it runs after the
+      // transcriber is up, exactly as it did before LO-33.
       final source = PhoneMicSource();
-      _audioSource = source;
-      await source.prepare();
-      _audioSubscription = source.start().listen(_handlePhoneMicAudioChunk);
+      await _session.start(
+        source: source,
+        useOpusEncoding: false,
+        openTransport: source.prepare,
+      );
     } catch (_) {
       // Leaving the flag set would keep auto-reconnect switched off for the
       // rest of the process.
       _isUsingPhoneMic = false;
-      await _discardHalfStartedSession();
       await _stopBackgroundRunnerWhenIdle();
       rethrow;
+    } finally {
+      _isLoadingModel = false;
     }
 
     _isListening = true;
-    _startNewConversation();
     notifyListeners();
 
     debugPrint(
@@ -698,37 +770,15 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     );
   }
 
-  /// Releases the session state a failed `startListening*` managed to bring
-  /// up. [stopListening] cannot do this job: it returns early while
-  /// `_isListening` is false, which it still is on this path. Without it a
-  /// retry would overwrite the subscriptions and leave the previous ones
-  /// listening to a transcriber whose controllers are never closed.
+  /// Builds the one transcription backend the selected mode calls for, for
+  /// [RecordingSession] to subscribe to and start. [useOpusEncoding] is true
+  /// for the Omi path, which streams Opus, and false for the phone mic, which
+  /// streams raw PCM16.
   ///
-  /// Does *not* call `OmiDevice.stopAudioStream()`: the caller knows whether
-  /// it got that far, and the phone-mic path has already cleared
-  /// `_isUsingPhoneMic` by the time this runs, so the flag cannot be used to
-  /// decide. Notifications left enabled by a setup that failed after
-  /// `startAudioStream()` are the same leak `main` had; see the PR follow-up
-  /// note.
-  Future<void> _discardHalfStartedSession() async {
-    await _audioSubscription?.cancel();
-    _audioSubscription = null;
-    await _audioSource?.stop();
-    _audioSource = null;
-    await _segmentsSubscription?.cancel();
-    _segmentsSubscription = null;
-    await _transcriberErrorsSubscription?.cancel();
-    _transcriberErrorsSubscription = null;
-    await _transcriber?.stop();
-    _transcriber = null;
-    _opusDecoder?.dispose();
-    _opusDecoder = null;
-  }
-
-  /// Build and start the one transcription backend the selected mode calls
-  /// for. [useOpusEncoding] is true for the Omi path, which streams Opus, and
-  /// false for the phone mic, which streams raw PCM16.
-  Future<void> _startTranscriptionServices({
+  /// Stays here rather than in `lib/session`: which backend to build is a
+  /// settings question, and `SettingsService` is a process-wide static the
+  /// session layer must not depend on (`docs/03-architecture.md` §1).
+  Future<StreamingTranscriber> _buildTranscriber({
     required bool useOpusEncoding,
   }) async {
     final transcriptionMode = SettingsService.transcriptionMode;
@@ -740,10 +790,6 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
       );
     }
 
-    final StreamingTranscriber transcriber;
-    final String errorLabel;
-
-    // Build the transcriber for the selected mode
     switch (transcriptionMode) {
       case 'sherpa':
         debugPrint(
@@ -751,9 +797,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
         );
         _isLoadingModel = true;
         notifyListeners();
-
-        transcriber = SherpaStreamingTranscriber();
-        errorLabel = 'Sherpa';
+        return SherpaStreamingTranscriber();
 
       case 'whisper':
         debugPrint(
@@ -761,37 +805,19 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
         );
         _isLoadingModel = true;
         notifyListeners();
-
-        transcriber = WhisperBatchTranscriber(
+        return WhisperBatchTranscriber(
           modelSize: SettingsService.whisperModelSize,
         );
-        errorLabel = 'Whisper';
 
       default: // 'cloud'
         debugPrint('Starting with CLOUD Deepgram transcription');
-        transcriber = DeepgramStreamingTranscriber(
+        return DeepgramStreamingTranscriber(
           apiKey: SettingsService.deepgramApiKey,
           language: SettingsService.language,
           // Deepgram gets linear16 for the phone mic (raw PCM), opus for Omi.
           encoding: useOpusEncoding ? AudioEncoding.opus : AudioEncoding.pcm16,
           sampleRate: 16000,
         );
-        errorLabel = 'Deepgram';
-    }
-
-    _transcriber = transcriber;
-    // Subscribed before start() so nothing produced during start-up is lost.
-    _segmentsSubscription = transcriber.segments.listen(_onSegmentReceived);
-    _transcriberErrorsSubscription = transcriber.errors.listen(
-      (error) => debugPrint('$errorLabel error: $error'),
-    );
-
-    try {
-      await transcriber.start();
-    } finally {
-      // In a `finally` so a model that fails to load does not leave the
-      // spinner up for the rest of the process.
-      _isLoadingModel = false;
     }
   }
 
@@ -834,7 +860,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     if (!_isListening && !_isAwaitingReconnect) {
       return;
     }
-    final startedAt = _currentConversation?.createdAt;
+    final startedAt = _session.currentConversation?.createdAt;
     final now = DateTime.now();
     final candidate = SessionNotificationText.forSession(
       usingPhoneMic: _isUsingPhoneMic,
@@ -849,258 +875,41 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     unawaited(_backgroundRunner.update(next.text));
   }
 
-  void _startNewConversation() {
-    _currentConversation = Conversation(
-      id: const Uuid().v4(),
-      createdAt: DateTime.now(),
-    );
-    _liveSegments = [];
-    _hasActiveConversation = false;
-    _lastTranscriptTime = null;
-    _cancelSilenceTimer();
-    debugPrint('Started new conversation: ${_currentConversation!.id}');
-  }
-
-  void _onSegmentReceived(TranscriptSegment segment) {
-    if (!_isListening) return;
-
-    // Check for silence to handle end-of-utterance
-    // ...
-
-    // Accumulate for Hold-to-Ask
-    if (_isHoldToAskActive && segment.text.isNotEmpty) {
-      _aiQueryTranscript += " ${segment.text}";
-    }
-
-    // Add the segment to the current conversation
-    _liveSegments.add(segment);
-    _lastTranscriptTime = DateTime.now();
-    _hasActiveConversation = true;
-
-    // Reset silence timer
-    _resetSilenceTimer();
-
-    // Keep the persistent notification's conversation length roughly current.
-    _updateSessionNotification();
-
-    notifyListeners();
-  }
-
-  void _resetSilenceTimer() {
-    _cancelSilenceTimer();
-
-    _silenceTimer = Timer(silenceTimeout, () {
-      if (_hasActiveConversation && _liveSegments.isNotEmpty) {
-        debugPrint('Silence timeout reached - saving conversation');
-        _saveCurrentConversation();
-      }
-    });
-  }
-
-  void _cancelSilenceTimer() {
-    _silenceTimer?.cancel();
-    _silenceTimer = null;
-  }
-
-  /// Save current conversation and start a new one.
-  ///
-  /// The conversation is written to the database with a placeholder title
-  /// *before* any network call, and the summarisation is handed to
-  /// [_finalizationQueue] (LO-23). A conversation recorded in a tunnel is
-  /// therefore never lost; its title and summary fill in later, so History can
-  /// show a placeholder row for a while.
-  Future<void> _saveCurrentConversation() async {
-    if (_currentConversation == null || _liveSegments.isEmpty) {
-      _startNewConversation();
-      return;
-    }
-
-    // Copy data before resetting
-    final conversationToSave = _currentConversation!;
-    conversationToSave.segments = List.from(_liveSegments);
-
-    // Start new conversation immediately so listening continues
-    _startNewConversation();
-    notifyListeners();
-
-    conversationToSave.title =
-        'Conversation ${conversationToSave.createdAt.toString().substring(0, 16)}';
-
-    await DatabaseService.saveConversation(conversationToSave);
-    await loadConversations();
-
-    await _enqueueFinalization(conversationToSave);
-
-    debugPrint('Saved conversation: ${conversationToSave.title}');
-  }
-
   /// Queues the summarisation of [conversation] and nudges the queue once so a
   /// phone that is online does not wait for the next poll.
   ///
   /// Without an OpenAI key there is nothing to summarise, so the placeholder
-  /// title stays as the final one and no row is queued.
+  /// title [ConversationFinalizer] wrote stays as the final one and no row is
+  /// queued. Passed to the finalizer, which logs and swallows a failure here:
+  /// the conversation itself is already persisted.
   Future<void> _enqueueFinalization(Conversation conversation) async {
     if (SettingsService.openaiApiKey.isEmpty) return;
     if (conversation.transcript.trim().isEmpty) return;
 
-    try {
-      await _finalizationQueue.enqueue(
-        conversationId: conversation.id,
-        transcript: conversation.transcript,
-      );
-      // Fire and forget: if this attempt fails the queue keeps the row and
-      // retries it on the next connectivity event or poll.
-      _drainFinalizationQueue();
-    } catch (e) {
-      debugPrint('Failed to queue finalization: $e');
-    }
-  }
-
-  /// Writes a finished summarisation back into storage. Called by
-  /// [_finalizationQueue] once a request finally succeeds, which can be long
-  /// after the conversation itself was saved.
-  ///
-  /// This is the memory/task extraction both save paths used to run inline; it
-  /// only moved to one place inside this provider. Folding it (and this whole
-  /// method) into `session/conversation_finalizer.dart` is LO-33 in M3.
-  Future<void> _applyFinalizationResult(
-    String conversationId,
-    Map<String, dynamic> result,
-  ) async {
-    final conversation = await DatabaseService.getConversation(conversationId);
-    if (conversation == null) {
-      // Deleted while the request sat in the queue: nothing left to fill in.
-      debugPrint('Finalization result for a deleted conversation: $conversationId');
-      return;
-    }
-
-    final title = (result['title'] as String?)?.trim();
-    if (title != null && title.isNotEmpty) {
-      conversation.title = title;
-    }
-    conversation.summary = (result['summary'] as String?) ?? '';
-    await DatabaseService.saveConversation(conversation);
-
-    // Save extracted memories (with deduplication)
-    final memories = (result['memories'] as List?)?.cast<String>() ?? const <String>[];
-    for (final memoryContent in memories) {
-      if (memoryContent.trim().isNotEmpty) {
-        final hasSimilar = await DatabaseService.hasSimilarMemory(
-          memoryContent,
-        );
-        if (!hasSimilar) {
-          final memory = Memory(
-            id: const Uuid().v4(),
-            content: memoryContent.trim(),
-            category: 'fact',
-            createdAt: DateTime.now(),
-            sourceConversationId: conversation.id,
-          );
-          await DatabaseService.saveMemory(memory);
-          debugPrint('Saved memory: ${memory.content}');
-        } else {
-          debugPrint('Skipped duplicate memory: $memoryContent');
-        }
-      }
-    }
-
-    // Save extracted tasks (with deduplication)
-    final tasks = result['tasks'] as List? ?? const [];
-    for (final taskData in tasks) {
-      if (taskData is Map && taskData['title'] != null) {
-        final taskTitle = taskData['title'].toString().trim();
-        if (taskTitle.isNotEmpty) {
-          final hasSimilar = await DatabaseService.hasSimilarTask(taskTitle);
-          if (!hasSimilar) {
-            DateTime? dueDate;
-            if (taskData['due_date'] != null) {
-              try {
-                dueDate = DateTime.parse(taskData['due_date'].toString());
-              } catch (e) {
-                debugPrint(
-                  'Failed to parse due date: ${taskData['due_date']}',
-                );
-              }
-            }
-            final task = Task(
-              id: const Uuid().v4(),
-              title: taskTitle,
-              description: taskData['description']?.toString(),
-              dueDate: dueDate,
-              createdAt: DateTime.now(),
-              sourceConversationId: conversation.id,
-            );
-            await DatabaseService.saveTask(task);
-
-            // Schedule notification if due date is set
-            if (task.dueDate != null) {
-              await NotificationService().scheduleTaskNotification(
-                id: notificationIdForTask(task),
-                title: task.title,
-                dueDate: task.dueDate!,
-              );
-            }
-
-            debugPrint('Saved task: ${task.title} (due: ${task.dueDate})');
-          } else {
-            debugPrint('Skipped duplicate task: $taskTitle');
-          }
-        }
-      }
-    }
-
-    await loadConversations();
-    await loadMemories();
-    await loadTasks();
-
-    debugPrint('Finalized conversation: ${conversation.title}');
+    await _finalizationQueue.enqueue(
+      conversationId: conversation.id,
+      transcript: conversation.transcript,
+    );
+    // Fire and forget: if this attempt fails the queue keeps the row and
+    // retries it on the next connectivity event or poll.
+    _drainFinalizationQueue();
   }
 
   /// Manually save current conversation without waiting for silence
-  Future<void> manualSaveConversation() async {
-    if (_liveSegments.isNotEmpty) {
-      await _saveCurrentConversation();
-    }
-  }
+  Future<void> manualSaveConversation() => _session.saveNow();
 
-  /// Stop listening
+  /// Stop listening.
+  ///
+  /// The session saves whatever it has not finalized yet and releases the
+  /// transcriber, the audio source and the device audio stream; what is left
+  /// here is the foreground service and the flags the pages read.
   Future<void> stopListening() async {
     if (!_isListening) return;
 
-    _cancelSilenceTimer();
-
-    // Save any pending conversation
-    if (_hasActiveConversation && _liveSegments.isNotEmpty) {
-      await _saveCurrentConversation();
-    }
-
-    await _audioSubscription?.cancel();
-    _audioSubscription = null;
-
-    // Stop audio source. PhoneMicSource owns the recorder, so stopping it is
-    // enough there; OmiAudioSource does not own the BLE stream, so that one
-    // still has to be stopped explicitly.
-    await _audioSource?.stop();
-    _audioSource = null;
-    if (!_isUsingPhoneMic) {
-      await _deviceManager.current?.stopAudioStream();
-    }
-
-    // Clean up the transcription backend
-    await _segmentsSubscription?.cancel();
-    _segmentsSubscription = null;
-    await _transcriberErrorsSubscription?.cancel();
-    _transcriberErrorsSubscription = null;
-    await _transcriber?.stop();
-    _transcriber = null;
-
-    _opusDecoder?.dispose();
-    _opusDecoder = null;
+    await _session.stop();
 
     _isListening = false;
     _isUsingPhoneMic = false;
-    _currentConversation = null;
-    _liveSegments = [];
 
     await _stopBackgroundRunnerWhenIdle();
 
@@ -1144,11 +953,9 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     // Build context from recent conversations
     final context = _buildMemoryContext();
 
-    // Get AI response
-    final llmClient = OpenAiClient.fromApiKey(
-      apiKey: SettingsService.openaiApiKey,
-      model: SettingsService.openaiModel,
-    );
+    // Get AI response. Built per call for the same reason every other
+    // [LlmClient] call site here is: see [_newLlmClient].
+    final llmClient = _newLlmClient();
 
     try {
       final response = await llmClient.chat(message, context: context);
@@ -1378,13 +1185,12 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
         ],
       );
 
-      // Persist first, summarise later: an SD-card import can run while the
-      // phone is offline, and the recording must not depend on that call
-      // succeeding (LO-23).
-      await DatabaseService.saveConversation(conversation);
-      await loadConversations();
-
-      await _enqueueFinalization(conversation);
+      // The same finalizer the live path uses (LO-33): persist first,
+      // summarise later, because an SD-card import can run while the phone is
+      // offline and the recording must not depend on that call succeeding
+      // (LO-23). The title set above survives — the finalizer only fills in a
+      // placeholder when there is none.
+      await _finalizer.finalize(conversation);
 
       debugPrint(
         'Saved SD card recording as conversation: ${conversation.title}',
@@ -1489,10 +1295,15 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     debugPrint('Starting Audio Test...');
     _isTestingAudio = true;
     _testAudioBuffer.clear();
+    // Divert decoded PCM away from the transcriber for the duration of the
+    // test, which is what the old `_isTestingAudio` early-return in the audio
+    // handler did.
+    _session.pcmTap = _testAudioBuffer.addAll;
     notifyListeners();
 
     // Record for 3 seconds
     Future.delayed(const Duration(seconds: 3), () async {
+      _session.pcmTap = null;
       debugPrint(
         'Audio Test Recording finished. Buffer size: ${_testAudioBuffer.length}',
       );
@@ -1556,215 +1367,6 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   Uint8List _int16ToBytes(int value) =>
       Uint8List(2)..buffer.asByteData().setInt16(0, value, Endian.little);
 
-  Timer?
-  _doubleTapTimer; // Keep mainly for debouncing if needed, but logic is now state-driven
-
-  // Audio Buffering for Hold-to-Ask
-  List<int> _voiceCommandBuffer = [];
-  bool _isCollectingVoiceCommand = false;
-
-  void _handleButtonPress(ButtonEvent event) async {
-    // Debounce - prevent multiple button events from being processed too quickly
-    if (_isProcessingButtonEvent) {
-      debugPrint("Button event blocked - still processing previous event");
-      return;
-    }
-    _isProcessingButtonEvent = true;
-
-    debugPrint("Button Event Parsed: $event");
-
-    // STATE 2: Double Tap (End/Save)
-    if (event == ButtonEvent.doubleTap) {
-      debugPrint("Double Tap Detected (State 2): Saving Conversation");
-      HapticFeedback.heavyImpact(); // Confirm action (Phone)
-      _deviceManager.current?.haptic(HapticLevel.long); // Confirm action (Omi - Long 500ms)
-      if (_liveSegments.isEmpty) {
-        NotificationService().showNotification(
-          "Double Tap",
-          "No active conversation to save.",
-        );
-      } else {
-        NotificationService().showNotification(
-          "Double Tap",
-          "Saving conversation...",
-        );
-        await manualSaveConversation();
-      }
-      _isProcessingButtonEvent = false;
-      return;
-    }
-
-    // STATE 1: Short Press (Toggle - first click starts, second click ends)
-    if (event == ButtonEvent.singleTap) {
-      if (_isHoldToAskActive) {
-        // Second click - end AI query and process
-        debugPrint("Short Press (State 1): Ending AI Query");
-        HapticFeedback.lightImpact(); // Confirm end (Phone)
-        _deviceManager.current?.haptic(HapticLevel.short); // Confirm end (Omi - Short 20ms)
-
-        // Wait to capture trailing audio
-        await Future.delayed(const Duration(milliseconds: 1500));
-
-        _isHoldToAskActive = false;
-        _isCollectingVoiceCommand = false;
-        notifyListeners();
-
-        debugPrint("Final Query Transcript: '$_aiQueryTranscript'");
-
-        _isAiQueryProcessing = true;
-
-        await _processAiQuery();
-
-        _isAiQueryProcessing = false;
-        _buttonPressStartTime = null;
-        _voiceCommandBuffer = [];
-      } else {
-        // First click - start AI query
-        debugPrint("Short Press (State 1): Starting AI Query");
-        HapticFeedback.mediumImpact(); // Confirm start (Phone)
-        _deviceManager.current?.haptic(HapticLevel.medium); // Confirm start (Omi - Medium 50ms)
-        _buttonPressStartTime = DateTime.now();
-        _isHoldToAskActive = true;
-        _aiQueryTranscript = '';
-
-        _isCollectingVoiceCommand = true;
-        _voiceCommandBuffer = [];
-
-        if (!_isListening) {
-          // startListening() brings the foreground service up before it touches
-          // the audio stream and installs the subscription itself; opening the
-          // stream here first would invert that order and leak a subscription.
-          try {
-            await startListening();
-          } catch (e) {
-            debugPrint('Could not start listening for the query: $e');
-          }
-        }
-
-        notifyListeners();
-      }
-      _isProcessingButtonEvent = false;
-      return;
-    }
-
-    // STATE 4: Short Press End (Not used with toggle - ignore)
-    if (event == ButtonEvent.singleTapRelease) {
-      debugPrint("Short Press End (State 4) - Ignored (using toggle)");
-      _isProcessingButtonEvent = false;
-      return;
-    }
-
-    // STATE 3: Long Press Start (Disabled - now turns off device in new firmware)
-    if (event == ButtonEvent.longPressStart) {
-      debugPrint("Long Press Detected (State 3) - Disabled for AI Query");
-      _isProcessingButtonEvent = false;
-      return;
-    }
-
-    // STATE 5: Long Press End
-    if (event == ButtonEvent.longPressEnd) {
-      debugPrint("Long Press Ended (State 5) - Ignoring (long press disabled)");
-      _isProcessingButtonEvent = false;
-      return;
-    }
-  }
-
-  // Audio Data Handler for the Omi device (Opus encoded, header already
-  // stripped by OmiAudioSource)
-  void _handleOmiAudioChunk(AudioChunk chunk) {
-    // BUFFER for Voice Command if active
-    if (_isCollectingVoiceCommand) {
-      _voiceCommandBuffer.addAll(chunk.bytes);
-    }
-
-    // Decode Opus to PCM (needed for Sherpa and Debug Playback)
-    final pcmData = _opusDecoder?.decode(chunk.bytes);
-
-    if (_isTestingAudio) {
-      if (pcmData != null) _testAudioBuffer.addAll(pcmData);
-      return;
-    }
-
-    // PAUSE: If AI is processing a query, ignore incoming audio for the main conversation
-    if (_isAiQueryProcessing) return;
-
-    _feedTranscriber(chunk, decodedPcm: pcmData);
-  }
-
-  // Audio Data Handler for the phone microphone (raw PCM16)
-  void _handlePhoneMicAudioChunk(AudioChunk chunk) {
-    if (chunk.bytes.isEmpty) return;
-
-    _feedTranscriber(chunk);
-  }
-
-  /// Hands one chunk to the active transcriber, decoding it first when the
-  /// backend only accepts PCM16. [decodedPcm] lets the Omi path reuse the
-  /// decode it already ran for debug playback instead of decoding twice; a
-  /// chunk whose decode failed or which cannot be converted is dropped, which
-  /// is what the per-mode routing did before.
-  void _feedTranscriber(AudioChunk chunk, {Uint8List? decodedPcm}) {
-    final transcriber = _transcriber;
-    if (transcriber == null) return;
-
-    switch (routeAudioChunk(
-      chunk: chunk.encoding,
-      accepted: transcriber.acceptedEncoding,
-    )) {
-      case AudioRouting.passThrough:
-        transcriber.feed(chunk);
-      case AudioRouting.decodeOpus:
-        final pcm = decodedPcm ?? _opusDecoder?.decode(chunk.bytes);
-        if (pcm == null) return;
-        transcriber.feed(
-          AudioChunk(
-            bytes: pcm,
-            encoding: AudioEncoding.pcm16,
-            at: chunk.at,
-          ),
-        );
-      case AudioRouting.drop:
-        break;
-    }
-  }
-
-  Future<void> _processAiQuery() async {
-    final query = _aiQueryTranscript.trim();
-    if (query.isEmpty) {
-      NotificationService().showAiResponse(
-        "I couldn't hear that. Please try again.",
-      );
-      return;
-    }
-
-    // Notify user we are processing
-    if (SettingsService.notifyProcessing) {
-      NotificationService().showAiResponse("Processing: $query");
-    }
-
-    final llmClient = OpenAiClient.fromApiKey(
-      apiKey: SettingsService.openaiApiKey,
-      model: SettingsService.openaiModel,
-    );
-
-    try {
-      // Chat
-      final response = await llmClient.chat(
-        query,
-        context:
-            "You are Omi, a helpful AI wearable assistant. Your responses are on notifications, so they MUST be extremely concise. Aim for just the answer. Navigate straight to the point. No fluff.",
-      );
-
-      debugPrint('AI Response: $response');
-      NotificationService().showAiResponse(response);
-    } catch (e) {
-      debugPrint("AI Query failed: $e");
-      NotificationService().showAiResponse(
-        "Failed to process question. Please try again.",
-      );
-    }
-  }
-
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _appLifecycleState = state;
@@ -1781,20 +1383,64 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     _reconnectTimer?.cancel();
     _reconnectGraceTimer?.cancel();
     _stateSubscription?.cancel();
-    _audioSubscription?.cancel();
     _buttonSubscription?.cancel();
-    _silenceTimer?.cancel();
-    unawaited(_deviceManager.dispose());
-    _segmentsSubscription?.cancel();
-    _transcriberErrorsSubscription?.cancel();
-    final transcriber = _transcriber;
-    if (transcriber != null) {
-      unawaited(transcriber.stop());
-    }
+    _sessionStateSubscription?.cancel();
+    _sessionSegmentsSubscription?.cancel();
+    _sessionAnswerSubscription?.cancel();
+    // The session's teardown closes the audio transport, which reaches back
+    // into the device manager, so the manager may only go down afterwards.
+    unawaited(
+      _session.dispose().whenComplete(_deviceManager.dispose).catchError(
+        (Object error) {
+          debugPrint('Provider teardown failed: $error');
+        },
+      ),
+    );
     unawaited(_finalizationQueue.stop());
     // Do not leave a foreground service (and its notification) behind.
     unawaited(_backgroundRunner.stop());
     _audioPlayer.dispose();
     super.dispose();
   }
+}
+
+/// The production [SessionFeedback]: phone haptics through `flutter/services`
+/// and notifications through `NotificationService`.
+///
+/// Lives here rather than in `lib/session` so the session layer depends on
+/// neither `flutter/services` nor `awesome_notifications`
+/// (`docs/03-architecture.md` §1), and so the "is the processing notification
+/// enabled" setting stays on this side of the boundary with the rest of
+/// `SettingsService`.
+class _PlatformSessionFeedback implements SessionFeedback {
+  const _PlatformSessionFeedback();
+
+  /// Mirrors the device pulse the session sends with the phone impact the
+  /// pre-LO-33 button handler paired it with: short/medium/long ->
+  /// light/medium/heavy.
+  @override
+  Future<void> haptic(HapticLevel level) async {
+    switch (level) {
+      case HapticLevel.short:
+        await HapticFeedback.lightImpact();
+      case HapticLevel.medium:
+        await HapticFeedback.mediumImpact();
+      case HapticLevel.long:
+        await HapticFeedback.heavyImpact();
+    }
+  }
+
+  @override
+  Future<void> notify(String title, String body) =>
+      NotificationService().showNotification(title, body);
+
+  @override
+  Future<void> notifyAiProgress(String message) async {
+    if (!SettingsService.notifyProcessing) return;
+    await NotificationService().showAiResponse(message);
+  }
+
+  @override
+  Future<void> notifyAiAnswer(String message) =>
+      NotificationService().showAiResponse(message);
 }

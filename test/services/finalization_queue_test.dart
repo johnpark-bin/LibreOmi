@@ -4,8 +4,22 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:libreomi/intelligence/llm_client.dart';
 import 'package:libreomi/services/database_service.dart';
 import 'package:libreomi/services/finalization_queue.dart';
+
+/// A fake [LlmClient] whose `summarize` behavior is controlled per test.
+class _FakeLlmClient implements LlmClient {
+  _FakeLlmClient(this._summarize);
+
+  final Future<ConversationInsights> Function(String transcript) _summarize;
+
+  @override
+  Future<ConversationInsights> summarize(String transcript, {DateTime? now}) => _summarize(transcript);
+
+  @override
+  Future<String> chat(String user, {String? context}) => throw UnimplementedError();
+}
 
 void main() {
   setUpAll(() {
@@ -26,19 +40,12 @@ void main() {
     return db;
   }
 
-  Map<String, dynamic> realResult({String title = 'Trip planning'}) => {
-        'title': title,
-        'summary': 'Discussed the itinerary for the trip.',
-        'memories': <String>['Likes window seats'],
-        'tasks': <dynamic>[],
-      };
-
-  Map<String, dynamic> sentinelResult() => {
-        'title': 'Untitled Conversation',
-        'summary': '',
-        'memories': <String>[],
-        'tasks': <dynamic>[],
-      };
+  ConversationInsights realInsights({String title = 'Trip planning'}) => ConversationInsights(
+        title: title,
+        summary: 'Discussed the itinerary for the trip.',
+        memories: const ['Likes window seats'],
+        tasks: const [],
+      );
 
   group('finalizationRetryDelay', () {
     test('follows the 30s-doubling ladder and caps at 30 minutes', () {
@@ -61,6 +68,8 @@ void main() {
       expect(isRetryableFinalizationFailure(FinalizationHttpException(401)), isFalse);
       expect(isRetryableFinalizationFailure(FinalizationHttpException(400)), isFalse);
       expect(isRetryableFinalizationFailure(StateError('bug')), isFalse);
+      expect(isRetryableFinalizationFailure(const LlmRetryableException('rate limited')), isTrue);
+      expect(isRetryableFinalizationFailure(const LlmPermanentException('bad key')), isFalse);
     });
   });
 
@@ -69,7 +78,7 @@ void main() {
       final db = await openTestDb();
       final fixedNow = DateTime(2026, 1, 1, 12);
       final queue = FinalizationQueue(
-        summarizer: (_) async => realResult(),
+        llmClient: () => _FakeLlmClient((_) async => realInsights()),
         applier: (_, __) async {},
         databaseProvider: () async => db,
         now: () => fixedNow,
@@ -88,7 +97,7 @@ void main() {
     test('enqueuing the same conversation twice yields one row', () async {
       final db = await openTestDb();
       final queue = FinalizationQueue(
-        summarizer: (_) async => realResult(),
+        llmClient: () => _FakeLlmClient((_) async => realInsights()),
         applier: (_, __) async {},
         databaseProvider: () async => db,
       );
@@ -104,7 +113,7 @@ void main() {
     test('a held row is replaced by a fresh one on the next enqueue', () async {
       final db = await openTestDb();
       final queue = FinalizationQueue(
-        summarizer: (_) async => throw FinalizationHttpException(401, 'bad key'),
+        llmClient: () => _FakeLlmClient((_) async => throw FinalizationHttpException(401, 'bad key')),
         applier: (_, __) async {},
         databaseProvider: () async => db,
       );
@@ -129,16 +138,16 @@ void main() {
   });
 
   group('FinalizationQueue.drainOnce', () {
-    test('success path: applier called, row deleted, returns 1', () async {
+    test('success path: applier called with insights, row deleted, returns 1', () async {
       final db = await openTestDb();
       String? appliedConversationId;
-      Map<String, dynamic>? appliedResult;
+      ConversationInsights? appliedInsights;
 
       final queue = FinalizationQueue(
-        summarizer: (_) async => realResult(),
-        applier: (conversationId, result) async {
+        llmClient: () => _FakeLlmClient((_) async => realInsights()),
+        applier: (conversationId, insights) async {
           appliedConversationId = conversationId;
-          appliedResult = result;
+          appliedInsights = insights;
         },
         databaseProvider: () async => db,
       );
@@ -148,8 +157,31 @@ void main() {
 
       expect(count, 1);
       expect(appliedConversationId, 'c1');
-      expect(appliedResult, isNotNull);
+      expect(appliedInsights, isNotNull);
+      expect(appliedInsights!.title, 'Trip planning');
       expect(await queue.entryFor('c1'), isNull);
+    });
+
+    test('the client factory is called once per attempt, never cached', () async {
+      final db = await openTestDb();
+      var built = 0;
+
+      final queue = FinalizationQueue(
+        llmClient: () {
+          built++;
+          return _FakeLlmClient((_) async => realInsights());
+        },
+        applier: (_, __) async {},
+        databaseProvider: () async => db,
+      );
+
+      await queue.enqueue(conversationId: 'c1', transcript: 't1');
+      await queue.enqueue(conversationId: 'c2', transcript: 't2');
+      await queue.drainOnce();
+
+      // The key and the model can change in settings between attempts, so a
+      // cached client would summarize with stale credentials.
+      expect(built, 2);
     });
 
     test('transient failure: row survives with attempts 1 and a future retry time', () async {
@@ -157,7 +189,7 @@ void main() {
       var fixedNow = DateTime(2026, 1, 1, 12);
 
       final queue = FinalizationQueue(
-        summarizer: (_) async => throw const SocketException('offline'),
+        llmClient: () => _FakeLlmClient((_) async => throw const SocketException('offline')),
         applier: (_, __) async {},
         databaseProvider: () async => db,
         now: () => fixedNow,
@@ -175,13 +207,15 @@ void main() {
       expect(entry.isHeld, isFalse);
     });
 
-    test('swallowed sentinel is treated as transient failure', () async {
+    test('LlmRetryableException leaves attempts 1 with a future retry time', () async {
       final db = await openTestDb();
+      var fixedNow = DateTime(2026, 1, 1, 12);
 
       final queue = FinalizationQueue(
-        summarizer: (_) async => sentinelResult(),
+        llmClient: () => _FakeLlmClient((_) async => throw const LlmRetryableException('rate limited')),
         applier: (_, __) async {},
         databaseProvider: () async => db,
+        now: () => fixedNow,
       );
 
       await queue.enqueue(conversationId: 'c1', transcript: 't1');
@@ -191,42 +225,19 @@ void main() {
       final entry = await queue.entryFor('c1');
       expect(entry, isNotNull);
       expect(entry!.attempts, 1);
+      expect(entry.nextAttemptAt, fixedNow.add(const Duration(seconds: 60)));
+      expect(entry.isHeld, isFalse);
     });
 
-    test('genuine result with title "Untitled Conversation" but real content is a success', () async {
+    test('LlmPermanentException immediately holds the row and is not retried', () async {
       final db = await openTestDb();
-      Map<String, dynamic>? appliedResult;
+      var summarizeCalls = 0;
 
       final queue = FinalizationQueue(
-        summarizer: (_) async => {
-              'title': 'Untitled Conversation',
-              'summary': 'A real summary the model actually produced.',
-              'memories': <String>[],
-              'tasks': <dynamic>[],
-            },
-        applier: (_, result) async {
-          appliedResult = result;
-        },
-        databaseProvider: () async => db,
-      );
-
-      await queue.enqueue(conversationId: 'c1', transcript: 't1');
-      final count = await queue.drainOnce();
-
-      expect(count, 1);
-      expect(appliedResult, isNotNull);
-      expect(await queue.entryFor('c1'), isNull);
-    });
-
-    test('permanent failure: row is immediately held and skipped next drain', () async {
-      final db = await openTestDb();
-      var summarizerCalls = 0;
-
-      final queue = FinalizationQueue(
-        summarizer: (_) async {
-          summarizerCalls++;
-          throw FinalizationHttpException(401, 'bad key');
-        },
+        llmClient: () => _FakeLlmClient((_) async {
+              summarizeCalls++;
+              throw const LlmPermanentException('bad api key');
+            }),
         applier: (_, __) async {},
         databaseProvider: () async => db,
       );
@@ -235,27 +246,55 @@ void main() {
       final count = await queue.drainOnce();
 
       expect(count, 0);
-      expect(summarizerCalls, 1);
+      expect(summarizeCalls, 1);
       final entry = await queue.entryFor('c1');
       expect(entry, isNotNull);
       expect(entry!.attempts, FinalizationQueue.maxAttempts);
       expect(entry.isHeld, isTrue);
 
-      // A second drain should not call the summarizer again for this row.
+      // A second drain should not call the client again for this row.
       await queue.drainOnce();
-      expect(summarizerCalls, 1);
+      expect(summarizeCalls, 1);
+    });
+
+    test('permanent failure: row is immediately held and skipped next drain', () async {
+      final db = await openTestDb();
+      var summarizeCalls = 0;
+
+      final queue = FinalizationQueue(
+        llmClient: () => _FakeLlmClient((_) async {
+              summarizeCalls++;
+              throw FinalizationHttpException(401, 'bad key');
+            }),
+        applier: (_, __) async {},
+        databaseProvider: () async => db,
+      );
+
+      await queue.enqueue(conversationId: 'c1', transcript: 't1');
+      final count = await queue.drainOnce();
+
+      expect(count, 0);
+      expect(summarizeCalls, 1);
+      final entry = await queue.entryFor('c1');
+      expect(entry, isNotNull);
+      expect(entry!.attempts, FinalizationQueue.maxAttempts);
+      expect(entry.isHeld, isTrue);
+
+      // A second drain should not call the client again for this row.
+      await queue.drainOnce();
+      expect(summarizeCalls, 1);
     });
 
     test('not-yet-due rows are skipped until the clock advances past them', () async {
       final db = await openTestDb();
       var fixedNow = DateTime(2026, 1, 1, 12);
-      var summarizerCalls = 0;
+      var summarizeCalls = 0;
 
       final queue = FinalizationQueue(
-        summarizer: (_) async {
-          summarizerCalls++;
-          return realResult();
-        },
+        llmClient: () => _FakeLlmClient((_) async {
+              summarizeCalls++;
+              return realInsights();
+            }),
         applier: (_, __) async {},
         databaseProvider: () async => db,
         now: () => fixedNow,
@@ -272,12 +311,12 @@ void main() {
 
       var count = await queue.drainOnce();
       expect(count, 0);
-      expect(summarizerCalls, 0);
+      expect(summarizeCalls, 0);
 
       fixedNow = fixedNow.add(const Duration(minutes: 6));
       count = await queue.drainOnce();
       expect(count, 1);
-      expect(summarizerCalls, 1);
+      expect(summarizeCalls, 1);
     });
 
     test('repeated transient failures eventually hold the row at maxAttempts', () async {
@@ -285,7 +324,7 @@ void main() {
       var fixedNow = DateTime(2026, 1, 1, 12);
 
       final queue = FinalizationQueue(
-        summarizer: (_) async => throw const SocketException('offline'),
+        llmClient: () => _FakeLlmClient((_) async => throw const SocketException('offline')),
         applier: (_, __) async {},
         databaseProvider: () async => db,
         now: () => fixedNow,
@@ -312,12 +351,12 @@ void main() {
       final applied = <String>[];
 
       final queue = FinalizationQueue(
-        summarizer: (transcript) async {
-          if (transcript == 'bad') {
-            throw const SocketException('offline');
-          }
-          return realResult();
-        },
+        llmClient: () => _FakeLlmClient((transcript) async {
+              if (transcript == 'bad') {
+                throw const SocketException('offline');
+              }
+              return realInsights();
+            }),
         applier: (conversationId, __) async {
           applied.add(conversationId);
         },
@@ -341,7 +380,7 @@ void main() {
       final db = await openTestDb();
 
       final queue = FinalizationQueue(
-        summarizer: (_) async => realResult(),
+        llmClient: () => _FakeLlmClient((_) async => realInsights()),
         applier: (_, __) async => throw const SocketException('applier failed'),
         databaseProvider: () async => db,
       );

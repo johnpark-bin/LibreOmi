@@ -48,6 +48,7 @@ lib/
     settings_repo.dart          SharedPreferences (non-secret) + flutter_secure_storage (keys)
     export_import.dart          JSON export / import
   session/
+    session_state.dart          the SessionState enum the state machine below is drawn in
     recording_session.dart      state machine: idle → listening → holdToAsk → finalizing
     conversation_finalizer.dart summarize → memories/tasks → persist → notify (single implementation)
     button_handler.dart         Omi button event state machine
@@ -75,6 +76,15 @@ LO-32 work, so the move is deferred to LO-34/LO-35 when those importers are rewr
 anyway. `lib/services/ble/ble_protocol.dart`, the one-line re-export that kept
 the pre-LO-30 imports compiling, was deleted in LO-31.
 
+Migration status (LO-33, M3 wave C): `session/` exists and owns the state machine of §4.
+`providers/app_provider.dart` is still the composition root — it builds the transcriber
+for the selected mode, holds the microphone permission and the foreground service, and
+delegates the rest to `RecordingSession`. It keeps every public member the pages call, so
+`ui/` is untouched; dissolving it into the controllers of the target layout is LO-34.
+`ConversationFinalizer` takes a `Future<Database>` and builds the three repos per call,
+because the process-wide database is opened lazily; injecting the repos themselves waits
+for LO-34, when the provider that owns that future goes away.
+
 Transitional exception (LO-32, M3 wave A): `audio/`, `transcription/` and
 `intelligence/` were introduced as adapters, so they still import the upstream
 `services/*_service.dart` classes they wrap, and `transcription/` imports
@@ -89,10 +99,11 @@ rewrites the callers (`providers/app_provider.dart`, `pages/*`) onto the reposit
 directly, and the facade is deleted with the provider. Three consequences of that split
 are worth knowing:
 
-- `services/finalization_queue.dart` still owns its own SQL and its own
-  `PendingFinalization` type. `data/finalization_repo.dart` is the policy-free table
-  access it moves onto in LO-23's follow-up; until then the repository has tests but
-  no production caller, which is deliberate rather than an oversight.
+- `services/finalization_queue.dart` reads and writes every row through
+  `data/finalization_repo.dart` (LO-33). The repo stays policy-free: backoff,
+  `maxAttempts` and the "held" predicate live in the queue, the last of them as an
+  extension the queue declares on `PendingFinalizationRow`. The queue's own
+  `PendingFinalization` type is gone.
 - `core/ids.dart` gained `fallbackNotificationId`, the `created_at & 0x7fffffff`
   derivation that `tasks.notification_id` is seeded with. Both `data/task_repo.dart`
   and `services/notification_ids.dart` need it and neither may depend on the other,
@@ -227,12 +238,15 @@ flowchart LR
   DG --> SEG[(segments)]
   SH --> SEG
   SEG --> RS
-  RS -->|silence 2 min / double-tap| FIN[ConversationFinalizer]
-  FIN --> LLM[LlmClient.summarize]
-  LLM --> REPO[(SQLite repos)]
-  FIN --> NOTIF[Notifications]
+  RS -->|silence 2 min / double-tap / stop| FIN[ConversationFinalizer]
+  FIN -->|persist first| REPO[(SQLite repos)]
+  FIN --> Q[FinalizationQueue\nretry with backoff]
+  Q --> LLM[LlmClient.summarize]
+  LLM -->|ConversationInsights| FIN
+  FIN --> NOTIF[Notifications\ntask reminders]
   BTN[buttonEvents] --> BH[ButtonHandler] --> RS
-  RS --> BG[BackgroundRunner\nforeground service]
+  AP[AppProvider] -->|start / stop| RS
+  AP --> BG[BackgroundRunner\nforeground service]
 ```
 
 ## 4. Session state machine
@@ -245,11 +259,34 @@ idle ──connect & keys ok──▶ listening ──single tap──▶ holdTo
 
 - `listening`: audio flows to the active transcriber; segments append to the current
   conversation; every segment resets the silence timer.
-- `holdToAsk`: segments are additionally accumulated into the query buffer; overlay shown.
-- `answering`: transcription of the main conversation is paused; LLM chat runs; result
-  is delivered as a notification and (new) appended to the chat page.
+- `holdToAsk`: segments are additionally accumulated into the query buffer *and* into the
+  conversation — the question was said out loud in the room. Overlay shown.
+- `answering`: transcription of the main conversation is paused (incoming audio is
+  dropped, not buffered); LLM chat runs; the result is delivered as a notification and
+  appended to the chat page, together with the question it answers, so the chat page does
+  not fill up with orphan replies (LO-33, issue #33).
 - `finalizing`: the current conversation is handed to `ConversationFinalizer`
   asynchronously; a new empty conversation starts immediately so listening never stops.
+  The state it returns to is the one it interrupted: `listening` normally, `holdToAsk`
+  when a double tap saved in the middle of a query (the query is not abandoned), and
+  `idle` when the session is stopping.
+
+`RecordingSession` owns the machine above, the live segment list, the silence timeout, the
+button gestures and the hold-to-ask exchange. It does *not* own the pieces that need
+`SettingsService`, runtime permissions or the Android foreground service: which transcriber
+the selected mode calls for, the microphone permission, and bringing the foreground service
+up before any audio flows (docs/04 §4) stay in `providers/app_provider.dart`. That provider
+supplies the transcriber as a `TranscriberFactory` at construction and hands the ready-made
+`AudioSource` — plus the pair of callbacks that open and close the audio transport under it
+— to `RecordingSession.start()`. That is what keeps `lib/session` free of platform and
+settings dependencies, per the dependency rule in §1.
+
+`ConversationFinalizer` is the single implementation both the live path and the SD-card
+import path (`processLocalAudioFile`) go through: persist immediately with a placeholder
+title, hand the summarisation to `FinalizationQueue`, and — when the queue finally
+succeeds — apply the title, summary, deduplicated memories and tasks, and schedule the
+reminders. The queue classifies failures by `LlmRetryableException` / `LlmPermanentException`
+rather than by inspecting the result (LO-33).
 
 ## 5. Android background execution design
 
