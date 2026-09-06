@@ -224,13 +224,29 @@ orphaned by a process that died without stopping it.
   annotate the failure log — it is a documented rule, not an enforced guard.
 - Stop the service as soon as the session leaves listening, whether or not a device is
   still connected — an idle app must show no persistent notification (LO-24), otherwise
-  it annoys users and Play reviewers.
+  it annoys users and Play reviewers. One bounded exception (LO-22): when a *running*
+  session is interrupted by the wearable dropping out of range, the service is kept for
+  `AppProvider.reconnectGraceWindow` (5 min) so Android cannot kill the process before
+  the reconnect lands; the notification's source half switches to `Omi disconnected`.
+  An explicit disconnect, forgetting the device, or the window expiring takes it
+  straight down — and past the window Android may reclaim the process, after which
+  nothing re-arms until the app is opened again. Note that the retained service keeps
+  the `connectedDevice` type while nothing is connected for up to those 5 minutes;
+  if Play policy review ever objects, shorten the window rather than dropping the
+  type.
 
 ## 5. BLE specifics (`flutter_blue_plus` on Android)
 
 - `await device.connect(timeout: 10s, autoConnect: false)` for user-initiated connects;
   `autoConnect: true` for the saved device in the background (slower, but survives
-  out-of-range and needs no scan → no location/scan permission traffic).
+  out-of-range and needs no scan → no location/scan permission traffic). Two properties
+  of `flutter_blue_plus` 1.36.x make that mode different in kind, not only in speed
+  (verified in `bluetooth_device.dart` and the Android plugin, LO-22):
+  `connect(autoConnect: true)` asserts `mtu: null`, returns *immediately* and ignores
+  the timeout — the link is observed through `connectionState`, not the future — and the
+  plugin deliberately skips `gatt.close()` for auto-connected devices, so Android keeps
+  retrying the connection by itself after a drop. `disconnect()` is what cancels the
+  arming.
 - Immediately after connect: `await device.requestMtu(512)`; verify the returned MTU
   is ≥ 86 (83-byte audio packet + 3-byte ATT header). If the phone refuses, show an
   error and do not start a session; truncated packets would silently corrupt audio.
