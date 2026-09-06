@@ -246,7 +246,7 @@ class ModelCatalog {
   /// `SettingsService.whisperModelSize` reduced to a size this catalog has,
   /// so a stale or corrupted preference cannot leave the app with no model.
   ///
-  /// Callers that build file names out of the size — `WhisperService` opens
+  /// Callers that build file names out of the size — `whisper_worker.dart` opens
   /// `<size>-encoder.onnx` — must go through this rather than the raw
   /// preference, or they would look for `small-encoder.onnx` inside the tiny
   /// model's directory.

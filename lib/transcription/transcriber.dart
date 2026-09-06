@@ -47,10 +47,16 @@ abstract class StreamingTranscriber {
 /// A transcriber that runs over a complete recording rather than a live
 /// stream.
 ///
-/// No implementation exists yet: SD-card file transcription is M5
-/// (docs/06-roadmap.md, LO-5x), and `app_provider.processLocalAudioFile`
-/// still calls the `services/*_service.dart` classes directly until that
-/// work lands.
+/// Two implementations, chosen by the transcription-mode setting and built
+/// per import by `session/sdcard_import.dart` (LO-51):
+/// `transcription/deepgram_prerecorded.dart` uploads the WAV to Deepgram's
+/// pre-recorded endpoint, and `transcription/offline_file_transcriber.dart`
+/// decodes it on device through the Whisper worker. Both on-device settings
+/// modes resolve to the latter: a streaming model fed a whole file is less
+/// accurate than one offline decode per VAD-detected utterance.
 abstract class FileTranscriber {
+  /// Transcribes [wav], which must be 16 kHz mono PCM16 -- what
+  /// `audio/wav.dart` writes. The file is the caller's to delete; an
+  /// implementation must not outlive the call holding a handle to it.
   Future<List<TranscriptSegment>> transcribe(File wav);
 }

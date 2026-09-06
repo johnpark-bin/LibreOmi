@@ -4,14 +4,15 @@
 /// in a worker isolate (`whisper_worker.dart`), so nothing here decodes
 /// audio: this file resolves the Whisper and VAD model directories, starts
 /// the worker, forwards PCM16 chunks to it and turns the segments it sends
-/// back into [TranscriptSegment]s. That is why neither `package:sherpa_onnx`
-/// nor `services/whisper_service.dart` is imported here — see LO-42 in
-/// `docs/06-roadmap.md`.
+/// back into [TranscriptSegment]s. That is why `package:sherpa_onnx` is not
+/// imported here — see LO-42 in `docs/06-roadmap.md`.
 ///
-/// "Batch" no longer means the old fixed 3-second timer that
-/// `services/whisper_service.dart` still runs for the SD-card import path
-/// (M5 retires that too): it now means one decode per VAD-detected
-/// utterance, so a decode never cuts audio mid-word.
+/// "Batch" no longer means the fixed 3-second timer the deleted
+/// `services/whisper_service.dart` ran: it means one decode per
+/// VAD-detected utterance, so a decode never cuts audio mid-word. LO-51
+/// retired that service along with the SD-card import stubs that were its
+/// last caller; file transcription now goes through
+/// `transcription/offline_file_transcriber.dart`.
 library;
 
 import 'dart:async';

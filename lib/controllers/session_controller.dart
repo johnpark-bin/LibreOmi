@@ -13,19 +13,17 @@
 library;
 
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:uuid/uuid.dart';
 import 'dart:io';
 
 import '../audio/audio_source.dart';
 import '../audio/omi_audio_source.dart';
-import '../audio/opus_decoder.dart';
 import '../audio/phone_mic_source.dart';
+import '../audio/wav.dart';
 import '../data/db.dart';
 import '../device/device_manager.dart';
 import '../device/omi_device.dart';
@@ -39,13 +37,13 @@ import '../services/finalization_queue.dart';
 import '../services/mic_service.dart';
 import '../services/notification_service.dart';
 import '../services/settings_service.dart';
-import '../services/sdcard_sync_service.dart';
-import '../services/sherpa_service.dart';
-import '../services/whisper_service.dart';
 import '../session/conversation_finalizer.dart';
 import '../session/recording_session.dart';
+import '../session/sdcard_import.dart';
 import '../session/session_state.dart';
+import '../transcription/deepgram_prerecorded.dart';
 import '../transcription/deepgram_streaming.dart';
+import '../transcription/offline_file_transcriber.dart';
 import '../transcription/sherpa_streaming.dart';
 import '../transcription/transcriber.dart';
 import '../transcription/whisper_batch.dart';
@@ -71,6 +69,11 @@ class SessionController extends ChangeNotifier {
       scheduleReminder: NotificationService().scheduleTaskNotification,
       onConversationSaved: library.loadConversations,
       onInsightsApplied: library.reloadAll,
+    );
+    _sdCardImporter = SdCardImporter(
+      finalizer: _finalizer,
+      transcriberFactory: _buildFileTranscriber,
+      temporaryDirectory: getTemporaryDirectory,
     );
     _finalizationQueue = finalizationQueue ??
         FinalizationQueue(
@@ -108,6 +111,11 @@ class SessionController extends ChangeNotifier {
   /// The one place a conversation is persisted and its insights applied, for
   /// both the live path and the SD-card import path (LO-33).
   late final ConversationFinalizer _finalizer;
+
+  /// Post-processing for one synced SD-card recording: decode, transcribe,
+  /// finalize (LO-51). Holds no state between imports; the transcriber is
+  /// built per import from the settings in force at that moment.
+  late final SdCardImporter _sdCardImporter;
 
   /// The session state machine (`docs/03-architecture.md` §4). Everything
   /// this controller used to do between "audio is flowing" and "the
@@ -636,179 +644,41 @@ class SessionController extends ChangeNotifier {
     });
   }
 
-  /// Process a local audio file from SD card sync
-  /// Returns the transcript text
+  /// Imports one synced SD-card recording (LO-51). The work itself lives in
+  /// [SdCardImporter]; this method only supplies what needs settings — which
+  /// transcriber the user configured, and the Deepgram key and usage
+  /// accounting that go with the cloud one.
+  ///
+  /// Before LO-51 the three `_transcribeWith*` helpers this replaces were
+  /// upstream stubs that returned placeholder strings, so a synced recording
+  /// could never become a conversation with a summary.
   Future<String> processLocalAudioFile(String filePath) async {
     debugPrint('Processing local audio file: $filePath');
+    return _sdCardImporter.import(filePath);
+  }
 
-    // Read the audio data
-    final audioData = await SdCardSyncService.readAudioFile(filePath);
-    if (audioData == null || audioData.isEmpty) {
-      throw Exception('Failed to read audio file');
-    }
-
-    debugPrint('Read ${audioData.length} bytes of audio data');
-
-    // Determine codec from filename
-    final isOpus = filePath.contains('opus');
-
-    // If Opus, decode to PCM first
-    List<int> pcmData;
-    if (isOpus) {
-      final decoder = OpusDecoder();
-      await decoder.initialize();
-
-      // Decode Opus frames
-      pcmData = [];
-      int offset = 0;
-      while (offset < audioData.length) {
-        // Each frame is prefixed with 4-byte length
-        if (offset + 4 > audioData.length) break;
-
-        final frameLength =
-            audioData[offset] |
-            (audioData[offset + 1] << 8) |
-            (audioData[offset + 2] << 16) |
-            (audioData[offset + 3] << 24);
-        offset += 4;
-
-        if (offset + frameLength > audioData.length) break;
-
-        final frame = audioData.sublist(offset, offset + frameLength);
-        final decoded = decoder.decode(Uint8List.fromList(frame));
-        if (decoded != null) {
-          pcmData.addAll(decoded);
-        }
-        offset += frameLength;
-      }
-
-      decoder.dispose();
-      debugPrint('Decoded ${pcmData.length} bytes of PCM audio');
-    } else {
-      pcmData = audioData.toList();
-    }
-
-    // Transcribe using the configured transcription method
-    final transcriptionMode = SettingsService.transcriptionMode;
-    String transcript = '';
-
-    switch (transcriptionMode) {
-      case 'whisper':
-        debugPrint('Using Whisper for local transcription');
-        transcript = await _transcribeWithWhisper(Uint8List.fromList(pcmData));
-        break;
-
-      case 'sherpa':
-        debugPrint('Using Sherpa for local transcription');
-        transcript = await _transcribeWithSherpa(Uint8List.fromList(pcmData));
-        break;
-
-      default: // cloud
-        debugPrint('Using Deepgram for transcription');
-        transcript = await _transcribeWithDeepgram(Uint8List.fromList(pcmData));
-    }
-
-    // Save as a conversation if we got a transcript
-    if (transcript.isNotEmpty) {
-      final conversation = Conversation(
-        id: const Uuid().v4(),
-        createdAt: DateTime.now(),
-        title: 'SD Card Recording',
-        segments: [
-          TranscriptSegment(
-            text: transcript,
-            speakerId: 0,
-            startTime: 0,
-            endTime: 0,
-          ),
-        ],
-      );
-
-      // The same finalizer the live path uses (LO-33): persist first,
-      // summarise later, because an SD-card import can run while the phone is
-      // offline and the recording must not depend on that call succeeding
-      // (LO-23). The title set above survives -- the finalizer only fills in a
-      // placeholder when there is none.
-      await _finalizer.finalize(conversation);
-
-      debugPrint(
-        'Saved SD card recording as conversation: ${conversation.title}',
+  /// Builds the [FileTranscriber] the current settings ask for.
+  ///
+  /// Both on-device modes resolve to [OfflineFileTranscriber]: the sherpa
+  /// streaming model is built to decode audio as it arrives, and pushing a
+  /// whole recording through it is measurably worse than one offline Whisper
+  /// decode per VAD-detected utterance (docs/06-roadmap.md, LO-51).
+  FileTranscriber _buildFileTranscriber() {
+    if (SettingsService.useLocalTranscription) {
+      return OfflineFileTranscriber(
+        modelSize: SettingsService.whisperModelSize,
+        language: SettingsService.localSttLanguage,
       );
     }
-
-    return transcript;
-  }
-
-  Future<String> _transcribeWithWhisper(Uint8List pcmData) async {
-    final whisper = WhisperService(modelSize: SettingsService.whisperModelSize);
-
-    try {
-      await whisper.initialize();
-
-      // Process all audio at once
-      whisper.addAudio(pcmData);
-
-      // Wait for processing
-      await Future.delayed(const Duration(seconds: 5));
-
-      whisper.stopProcessing();
-
-      // Get accumulated transcript from the service
-      // Note: The current WhisperService uses callbacks, so we'd need to modify it
-      // For now, return a placeholder
-      return 'Transcription with Whisper completed';
-    } finally {
-      whisper.dispose();
-    }
-  }
-
-  Future<String> _transcribeWithSherpa(Uint8List pcmData) async {
-    final sherpa = SherpaService();
-
-    try {
-      await sherpa.initialize();
-
-      // Process all audio
-      sherpa.addAudio(pcmData);
-
-      // Wait for processing
-      await Future.delayed(const Duration(seconds: 5));
-
-      sherpa.stopProcessing();
-
-      return 'Transcription with Sherpa completed';
-    } finally {
-      sherpa.dispose();
-    }
-  }
-
-  Future<String> _transcribeWithDeepgram(Uint8List pcmData) async {
     if (!SettingsService.hasDeepgramKey) {
       throw Exception('Deepgram API key not configured');
     }
-
-    // For file transcription, we'd need to use Deepgram's file upload API
-    // instead of the streaming API
-    // This is a placeholder - the actual implementation would upload the file
-
-    // Save PCM to temporary WAV file
-    final tempDir = await getTemporaryDirectory();
-    final wavFile = File(
-      '${tempDir.path}/sdcard_audio_${DateTime.now().millisecondsSinceEpoch}.wav',
+    return DeepgramPreRecordedTranscriber(
+      apiKey: SettingsService.deepgramApiKey,
+      model: SettingsService.deepgramModel,
+      language: SettingsService.language,
+      onUsage: SettingsService.addDeepgramUsage,
     );
-
-    // Create WAV header
-    final header = _buildWavHeader(pcmData.length);
-    final wavData = BytesBuilder();
-    wavData.add(header);
-    wavData.add(pcmData);
-    await wavFile.writeAsBytes(wavData.toBytes());
-
-    debugPrint('Saved temporary WAV file: ${wavFile.path}');
-
-    // TODO: Implement Deepgram file upload API
-    // For now return placeholder
-    return 'Audio file saved. Cloud transcription pending.';
   }
 
   Future<void> startAudioTest() async {
@@ -862,12 +732,7 @@ class SessionController extends ChangeNotifier {
 
       // Create WAV header
       final pcmData = Uint8List.fromList(_testAudioBuffer);
-      final header = _buildWavHeader(pcmData.length);
-      final wavData = BytesBuilder();
-      wavData.add(header);
-      wavData.add(pcmData);
-
-      await tempFile.writeAsBytes(wavData.toBytes());
+      await tempFile.writeAsBytes(buildWav(pcmData));
       debugPrint('Playing back audio test file: ${tempFile.path}');
 
       await _audioPlayer.play(DeviceFileSource(tempFile.path));
@@ -875,36 +740,6 @@ class SessionController extends ChangeNotifier {
       debugPrint('Audio playback error: $e');
     }
   }
-
-  Uint8List _buildWavHeader(int dataSize) {
-    const sampleRate = 16000;
-    const channels = 1;
-    const bitsPerSample = 16;
-    final fileSize = dataSize + 36;
-    final byteRate = sampleRate * channels * bitsPerSample ~/ 8;
-    final blockAlign = channels * bitsPerSample ~/ 8;
-
-    final header = BytesBuilder();
-    header.add('RIFF'.codeUnits);
-    header.add(_int32ToBytes(fileSize));
-    header.add('WAVE'.codeUnits);
-    header.add('fmt '.codeUnits);
-    header.add(_int32ToBytes(16));
-    header.add(_int16ToBytes(1));
-    header.add(_int16ToBytes(channels));
-    header.add(_int32ToBytes(sampleRate));
-    header.add(_int32ToBytes(byteRate));
-    header.add(_int16ToBytes(blockAlign));
-    header.add(_int16ToBytes(bitsPerSample));
-    header.add('data'.codeUnits);
-    header.add(_int32ToBytes(dataSize));
-    return header.toBytes();
-  }
-
-  Uint8List _int32ToBytes(int value) =>
-      Uint8List(4)..buffer.asByteData().setInt32(0, value, Endian.little);
-  Uint8List _int16ToBytes(int value) =>
-      Uint8List(2)..buffer.asByteData().setInt16(0, value, Endian.little);
 
   @override
   void dispose() {
