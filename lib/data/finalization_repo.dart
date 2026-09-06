@@ -1,11 +1,12 @@
 /// Table access for `pending_finalizations` (LO-35).
 ///
 /// This is deliberately policy-free: backoff, `maxAttempts`, and what counts
-/// as "held" all stay in `services/finalization_queue.dart`. That queue is
-/// the only caller for now and keeps its own `PendingFinalization` type;
-/// issue #23 is the follow-up that switches it onto this repo. Nothing here
-/// imports `finalization_queue.dart` -- `lib/data` must not depend on
-/// `lib/services` (see docs/03-architecture.md).
+/// as "held" all stay in `services/finalization_queue.dart`, which since
+/// LO-33 is the only caller and reads every row through this repo -- the
+/// "held" predicate is an extension it declares on [PendingFinalizationRow]
+/// rather than a field here. Nothing in this file imports
+/// `finalization_queue.dart`: `lib/data` must not depend on `lib/services`
+/// (see docs/03-architecture.md).
 library;
 
 import 'package:sqflite/sqflite.dart';

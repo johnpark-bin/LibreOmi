@@ -69,10 +69,14 @@ class ConversationInsights {
     return ConversationInsights(title: title, summary: summary, memories: memories, tasks: tasks);
   }
 
-  /// Renders these insights back into the untyped map shape that
-  /// `FinalizationQueue` and `AppProvider._applyFinalizationResult` still
-  /// consume. This bridge exists only because the queue is still map-based;
-  /// it goes away once LO-23 migrates the queue to typed results.
+  /// Renders these insights back into the untyped map shape the finalization
+  /// pipeline used to consume.
+  ///
+  /// No production code calls this any more: LO-33 moved `FinalizationQueue`
+  /// and `ConversationFinalizer` onto [ConversationInsights] itself. It is
+  /// kept as the inverse of [ConversationInsights.fromMap] (the round-trip is
+  /// what `test/intelligence/llm_client_test.dart` pins) and can be deleted
+  /// with that test in LO-34.
   Map<String, dynamic> toMap() {
     return {
       'title': title,
@@ -115,6 +119,15 @@ class LlmRetryableException extends LlmException {
 class LlmPermanentException extends LlmException {
   const LlmPermanentException(super.message, [super.cause]);
 }
+
+/// Builds an [LlmClient] for one call.
+///
+/// A factory rather than a single shared instance because the API key and
+/// the model can change in settings between a conversation being queued and
+/// being retried, and because a background drain must not be able to swap a
+/// shared client out from under another caller that is between its own
+/// assignment and its use.
+typedef LlmClientFactory = LlmClient Function();
 
 /// Provider-agnostic LLM operations used by the conversation finalization
 /// and chat features.
