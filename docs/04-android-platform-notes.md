@@ -348,7 +348,12 @@ process that died without stopping it.
   private, backed up by Auto Backup (models would bloat backups). LO-40 acts on that: models
   are installed under `getApplicationSupportDirectory()` instead, and excluded from backup
   there (see §9).
-- SD-card sync `.bin` files: `getApplicationSupportDirectory()/sdcard/`.
+- SD-card sync `.bin` files: `getApplicationSupportDirectory()/sdcard/`. LO-50 moved them
+  there from the documents directory and added
+  `SdCardSyncService.migrateLegacySyncedFiles()`, a one-time move of any `sdcard_audio_*`
+  file a pre-LO-50 build left behind (an existing file at the destination wins and the
+  legacy copy is dropped). `getSyncedFiles()` runs it before listing, so an upgrading user
+  keeps seeing their existing recordings without any page change.
 - STT models: `getApplicationSupportDirectory()/models/<ModelSpec.id>/`, installed by
   `lib/transcription/model_store.dart` (LO-40), whose catalog of installable models is
   `lib/transcription/model_catalog.dart`. An install downloads the model's `.tar.bz2` into a

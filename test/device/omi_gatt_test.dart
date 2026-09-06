@@ -121,6 +121,14 @@ void main() {
     });
   });
 
+  group('buildStorageStopCommand', () {
+    test('is the bare 0x03 byte, not the 6-byte read/clear payload', () {
+      // docs/05-omi-ble-protocol.md "Storage (SD card) protocol": command 3
+      // is sent as a single byte, which is why it needs its own encoder.
+      expect(buildStorageStopCommand(), [0x03]);
+    });
+  });
+
   group('buildStorageCommand', () {
     test('returns exactly 6 bytes', () {
       final bytes = buildStorageCommand(command: 0, fileNumber: 1, offset: 0);

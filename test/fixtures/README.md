@@ -92,6 +92,30 @@ the resulting `.jsonl` is committed) used by `test/device/fake_omi_device_test.d
 - `t` values are monotonically non-decreasing throughout, with audio packets spaced
   ~10 ms apart (matching the codec's 100 fps).
 
+## `omi_sdcard_transfer.jsonl` (LO-50)
+
+A synthetic SD-card transfer session, `storage` channel only, used by the
+`SdCardSyncService` integration test. Generated with a throwaway script; only the
+`.jsonl` is committed. In order:
+
+- one `0` byte — `StorageStatus.ready`;
+- 24 packets of 83 bytes, `[packetIndex lo][packetIndex hi][frameIndex][79][79 payload
+  bytes]`. The payload bytes are derived from the packet index (`(i * 31 + j) & 0xFF`),
+  not all-zero, so a truncation or off-by-one in the parser shows up in the contents;
+- 3 packets of 440 bytes, each carrying five `[80][80 bytes]` records followed by
+  `len == 0` padding to the full 440 — the multi-frame shape of
+  `docs/05-omi-ble-protocol.md`;
+- one `100` byte — `StorageStatus.transferComplete`.
+
+That is 39 frames and 3240 bytes of transfer accounting (83-byte packets count 80 bytes
+each, 440-byte packets count 440). The device-declared total the test pairs this with is
+deliberately much larger, because `SdCardSyncService.checkForPendingData` refuses
+anything under 10 seconds of audio and 10 seconds at 100 fps would be a thousand-line
+fixture — which defeats the point of a reviewable format. A real device ending a
+transfer with fewer bytes than the control characteristic advertised is exactly the
+`100`-terminates-the-transfer case the service already handles, so the fixture stays
+faithful to the protocol while staying readable.
+
 ## `omi_session_minimal.jsonl`
 
 A handful of hand-written lines (one of each channel) kept small enough to read in

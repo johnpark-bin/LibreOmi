@@ -176,10 +176,10 @@ scanning, connecting, the saved device and the current `OmiDevice`, and a
 `flutter_blue_plus` and `services/ble_service.dart` (the service keeps the
 connection, MTU and reconnect logic stabilised by LO-22/LO-16, which cannot be
 re-verified without hardware), and the auto-reconnect backoff lives in
-`DeviceController` rather than in `device/` itself (LO-34). `SdCardSyncService` still
-switches on
-raw notification lengths itself; LO-50 ports that loop onto
-`OmiStorage.packets`.
+`DeviceController` rather than in `device/` itself (LO-34). Since LO-50 `SdCardSyncService` consumes `OmiStorage.packets` and drives the
+pure `services/sdcard_transfer.dart` state machine, so no code above `device/`
+switches on raw notification lengths any more; `rawPackets` remains only for
+the BLE session capture and manual debugging.
 
 ## 2. Key interfaces
 
@@ -210,8 +210,9 @@ abstract class OmiStorage {
   Future<List<int>> list();                // [totalBytes, offset]; [] = no storage service
   Future<void> startStream(); Future<void> stopStream();
   Future<bool> startRead(int offset, {int fileNumber});
+  Future<bool> stopRead();                 // bare 0x03; ends a transfer in flight
   Future<bool> clear({int fileNumber});
-  Stream<List<int>> get rawPackets;        // untouched bytes, for the LO-50 transfer loop
+  Stream<List<int>> get rawPackets;        // untouched bytes, kept for capture/debugging
   Stream<StoragePacket> get packets;       // rawPackets through parseStoragePacket
 }
 
@@ -388,7 +389,7 @@ Not in scope for v1: boot receiver, companion-device pairing, native Kotlin serv
 | `services/database_service.dart`, `models/` | LO-35 split the SQL into `data/` repos behind an unchanged `DatabaseService` facade; schema v5 adds `tasks.notification_id` (backfilled with the pre-v5 `created_at & 0x7fffffff` derivation) and puts `chat_messages` on the migration path so chat is persisted. `start_at/end_at` on segments live in the transcript JSON, so they needed no table change. LO-34 moved every production caller onto the repositories, leaving the facade with test-only callers. Still to do: move the models to `core/`, and delete the facade once its two test files are rewritten. |
 | `services/settings_service.dart` | Copy → `data/settings_repo.dart`; keys move to secure storage with one-time migration. |
 | `services/notification_service.dart` | Copy → `platform/notifications.dart`; stable numeric IDs now come from the `tasks.notification_id` column (LO-35), read via `services/notification_ids.dart`; Android res added. |
-| `services/sdcard_sync_service.dart` | LO-31 repointed it onto `OmiStorage` (it no longer knows about BLE). Still to move: the byte-level transfer loop → `device/omi_storage.dart` implementations via `OmiStorage.packets` (LO-50), and post-processing → `session/sdcard_import.dart` (via `FileTranscriber` + `ConversationFinalizer`). |
+| `services/sdcard_sync_service.dart` | LO-31 repointed it onto `OmiStorage` (it no longer knows about BLE); LO-50 moved the byte-level transfer loop onto `OmiStorage.packets` + the pure `services/sdcard_transfer.dart`. Still to move: post-processing → `session/sdcard_import.dart` (via `FileTranscriber` + `ConversationFinalizer`). |
 | `providers/app_provider.dart` | **Done (LO-34).** Dissolved into `session/*` (LO-33) plus the four `ChangeNotifier`s in `controllers/`: `DeviceController`, `SessionController`, `LibraryController`, `ChatController`. The file and `lib/providers/` are gone. |
 | `pages/*` | Port unchanged in M1; re-point to the new controllers in M3. |
 | `OmiLocal/`, Finder duplicates, iCloud toggle | Drop. |

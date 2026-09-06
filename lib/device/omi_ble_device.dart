@@ -167,6 +167,9 @@ class OmiBleStorage implements OmiStorage {
       _ble.writeToStorage(fileNumber, 0, offset);
 
   @override
+  Future<bool> stopRead() => _ble.writeStorageStop();
+
+  @override
   Future<bool> clear({int fileNumber = 1}) =>
       _ble.writeToStorage(fileNumber, 1, 0);
 

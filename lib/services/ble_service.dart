@@ -885,6 +885,30 @@ class BleService {
     return false;
   }
 
+  /// Sends the single-byte stop command (`0x03`) to the storage data
+  /// characteristic, ending a transfer that is currently in flight.
+  ///
+  /// Kept separate from [writeToStorage] because the stop command is a bare
+  /// byte, not the 6-byte `[command, fileNumber, offset]` payload the read and
+  /// clear commands use (docs/05-omi-ble-protocol.md "Storage (SD card)
+  /// protocol").
+  Future<bool> writeStorageStop() async {
+    if (_connectedDevice == null) return false;
+
+    try {
+      final char = _characteristic(storageDataStreamCharacteristicUuid);
+      if (char == null) {
+        debugPrint('writeStorageStop: storage data characteristic not available');
+        return false;
+      }
+      await char.write(buildStorageStopCommand(), withoutResponse: false);
+      return true;
+    } catch (e) {
+      debugPrint('Error writing storage stop: $e');
+    }
+    return false;
+  }
+
   final _storageController = StreamController<List<int>>.broadcast();
   Stream<List<int>> get storageStream => _storageController.stream;
   StreamSubscription? _storageSubscription;

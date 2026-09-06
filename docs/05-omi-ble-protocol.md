@@ -76,7 +76,13 @@ Write to storage data characteristic (6 bytes):
 |--------:|---------|
 | 0 | start streaming file `fileNumber` from `offset` |
 | 1 | clear / acknowledge file (delete on device) |
-| 3 | stop current transfer (upstream sends a single byte `0x03`) |
+| 3 | stop current transfer (a single byte `0x03`, **not** the 6-byte payload) |
+
+Since LO-50 the stop command has its own encoder (`buildStorageStopCommand()` in
+`lib/device/omi_gatt.dart`) and its own transport call (`OmiStorage.stopRead()`),
+because it is the one command that is not the 6-byte `[command, fileNumber, offset]`
+shape. A cancelled sync sends it so the firmware stops streaming into a listener that
+is already gone.
 
 Responses on the data characteristic:
 

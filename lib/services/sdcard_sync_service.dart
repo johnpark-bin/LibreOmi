@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import '../device/omi_gatt.dart';
 import '../device/omi_storage.dart';
+import 'sdcard_transfer.dart';
 
 /// Represents a WAL (Write-Ahead Log) file from SD card
 enum WalStatus {
@@ -121,11 +122,34 @@ typedef SyncCompleteCallback = void Function(String filePath, int durationSecond
 /// Error callback
 typedef SyncErrorCallback = void Function(String error);
 
+/// Thrown internally to unwind an in-flight `_performSync` when
+/// [SdCardSyncService.cancelSync] is called. Never surfaced to callers: by
+/// the time it is thrown, `cancelSync` has already told the device to stop,
+/// torn the subscription down and reset the sync state, so there is nothing
+/// left to report as a failure.
+class _SyncCancelled implements Exception {
+  const _SyncCancelled();
+
+  @override
+  String toString() => 'sync cancelled';
+}
+
 class SdCardSyncService {
   final OmiStorage _storage;
   final Future<BleAudioCodec> Function() _readCodec;
 
   StreamSubscription? _storageSubscription;
+
+  /// Bumped for every transfer, and again by [cancelSync]. A `_performSync`
+  /// body only owns the shared state (`_storageSubscription`, the storage
+  /// stream, the stop command) while its own generation is still the current
+  /// one — otherwise a cancelled transfer's late timeout would abort the
+  /// transfer that replaced it.
+  int _transferGeneration = 0;
+
+  /// The completer the current `_performSync` is waiting on, so [cancelSync]
+  /// can unwind it instead of leaving it pending for `wal.seconds + 60`.
+  Completer<void>? _activeCompleter;
   
   // Current sync state
   bool _isSyncing = false;
@@ -144,8 +168,8 @@ class SdCardSyncService {
   
   /// Takes an [OmiStorage] rather than an [OmiDevice] so the SD-card path can
   /// be driven by a fake in tests, and a codec reader rather than the device
-  /// itself for the same reason. The byte-level transfer loop below stays as
-  /// it is until LO-50 ports it onto [OmiStorage.packets].
+  /// itself for the same reason. The transfer loop itself is driven by
+  /// [SdCardTransfer] over [OmiStorage.packets] (LO-50).
   SdCardSyncService({
     required OmiStorage storage,
     required Future<BleAudioCodec> Function() readCodec,
@@ -236,6 +260,9 @@ class SdCardSyncService {
     
     try {
       await _performSync(wal);
+    } on _SyncCancelled {
+      // cancelSync() already reset the state and stopped the device.
+      debugPrint('Sync cancelled mid-transfer');
     } catch (e) {
       wal.status = WalStatus.failed;
       _isSyncing = false;
@@ -246,101 +273,79 @@ class SdCardSyncService {
   
   Future<void> _performSync(SdCardWal wal) async {
     debugPrint('Starting SD card sync: offset=${wal.storageOffset}, total=${wal.storageTotalBytes}');
-    
+
     final startTime = DateTime.now();
-    int currentOffset = wal.storageOffset;
-    List<List<int>> frames = [];
-    
+    final transfer = SdCardTransfer(
+      startOffset: wal.storageOffset,
+      totalBytes: wal.storageTotalBytes,
+    );
+
+    final generation = ++_transferGeneration;
     final completer = Completer<void>();
+    _activeCompleter = completer;
     bool hasError = false;
-    bool firstDataReceived = false;
     Timer? timeoutTimer;
-    
+
     // Start storage stream listener
     await _storage.startStream();
 
-    _storageSubscription = _storage.rawPackets.listen((List<int> value) async {
-      if (value.isEmpty || hasError) return;
-      
-      // Cancel timeout on first data
-      if (!firstDataReceived) {
-        firstDataReceived = true;
+    _storageSubscription = _storage.packets.listen((StoragePacket packet) {
+      if (hasError) return;
+
+      // Cancel timeout once feed() reports we've received real data.
+      final hadReceivedData = transfer.hasReceivedData;
+      final outcome = transfer.feed(packet);
+      if (!hadReceivedData && transfer.hasReceivedData) {
         timeoutTimer?.cancel();
         debugPrint('First data received from SD card');
       }
-      
-      // Process command responses (single byte)
-      if (value.length == 1) {
-        final cmd = value[0];
-        debugPrint('Storage command response: $cmd');
-        
-        if (cmd == 0) {
-          debugPrint('Storage: Ready to receive');
-        } else if (cmd == 3) {
-          debugPrint('Storage: Bad file size');
-        } else if (cmd == 4) {
-          debugPrint('Storage: File is empty');
-          if (!completer.isCompleted) completer.complete();
-        } else if (cmd == 100) {
+
+      if (packet.kind == StoragePacketKind.status) {
+        debugPrint('Storage command response: ${packet.rawCode}');
+      }
+
+      switch (outcome) {
+        case TransferOutcome.complete:
           debugPrint('Storage: Transfer complete');
           if (!completer.isCompleted) completer.complete();
-        } else {
-          debugPrint('Storage: Error code $cmd');
+          return;
+        case TransferOutcome.empty:
+          debugPrint('Storage: File is empty');
           if (!completer.isCompleted) completer.complete();
-        }
-        return;
+          return;
+        case TransferOutcome.failed:
+          debugPrint('Storage: Error code ${packet.rawCode}');
+          hasError = true;
+          if (!completer.isCompleted) completer.complete();
+          return;
+        case TransferOutcome.continuing:
+          break;
       }
-      
-      // Process audio data packets
-      if (value.length == 83) {
-        // Standard packet: 3 bytes header + 80 bytes data
-        final amount = value[3];
-        frames.add(value.sublist(4, 4 + amount));
-        currentOffset += 80;
-      } else if (value.length == 440) {
-        // Multi-frame packet
-        int packageOffset = 0;
-        while (packageOffset < value.length - 1) {
-          final packageSize = value[packageOffset];
-          if (packageSize == 0) {
-            packageOffset++;
-            continue;
-          }
-          if (packageOffset + 1 + packageSize >= value.length) break;
-          
-          final frame = value.sublist(packageOffset + 1, packageOffset + 1 + packageSize);
-          frames.add(frame);
-          packageOffset += packageSize + 1;
-        }
-        currentOffset += value.length;
-      }
-      
+
       // Update progress
-      final progress = (currentOffset - wal.storageOffset) / 
-                       (wal.storageTotalBytes - wal.storageOffset);
-      wal.syncProgress = progress.clamp(0.0, 1.0);
-      
+      wal.syncProgress = transfer.progress;
+
       // Calculate ETA
-      final elapsed = DateTime.now().difference(startTime).inSeconds;
-      if (elapsed > 0 && progress > 0) {
-        final remaining = ((elapsed / progress) * (1 - progress)).round();
-        wal.syncEtaSeconds = remaining;
+      final elapsed = DateTime.now().difference(startTime);
+      final eta = transfer.etaSeconds(elapsed);
+      if (eta != null) {
+        wal.syncEtaSeconds = eta;
       }
-      
+
       onProgress?.call(wal.syncProgress, 'Syncing: ${(wal.syncProgress * 100).toInt()}%');
     });
-    
+
     // Start transfer from device
     await _storage.startRead(wal.storageOffset);
-    
+
     // Timeout for first data (5 seconds)
     timeoutTimer = Timer(const Duration(seconds: 5), () {
-      if (!firstDataReceived && !completer.isCompleted) {
+      if (!transfer.hasReceivedData && !completer.isCompleted) {
         hasError = true;
         completer.completeError(TimeoutException('No data received from SD card'));
       }
     });
-    
+
     // Wait for transfer to complete
     try {
       await completer.future.timeout(
@@ -349,27 +354,45 @@ class SdCardSyncService {
           throw TimeoutException('Transfer timed out');
         },
       );
+    } catch (e) {
+      hasError = true;
+      // Only stop the device if this transfer is still the current one: a
+      // cancelled transfer's timeout must not abort its replacement.
+      if (generation == _transferGeneration) await _stopRead();
+      rethrow;
     } finally {
-      await _storageSubscription?.cancel();
-      await _storage.stopStream();
-      timeoutTimer?.cancel();
+      timeoutTimer.cancel();
+      if (generation == _transferGeneration) {
+        await _storageSubscription?.cancel();
+        _storageSubscription = null;
+        await _storage.stopStream();
+        _activeCompleter = null;
+      }
     }
-    
+
+    // The awaits in the teardown above are real BLE round-trips, so a cancel
+    // can land while they run. Everything below acts on the device (stop,
+    // clear) and on the caller's callbacks, so an abandoned transfer must not
+    // reach it.
+    if (generation != _transferGeneration) throw const _SyncCancelled();
+
     if (hasError) {
+      await _stopRead();
       throw Exception('Transfer failed');
     }
-    
+
     // Save frames to file
+    final frames = transfer.frames;
     if (frames.isNotEmpty) {
       final filePath = await _saveFramesToFile(frames, wal);
       wal.localFilePath = filePath;
       wal.status = WalStatus.synced;
-      
+
       debugPrint('Saved ${frames.length} frames to: $filePath');
-      
+
       // Clear data from device
       await _clearDeviceStorage(wal);
-      
+
       _isSyncing = false;
       onProgress?.call(1.0, 'Sync complete!');
       onComplete?.call(filePath, wal.seconds);
@@ -378,10 +401,97 @@ class SdCardSyncService {
       throw Exception('No frames received');
     }
   }
+
+  /// Asks the device to stop an in-flight transfer, tolerating a
+  /// false/throwing result so a teardown path never fails because of this.
+  Future<void> _stopRead() async {
+    try {
+      await _storage.stopRead();
+    } catch (e) {
+      debugPrint('Warning: stopRead failed: $e');
+    }
+  }
   
+  /// Directory synced `.bin` files live in: `<application support>/sdcard/`
+  /// (docs/04-android-platform-notes.md §8), created if missing.
+  static Future<Directory> _sdcardDirectory() async {
+    final support = await getApplicationSupportDirectory();
+    final directory = Directory('${support.path}/sdcard');
+    if (!directory.existsSync()) {
+      directory.createSync(recursive: true);
+    }
+    return directory;
+  }
+
+  /// One-time migration of `sdcard_audio_*` files left in
+  /// `getApplicationDocumentsDirectory()` by pre-LO-50 builds into
+  /// `<application support>/sdcard/`.
+  ///
+  /// Prefers an already-present file at the new location (dropping the
+  /// stale legacy duplicate) and falls back to copy+delete on a
+  /// cross-filesystem [FileSystemException], mirroring
+  /// `ModelStore.migrateLegacyInstalls`. Returns `0` (rather than
+  /// throwing) when `path_provider` has no directory to offer, e.g. on
+  /// desktop test hosts.
+  ///
+  /// Called from [getSyncedFiles] so a user upgrading from a pre-LO-50 build
+  /// still sees their existing recordings; it is idempotent and costs one
+  /// directory listing once the legacy directory is empty.
+  static Future<int> migrateLegacySyncedFiles() async {
+    Directory documents;
+    Directory target;
+    try {
+      documents = await getApplicationDocumentsDirectory();
+      if (!documents.existsSync()) return 0;
+      target = await _sdcardDirectory();
+    } catch (_) {
+      return 0;
+    }
+
+    List<FileSystemEntity> entries;
+    try {
+      entries = documents.listSync();
+    } catch (e) {
+      debugPrint('Legacy sdcard migration: cannot list documents: $e');
+      return 0;
+    }
+
+    var moved = 0;
+
+    for (final entity in entries) {
+      if (entity is! File) continue;
+      final fileName = entity.path.split(Platform.pathSeparator).last;
+      if (!fileName.contains('sdcard_audio_')) continue;
+
+      // One unreadable or vanished file must cost that file only: callers
+      // list synced recordings through this, and a throw here would take the
+      // whole listing down.
+      try {
+        final destinationPath = '${target.path}/$fileName';
+        final destination = File(destinationPath);
+        if (destination.existsSync()) {
+          entity.deleteSync();
+          continue;
+        }
+
+        try {
+          entity.renameSync(destinationPath);
+        } on FileSystemException {
+          entity.copySync(destinationPath);
+          entity.deleteSync();
+        }
+        moved++;
+      } catch (e) {
+        debugPrint('Legacy sdcard migration: skipped $fileName: $e');
+      }
+    }
+
+    return moved;
+  }
+
   /// Save audio frames to a local file
   Future<String> _saveFramesToFile(List<List<int>> frames, SdCardWal wal) async {
-    final directory = await getApplicationDocumentsDirectory();
+    final directory = await _sdcardDirectory();
     final filename = 'sdcard_audio_${wal.codec.name}_16000_1_${wal.timerStart}.bin';
     final filePath = '${directory.path}/$filename';
     
@@ -420,9 +530,22 @@ class SdCardSyncService {
   /// Cancel ongoing sync
   Future<void> cancelSync() async {
     if (!_isSyncing) return;
-    
+
+    // Invalidate the in-flight transfer before touching shared state, so its
+    // own teardown becomes a no-op instead of racing the next sync.
+    _transferGeneration++;
+    final pending = _activeCompleter;
+    _activeCompleter = null;
+
+    await _stopRead();
     await _storageSubscription?.cancel();
+    _storageSubscription = null;
     await _storage.stopStream();
+
+    // Unwind the waiter rather than leaving it pending for `seconds + 60`.
+    if (pending != null && !pending.isCompleted) {
+      pending.completeError(const _SyncCancelled());
+    }
 
     if (_currentWal != null) {
       _currentWal!.status = WalStatus.failed;
@@ -491,7 +614,11 @@ class SdCardSyncService {
   
   /// Get list of synced audio files with metadata
   static Future<List<SyncedAudioFile>> getSyncedFiles() async {
-    final directory = await getApplicationDocumentsDirectory();
+    // Runs before the listing so a user upgrading from a pre-LO-50 build
+    // still sees the files that build wrote to the documents directory.
+    // Idempotent, and cheap once the legacy directory holds nothing.
+    await migrateLegacySyncedFiles();
+    final directory = await _sdcardDirectory();
     final files = <SyncedAudioFile>[];
     
     for (final entity in directory.listSync()) {
@@ -579,7 +706,18 @@ class SdCardSyncService {
   }
   
   void dispose() {
+    // Invalidate any in-flight transfer so its tail cannot act on a disposed
+    // service, and unwind its waiter rather than leaving it parked for
+    // `wal.seconds + 60`.
+    _transferGeneration++;
+    final pending = _activeCompleter;
+    _activeCompleter = null;
+    if (pending != null && !pending.isCompleted) {
+      pending.completeError(const _SyncCancelled());
+    }
     _storageSubscription?.cancel();
+    _storageSubscription = null;
+    _isSyncing = false;
   }
 }
 
