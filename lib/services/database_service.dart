@@ -7,7 +7,9 @@ import '../models/conversation.dart';
 class DatabaseService {
   static Database? _database;
   static const String _dbName = 'libreomi.db';
-  static const int _dbVersion = 3; // Incremented for tasks table
+
+  /// Schema version. v4 adds `pending_finalizations` (LO-23). LO-35 takes v5.
+  static const int dbVersion = 4;
 
   static Future<Database> get database async {
     if (_database != null) return _database!;
@@ -21,77 +23,112 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: _dbVersion,
-      onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE conversations (
-            id TEXT PRIMARY KEY,
-            created_at INTEGER NOT NULL,
-            title TEXT,
-            summary TEXT,
-            transcript TEXT
-          )
-        ''');
-        
-        await db.execute('''
-          CREATE TABLE chat_messages (
-            id TEXT PRIMARY KEY,
-            conversation_id TEXT,
-            text TEXT NOT NULL,
-            is_user INTEGER NOT NULL,
-            created_at INTEGER NOT NULL
-          )
-        ''');
-        
-        await db.execute('''
-          CREATE TABLE memories (
-            id TEXT PRIMARY KEY,
-            content TEXT NOT NULL,
-            category TEXT NOT NULL,
-            created_at INTEGER NOT NULL,
-            source_conversation_id TEXT
-          )
-        ''');
-        
-        await db.execute('''
-          CREATE TABLE tasks (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            description TEXT,
-            due_date INTEGER,
-            created_at INTEGER NOT NULL,
-            source_conversation_id TEXT,
-            is_completed INTEGER NOT NULL DEFAULT 0
-          )
-        ''');
-      },
-      onUpgrade: (db, oldVersion, newVersion) async {
-        if (oldVersion < 2) {
-          await db.execute('''
-            CREATE TABLE IF NOT EXISTS memories (
-              id TEXT PRIMARY KEY,
-              content TEXT NOT NULL,
-              category TEXT NOT NULL,
-              created_at INTEGER NOT NULL,
-              source_conversation_id TEXT
-            )
-          ''');
-        }
-        if (oldVersion < 3) {
-          await db.execute('''
-            CREATE TABLE IF NOT EXISTS tasks (
-              id TEXT PRIMARY KEY,
-              title TEXT NOT NULL,
-              description TEXT,
-              due_date INTEGER,
-              created_at INTEGER NOT NULL,
-              source_conversation_id TEXT,
-              is_completed INTEGER NOT NULL DEFAULT 0
-            )
-          ''');
-        }
-      },
+      version: dbVersion,
+      onCreate: (db, version) => createSchema(db),
+      onUpgrade: migrate,
     );
+  }
+
+  /// Creates the current schema from scratch. Kept next to [migrate] so a fresh
+  /// install and an upgraded install cannot drift apart. Exposed because the
+  /// tests cannot reach an `openDatabase` callback.
+  static Future<void> createSchema(Database db) async {
+    await db.execute('''
+      CREATE TABLE conversations (
+        id TEXT PRIMARY KEY,
+        created_at INTEGER NOT NULL,
+        title TEXT,
+        summary TEXT,
+        transcript TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE chat_messages (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT,
+        text TEXT NOT NULL,
+        is_user INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE memories (
+        id TEXT PRIMARY KEY,
+        content TEXT NOT NULL,
+        category TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        source_conversation_id TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT,
+        due_date INTEGER,
+        created_at INTEGER NOT NULL,
+        source_conversation_id TEXT,
+        is_completed INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+
+    await createPendingFinalizationsTable(db);
+  }
+
+  /// Upgrades an existing database. One block per version so a device that
+  /// skipped releases still walks every step.
+  static Future<void> migrate(
+    Database db,
+    int oldVersion,
+    int newVersion,
+  ) async {
+    if (oldVersion < 2) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS memories (
+          id TEXT PRIMARY KEY,
+          content TEXT NOT NULL,
+          category TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          source_conversation_id TEXT
+        )
+      ''');
+    }
+    if (oldVersion < 3) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS tasks (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          description TEXT,
+          due_date INTEGER,
+          created_at INTEGER NOT NULL,
+          source_conversation_id TEXT,
+          is_completed INTEGER NOT NULL DEFAULT 0
+        )
+      ''');
+    }
+    if (oldVersion < 4) {
+      await createPendingFinalizationsTable(db);
+    }
+  }
+
+  /// Summarisation requests that still have to run (LO-23).
+  /// `next_attempt_at` is the epoch millisecond the row becomes due again, and
+  /// `attempts` doubles as the held marker once it reaches the queue's cap.
+  static Future<void> createPendingFinalizationsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS pending_finalizations (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        transcript TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at INTEGER NOT NULL,
+        last_error TEXT,
+        created_at INTEGER NOT NULL
+      )
+    ''');
   }
 
   // Conversation CRUD operations
