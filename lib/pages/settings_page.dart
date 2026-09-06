@@ -6,7 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import '../providers/app_provider.dart';
-import '../services/ble_service.dart';
+import '../device/omi_device.dart';
 import '../services/settings_service.dart';
 import '../services/database_service.dart';
 import '../platform/battery_optimization.dart';
@@ -652,6 +652,28 @@ class _SettingsPageState extends State<SettingsPage> {
                     }
                   },
                   activeColor: const Color(0xFF0984e3),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 32),
+
+          // Developer section
+          _buildSectionHeader('Developer'),
+          Card(
+            child: Column(
+              children: [
+                SwitchListTile(
+                  title: const Text('Capture BLE session', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text(
+                    'Records a replay fixture (audio, button, battery, storage notifications) '
+                    'to the app support directory for use with `flutter test`',
+                    style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6), fontSize: 13)),
+                  value: SettingsService.captureBleSession,
+                  onChanged: (value) {
+                    setState(() => SettingsService.captureBleSession = value);
+                  },
+                  activeColor: const Color(0xFF6C5CE7),
                 ),
               ],
             ),

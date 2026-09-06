@@ -5,8 +5,9 @@ import '../platform/battery_optimization.dart';
 import '../platform/battery_optimization_gateway.dart';
 import '../platform/permission_gateway.dart';
 import '../platform/permissions.dart';
+import '../device/device_manager.dart';
+import '../device/omi_device.dart';
 import '../providers/app_provider.dart';
-import '../services/ble_service.dart';
 import '../services/settings_service.dart';
 import 'battery_guidance_page.dart';
 import 'settings_page.dart';
@@ -97,7 +98,7 @@ class DeviceTab extends StatefulWidget {
 class _DeviceTabState extends State<DeviceTab> {
   bool _isScanning = false;
   bool _isUserConnecting = false; // Track user-initiated connection
-  List<BleDevice> _devices = [];
+  List<DiscoveredDevice> _devices = [];
 
   /// Owns the "battery-optimisation prompt already shown" decision. Kept as a
   /// field so its in-flight guard survives across the two session-start paths
@@ -354,7 +355,7 @@ class _DeviceTabState extends State<DeviceTab> {
                           children: [
                             Text(device.name.isNotEmpty ? device.name : 'Unknown Device',
                               style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                            Text(device.device.remoteId.str,
+                            Text(device.id,
                               style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurface.withOpacity(0.5))),
                           ],
                         ),
@@ -726,7 +727,7 @@ class _DeviceTabState extends State<DeviceTab> {
     setState(() => _isScanning = false);
   }
 
-  Future<void> _connectToDevice(BleDevice device, AppProvider provider) async {
+  Future<void> _connectToDevice(DiscoveredDevice device, AppProvider provider) async {
     setState(() => _isUserConnecting = true);
     await provider.stopScan();
     setState(() => _isScanning = false);

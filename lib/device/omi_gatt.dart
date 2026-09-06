@@ -428,11 +428,11 @@ StoragePacket parseStoragePacket(List<int> raw) {
 /// strips trailing NUL bytes, then trims surrounding whitespace. Returns
 /// `''` for empty input.
 ///
-/// **Not a drop-in replacement for the current call site.** `BleService`
-/// still reads these characteristics with `String.fromCharCodes(val)`, which
-/// is Latin-1-ish, keeps trailing NULs and does not trim. Repointing that
-/// call site (LO-31) is therefore a deliberate behaviour change, not a pure
-/// move.
+/// `BleService` reads these characteristics with `String.fromCharCodes(val)`,
+/// which is Latin-1-ish, keeps trailing NULs and does not trim. LO-31
+/// repointed the one caller through `OmiBleDevice.readDeviceInfo()`, which
+/// recovers the original bytes from that string's code units and re-decodes
+/// them here — a deliberate behaviour change, not a pure move.
 String decodeDeviceInfoString(List<int> raw) {
   if (raw.isEmpty) return '';
   var end = raw.length;

@@ -7,8 +7,10 @@ behaviour and should be re-verified against the firmware version you own
 (shown in Device Settings → Firmware).
 
 Since LO-30 the constants and the pure packet parsers described here live in
-`lib/device/omi_gatt.dart` (unit-tested in `test/device/omi_gatt_test.dart`);
-`lib/services/ble/ble_protocol.dart` is a re-export shim kept until LO-31.
+`lib/device/omi_gatt.dart` (unit-tested in `test/device/omi_gatt_test.dart`).
+LO-31 deleted the `lib/services/ble/ble_protocol.dart` re-export shim and put
+the `OmiDevice` / `OmiStorage` interfaces of `docs/03-architecture.md` §2 in
+front of the transport.
 
 ## GATT services and characteristics
 

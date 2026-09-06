@@ -6,17 +6,16 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
+import '../device/omi_device.dart';
 import '../device/omi_gatt.dart';
 import 'ble/connection_ownership.dart';
 import 'ble/gatt_retry.dart';
 
 export '../device/omi_gatt.dart';
-
-enum DeviceConnectionState {
-  disconnected,
-  connecting,
-  connected,
-}
+// `DeviceConnectionState` moved to `device/omi_device.dart` in LO-31 (it is
+// part of the `device/` contract, not of this service). Re-exported so the
+// existing importers of this file keep compiling.
+export '../device/omi_device.dart' show DeviceConnectionState;
 
 class BleDevice {
   final BluetoothDevice device;

@@ -12,11 +12,13 @@ lib/
   app/                          MaterialApp, theme, routing, top-level providers
   core/                         models, Result/Failure types, logging, clock, ids
   device/                       Omi device transport
-    omi_device.dart             abstract OmiDevice (interface)
-    omi_ble_device.dart         flutter_blue_plus implementation
+    omi_device.dart             abstract OmiDevice (interface) + DeviceConnectionState
+    omi_storage.dart            abstract OmiStorage (SD-card sub-interface)
+    omi_ble_device.dart         flutter_blue_plus implementation (adapter over BleService)
     omi_gatt.dart               UUIDs, codec enum, packet parsers (single source of truth)
-    fake_omi_device.dart        replay/fake for tests
-    device_manager.dart         scan, connect, auto-reconnect w/ backoff, MTU, char cache
+    fake_omi_device.dart        replay/fake for tests + the capture line codec
+    ble_session_capture.dart    debug "Capture BLE session" recorder
+    device_manager.dart         scan, connect, saved device, current OmiDevice
   audio/
     audio_source.dart           abstract AudioSource → Stream<AudioChunk>
     omi_audio_source.dart       BLE bytes → header strip → (opus | pcm)
@@ -52,6 +54,7 @@ lib/
     silence_detector.dart
   platform/
     background_runner.dart      abstract; android_foreground_runner.dart; ios_noop_runner.dart
+    ble_capture_file.dart       where a debug BLE session capture is written
     permissions.dart            per-API-level permission flows
     notifications.dart          channels, instant, scheduled
   ui/
@@ -69,8 +72,8 @@ GATT constants and packet parsers. The data models (`Conversation`, `TranscriptS
 `Memory`, `Task`) are still in `lib/models/conversation.dart` rather than under `core/`:
 moving them touches more than twenty importers and would collide with the concurrent
 LO-32 work, so the move is deferred to LO-34/LO-35 when those importers are rewritten
-anyway. `lib/services/ble/ble_protocol.dart` remains as a one-line re-export of
-`device/omi_gatt.dart` so existing imports keep compiling; it is deleted in LO-31.
+anyway. `lib/services/ble/ble_protocol.dart`, the one-line re-export that kept
+the pre-LO-30 imports compiling, was deleted in LO-31.
 
 Transitional exception (LO-32, M3 wave A): `audio/`, `transcription/` and
 `intelligence/` were introduced as adapters, so they still import the upstream
@@ -100,6 +103,22 @@ are worth knowing:
   importers collides with the concurrent LO-31 work on `app_provider.dart` and the
   pages. The repositories import `models/` in the meantime.
 
+Migration status (LO-31, M3 wave B): `device/` now holds the `OmiDevice` and
+`OmiStorage` interfaces, an `OmiBleDevice`/`OmiBleStorage`/`BleDeviceHost`
+adapter trio over `services/ble_service.dart`, a `DeviceManager` that owns
+scanning, connecting, the saved device and the current `OmiDevice`, and a
+`FakeOmiDevice` that replays a captured session. `providers/app_provider.dart`,
+`pages/home_page.dart`, `pages/device_settings_page.dart` and
+`services/sdcard_sync_service.dart` reach the wearable only through those, and
+`services/ble/ble_protocol.dart` is gone. Two transitional exceptions remain:
+`omi_ble_device.dart` is the one file under `device/` allowed to import
+`flutter_blue_plus` and `services/ble_service.dart` (the service keeps the
+connection, MTU and reconnect logic stabilised by LO-22/LO-16, which cannot be
+re-verified without hardware), and the auto-reconnect backoff still lives in
+`AppProvider` until LO-34 dissolves it. `SdCardSyncService` still switches on
+raw notification lengths itself; LO-50 ports that loop onto
+`OmiStorage.packets`.
+
 ## 2. Key interfaces
 
 ```dart
@@ -108,16 +127,30 @@ abstract class OmiDevice {
   String get id;
   String get name;
   Stream<DeviceConnectionState> get connectionState;
+  DeviceConnectionState get state;
   Stream<Uint8List> get audioPackets;      // raw BLE notification payloads
   Stream<ButtonEvent> get buttonEvents;    // parsed, see 05
   Stream<int> get batteryLevel;
+  Future<void> startAudioStream();         // the session decides when audio flows
+  Future<void> stopAudioStream();
   Future<BleAudioCodec> readCodec();
   Future<DeviceInfo> readDeviceInfo();
-  Future<int> readMicGain(); Future<void> writeMicGain(int v);
-  Future<int> readLedDim();  Future<void> writeLedDim(int v);
+  Future<int?> readBatteryLevel();         // also emitted on batteryLevel
+  Future<int?> readMicGain(); Future<void> writeMicGain(int v);
+  Future<int?> readLedDim();  Future<void> writeLedDim(int v);
   Future<void> haptic(HapticLevel level);
   OmiStorage? get storage;                 // null when the firmware lacks the storage service
   Future<void> disconnect();
+}
+
+// device/omi_storage.dart
+abstract class OmiStorage {
+  Future<List<int>> list();                // [totalBytes, offset]; [] = no storage service
+  Future<void> startStream(); Future<void> stopStream();
+  Future<bool> startRead(int offset, {int fileNumber});
+  Future<bool> clear({int fileNumber});
+  Stream<List<int>> get rawPackets;        // untouched bytes, for the LO-50 transfer loop
+  Stream<StoragePacket> get packets;       // rawPackets through parseStoragePacket
 }
 
 // audio/audio_source.dart
@@ -161,6 +194,17 @@ Two implementation notes on these interfaces, settled by LO-32:
   inside the audio callback; an async hop would let a button event run between a
   segment's arrival and its delivery, reordering hold-to-ask accumulation against
   the button state machine.
+- `startAudioStream`/`stopAudioStream` and `readBatteryLevel` are on the
+  interface, though the sketch above did not originally list them (LO-31).
+  Audio notification subscription is a session decision, not a connection one —
+  `RecordingSession` starts and stops it while the link stays up — and the
+  battery characteristic is read on demand rather than notified, so a stream
+  alone could not reproduce the existing behaviour. `batteryLevel` still emits
+  every value a read produces, so a UI can subscribe instead of polling.
+- `OmiBleDevice.storage` is never null in practice: the BLE adapter cannot know
+  whether the firmware has the storage service until something reads it, so
+  absence shows up as `list()` returning `[]` — which is exactly how
+  `AppProvider` decides whether SD-card sync is available.
 - `PhoneMicSource` adds `Future<void> prepare()` alongside `AudioSource.start()`.
   `start()` is synchronous by contract and therefore cannot throw a recorder
   failure (permission denied, microphone busy) back at the caller, and the session
@@ -246,7 +290,7 @@ Not in scope for v1: boot receiver, companion-device pairing, native Kotlin serv
 
 | Upstream | Action |
 |----------|--------|
-| `services/ble_service.dart` | Split into `omi_gatt.dart` (constants, parsers) + `omi_ble_device.dart` + `device_manager.dart`. Add MTU, char cache, subscription cleanup, backoff. |
+| `services/ble_service.dart` | LO-30 extracted `omi_gatt.dart` (constants, parsers); LO-31 put `omi_ble_device.dart` + `device_manager.dart` in front of it behind `OmiDevice`/`OmiStorage`, so nothing above `device/` names it any more. Still to move: the connection, MTU, characteristic-cache and reconnect code itself, once there is hardware to re-verify it against. |
 | `services/opus_decoder_service.dart` | LO-32 wrapped it as `audio/opus_decoder.dart`; the service still holds the `opus_flutter` code until it moves. |
 | `services/mic_service.dart` | LO-32 put `audio/phone_mic_source.dart` in front of it behind `AudioSource` (via `audio/mic_recorder.dart`); the recorder itself still lives in `services/`. |
 | `services/deepgram_service.dart` | LO-32 wrapped it as `transcription/deepgram_streaming.dart` behind `StreamingTranscriber`. Still to move: the service body, plus fix usage accounting, make the model configurable, add `deepgram_prerecorded.dart`. |
@@ -255,7 +299,7 @@ Not in scope for v1: boot receiver, companion-device pairing, native Kotlin serv
 | `services/database_service.dart`, `models/` | LO-35 split the SQL into `data/` repos behind an unchanged `DatabaseService` facade; schema v5 adds `tasks.notification_id` (backfilled with the pre-v5 `created_at & 0x7fffffff` derivation) and puts `chat_messages` on the migration path so chat is persisted. `start_at/end_at` on segments live in the transcript JSON, so they needed no table change. Still to do: move the models to `core/` and delete the facade with `AppProvider` (LO-34). |
 | `services/settings_service.dart` | Copy → `data/settings_repo.dart`; keys move to secure storage with one-time migration. |
 | `services/notification_service.dart` | Copy → `platform/notifications.dart`; stable numeric IDs now come from the `tasks.notification_id` column (LO-35), read via `services/notification_ids.dart`; Android res added. |
-| `services/sdcard_sync_service.dart` | Copy → `device/omi_storage.dart` (transfer) + `session/sdcard_import.dart` (post-processing via `FileTranscriber` + `ConversationFinalizer`). |
+| `services/sdcard_sync_service.dart` | LO-31 repointed it onto `OmiStorage` (it no longer knows about BLE). Still to move: the byte-level transfer loop → `device/omi_storage.dart` implementations via `OmiStorage.packets` (LO-50), and post-processing → `session/sdcard_import.dart` (via `FileTranscriber` + `ConversationFinalizer`). |
 | `providers/app_provider.dart` | Dissolve into `session/*` + three thin `ChangeNotifier`s for UI: `DeviceController`, `SessionController`, `LibraryController` (+ `ChatController`). |
 | `pages/*` | Port unchanged in M1; re-point to the new controllers in M3. |
 | `OmiLocal/`, Finder duplicates, iCloud toggle | Drop. |
@@ -264,7 +308,13 @@ Not in scope for v1: boot receiver, companion-device pairing, native Kotlin serv
 
 - **Unit**: packet parsers (`omi_gatt.dart`), button state machine, silence detector,
   finalizer (with fake `LlmClient`), repos (sqflite_common_ffi on desktop).
-- **Replay**: `FakeOmiDevice` replays a captured BLE session (`test/fixtures/*.bin`,
-  recorded once from a real device via a debug "capture" toggle) so the whole pipeline
-  from bytes to SQLite runs on a laptop without hardware.
+- **Replay**: `FakeOmiDevice` replays a captured BLE session
+  (`test/fixtures/*.jsonl`) so the pipeline from raw notification bytes through
+  `OmiAudioSource` runs on a laptop without hardware. The format is one JSON
+  object per line (`{"t": ms, "ch": "audio|button|battery|storage", "b":
+  base64}`) rather than an opaque `.bin`, so a fixture can be read, reviewed in
+  a diff and written by hand; `test/fixtures/README.md` is its spec. Settings →
+  Developer → "Capture BLE session" records one from a real device into the app
+  support directory. A synthetic fixture is committed so the test suite runs
+  before anyone has hardware to record with.
 - **Device smoke checklist**: `08-dev-workflow.md` §5, executed before every release.

@@ -3,7 +3,11 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import '../core/log.dart';
+import '../device/omi_gatt.dart';
 import 'audio_source.dart';
+
+const _log = Log('Audio');
 
 /// Turns raw Omi BLE audio packets into [AudioChunk]s.
 ///
@@ -18,6 +22,11 @@ class OmiAudioSource implements AudioSource {
     DateTime Function()? now,
   }) : _now = now ?? DateTime.now;
 
+  /// How many gap reports a single stream may log. A link that drops packets
+  /// steadily would otherwise produce one line per notification at 50-100 Hz;
+  /// see the same rationale in `BleService`'s packet-length logging.
+  static const int maxGapLogs = 5;
+
   final Stream<Uint8List> _rawPackets;
   final AudioEncoding encoding;
   final DateTime Function() _now;
@@ -25,8 +34,22 @@ class OmiAudioSource implements AudioSource {
   StreamSubscription<Uint8List>? _subscription;
   StreamController<AudioChunk>? _controller;
 
+  int _lastPacketIndex = -1;
+  int _gapCount = 0;
+  int _gapLogCount = 0;
+
+  /// How many packet-index discontinuities were seen since [start].
+  ///
+  /// `docs/05-omi-ble-protocol.md` "Audio" asks LibreOmi to log gaps as a BLE
+  /// health metric; this counter is the programmatic view of the same thing.
+  int get gapCount => _gapCount;
+
   @override
   Stream<AudioChunk> start() {
+    _lastPacketIndex = -1;
+    _gapCount = 0;
+    _gapLogCount = 0;
+
     // sync: true is required here: the callers this replaces (the
     // transcription service's addAudio/sendAudio calls) used to run
     // synchronously inside the BLE notification callback. Buffering the
@@ -38,12 +61,14 @@ class OmiAudioSource implements AudioSource {
 
     _subscription = _rawPackets.listen(
       (packet) {
-        // Omi device audio has a 3-byte header that needs to be trimmed.
-        if (packet.length <= 3) return;
-        // TODO(LO-31): use omi_gatt.stripAudioHeader once LO-31 lands.
-        final trimmed = packet.sublist(3);
+        // `stripAudioHeader` returns null for the short packets the upstream
+        // `_handleOmiAudioData` dropped (`length <= 3`), so the guard and the
+        // parse are the same call.
+        final parsed = stripAudioHeader(packet);
+        if (parsed == null) return;
+        _noteGap(parsed.packetIndex);
         controller.add(
-          AudioChunk(bytes: trimmed, encoding: encoding, at: _now()),
+          AudioChunk(bytes: parsed.payload, encoding: encoding, at: _now()),
         );
       },
       onError: controller.addError,
@@ -51,6 +76,22 @@ class OmiAudioSource implements AudioSource {
     );
 
     return controller.stream;
+  }
+
+  /// Records a packet-index discontinuity. The index is a uint16 that wraps,
+  /// so the successor of 65535 is 0 and is not a gap.
+  void _noteGap(int packetIndex) {
+    final previous = _lastPacketIndex;
+    _lastPacketIndex = packetIndex;
+    if (previous < 0) return;
+    final expected = (previous + 1) & 0xFFFF;
+    if (packetIndex == expected) return;
+    _gapCount++;
+    if (_gapLogCount < maxGapLogs) {
+      _gapLogCount++;
+      _log.d('audio packet gap: expected $expected, got $packetIndex '
+          '(gaps=$_gapCount)');
+    }
   }
 
   @override

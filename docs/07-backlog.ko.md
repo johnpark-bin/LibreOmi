@@ -211,7 +211,7 @@ Omi → Android 폰 → Deepgram → 화면에 자막. 앱은 포그라운드 �
 라벨: area:ble, area:test, size:L
 **작업**
 - `OmiDevice` 추상화와 `OmiBleDevice`(flutter_blue_plus) 구현
-- 디버그 토글 "BLE 세션 캡처" → `test/fixtures/*.bin` 기록
+- 디버그 토글 "BLE 세션 캡처" → `test/fixtures/*.jsonl` 기록 (형식은 `test/fixtures/README.md`)
 - `FakeOmiDevice` 가 픽스처를 리플레이해 바이트→SQLite 전체 파이프라인을 데스크톱 `flutter test` 에서 실행
 
 **완료 기준** 픽스처 기반 통합 테스트가 데스크톱에서 통과.
