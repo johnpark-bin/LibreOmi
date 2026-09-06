@@ -200,6 +200,16 @@ class WhisperWorkerCore {
 
   void _init(WhisperWorkerConfig config) {
     if (_recognizer != null) return;
+    // Two sample rates that have to agree: the detector cuts segments by
+    // sample index and [VadTimeline] turns those indices back into seconds
+    // using this config's rate, so a mismatch would silently skew every
+    // timestamp rather than fail.
+    if (config.sampleRate != config.vad.sampleRate) {
+      throw ArgumentError(
+        'whisper worker sample rate ${config.sampleRate} does not match the '
+        'VAD sample rate ${config.vad.sampleRate}',
+      );
+    }
     _config = config;
     _vad = _vadFactory(config.vad);
     _recognizer = _recognizerFactory(config);

@@ -213,7 +213,12 @@ void main() {
     expect(segments.length, lessThanOrEqualTo(stream.blocks.length * 3));
 
     for (final segment in segments) {
-      expect(segment.text.trim(), isNotEmpty);
+      // The clip is fixed, so this is deterministic: a segment that decoded
+      // a fragment of the sentence rather than the whole utterance would
+      // not carry the word that opens it.
+      expect(segment.text.toLowerCase(), contains('nightfall'),
+          reason: 'segment did not decode the whole utterance: '
+              '${segment.text}');
       expect(segment.endTime, greaterThan(segment.startTime));
       expect(segment.endAt.isBefore(segment.startAt), isFalse);
       // Wall clock and relative seconds must describe the same instant.

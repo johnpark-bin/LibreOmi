@@ -324,4 +324,64 @@ void main() {
       expect(errors.single, contains(ModelCatalog.sileroVad.displayName));
     });
   });
+
+  group('IsolateWhisperWorkerClient (real, no fake)', () {
+    // The same regression LO-41 fixed on the sherpa client, guarded here
+    // because this client is a copy of that structure: `events` must be one
+    // long-lived broadcast controller, not `_channel?.events ?? const
+    // Stream<Object?>.empty()`. An already-exhausted `Stream.empty()` hands
+    // a pre-start listener `onDone` on its first microtask and then sends
+    // every real event to a different stream the listener never joined.
+    //
+    // No whisper or VAD model is available in a plain `flutter test` run, so
+    // this cannot drive a real segment through the isolate — that is what
+    // `whisper_native_test.dart` is for. What it does assert against the
+    // real (non-fake) client is that a subscription taken before `start()`
+    // is still open, which is exactly what the broken shape gets wrong.
+    test(
+        'events is live before start() is called: a pre-start listener does '
+        'not see the stream complete on its own', () async {
+      final client = IsolateWhisperWorkerClient();
+
+      final received = <Object?>[];
+      var done = false;
+      final subA = client.events.listen(received.add, onDone: () {
+        done = true;
+      });
+      // A second pre-start subscription must land on the same live stream.
+      var doneB = false;
+      final subB = client.events.listen((_) {}, onDone: () {
+        doneB = true;
+      });
+
+      // Give any microtask-scheduled `onDone` every chance to fire.
+      for (var i = 0; i < 5; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      expect(done, isFalse,
+          reason: 'a pre-start listener must not see events complete before '
+              'start() has even been called');
+      expect(doneB, isFalse);
+      expect(received, isEmpty);
+
+      await subA.cancel();
+      await subB.cancel();
+    }, timeout: const Timeout(Duration(seconds: 10)));
+
+    test('stop() before start() closes events without spawning anything',
+        () async {
+      final client = IsolateWhisperWorkerClient();
+      var done = false;
+      client.events.listen((_) {}, onDone: () => done = true);
+
+      // feed() before start() must not throw either: the session can push a
+      // chunk between building the transcriber and awaiting start().
+      client.feed(Uint8List.fromList([0, 0]), DateTime(2024));
+      await client.flush();
+      await client.stop();
+
+      expect(done, isTrue);
+    }, timeout: const Timeout(Duration(seconds: 10)));
+  });
 }
