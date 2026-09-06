@@ -27,6 +27,12 @@
   older build of this app does, so it is excluded as well. The cost is that the
   remaining settings (model choice, saved device, usage counters) are not
   restored; all of them are re-derivable from the UI, unlike a leaked key.
+
+  `path="models"` (LO-40) excludes `getApplicationSupportDirectory()/models/`,
+  where `transcription/model_store.dart` installs on-device speech models
+  (`file` domain: `PathUtils.getFilesDir()` on Android). Those are ~90-290 MB of
+  re-downloadable weights per model; backing them up would blow the backup
+  quota for data a tap in Settings → Models fetches again.
 -->
 <full-backup-content>
     <exclude domain="sharedpref" path="FlutterSecureStorage.xml"/>
@@ -34,4 +40,5 @@
     <exclude domain="sharedpref" path="FlutterSecureStorageConfiguration.xml"/>
     <exclude domain="sharedpref" path="FlutterSecureStorageConfiguration:FlutterSecureStorage.xml"/>
     <exclude domain="sharedpref" path="FlutterSharedPreferences.xml"/>
+    <exclude domain="file" path="models"/>
 </full-backup-content>

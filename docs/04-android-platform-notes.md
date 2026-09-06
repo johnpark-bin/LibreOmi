@@ -338,11 +338,26 @@ process that died without stopping it.
 ## 8. Storage paths
 
 - `getApplicationDocumentsDirectory()` on Android = `/data/data/<pkg>/app_flutter` —
-  private, backed up by Auto Backup (models would bloat backups; exclude via
-  `android:fullBackupContent` or store models in `getApplicationSupportDirectory()`).
+  private, backed up by Auto Backup (models would bloat backups). LO-40 acts on that: models
+  are installed under `getApplicationSupportDirectory()` instead, and excluded from backup
+  there (see §9).
 - SD-card sync `.bin` files: `getApplicationSupportDirectory()/sdcard/`.
-- STT models: `getApplicationSupportDirectory()/models/<name>/`; show size and a delete
-  button in Settings.
+- STT models: `getApplicationSupportDirectory()/models/<ModelSpec.id>/`, installed by
+  `lib/transcription/model_store.dart` (LO-40), whose catalog of installable models is
+  `lib/transcription/model_catalog.dart`. An install downloads the model's `.tar.bz2` into a
+  temp file under `<models>/.tmp/`, bunzip2-decompresses and untars it in a background
+  isolate, but extracts only the catalog entry's `requiredFiles` — the upstream sherpa-onnx
+  release archives also ship int8 copies of every weight and a `test_wavs/` directory that
+  this app never opens, which is why the installed size is well below the archive size. The
+  extracted files land in `<models>/.staging-<id>/` and are verified (every required file
+  present and non-empty) before an atomic rename promotes them to `<models>/<id>/`; a failed
+  or cancelled install leaves any previously installed copy untouched. Catalog sizes: the
+  streaming zipformer archive is ~122 MB and installs to ~88 MB; Whisper tiny is ~111 MB
+  archived / ~146 MB installed; Whisper base is ~198 MB archived / ~279 MB installed. A
+  one-time migration (`ModelStore.migrateLegacyInstalls`) moves models left by pre-LO-40
+  builds in `getApplicationDocumentsDirectory()/sherpa_models/` and `/whisper_models/` into
+  the new layout, preferring an already-installed copy in the new layout and discarding the
+  old one. Settings → Models shows installed size per model and offers delete.
 - Export: write JSON to cache dir and share via `share_plus`; optionally SAF
   (`file_picker` save) later.
 
@@ -371,8 +386,10 @@ process that died without stopping it.
   restorable, but `res/xml/backup_rules.xml` (`android:fullBackupContent`, API <= 30) and
   `res/xml/data_extraction_rules.xml` (`android:dataExtractionRules`, API 31+) exclude the
   SharedPreferences files the plugin writes plus `FlutterSharedPreferences`, which older
-  builds filled with the plaintext keys. Android reads only one of the two rule files
-  depending on the OS version, so they must be kept in sync.
+  builds filled with the plaintext keys, and (LO-40) the `models` directory under
+  `getApplicationSupportDirectory()` — see §8 for what lives there and why re-downloadable
+  weights are not worth backing up. Android reads only one of the two rule files depending
+  on the OS version, so they must be kept in sync.
 - With default options the plugin writes `FlutterSecureStorage` (ciphertext),
   `FlutterSecureKeyStorage` (wrapped data key) and
   `FlutterSecureStorageConfiguration:FlutterSecureStorage` (cipher choice and migration

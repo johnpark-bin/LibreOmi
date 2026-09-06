@@ -11,6 +11,7 @@ import 'controllers/library_controller.dart';
 import 'controllers/session_controller.dart';
 import 'device/device_manager.dart';
 import 'pages/home_page.dart';
+import 'transcription/model_store.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -98,6 +99,23 @@ class _LibreOmiAppState extends State<LibreOmiApp> {
 
       // New in LO-34: chat history is persisted.
       await _chat.load();
+
+      // One-time LO-40 migration: moves any pre-LO-40 model downloads out of
+      // the backed-up documents directory and into the models store's own,
+      // excluded-from-backup directory (docs/04-android-platform-notes.md
+      // §8). Its own try/catch, not the outer one: a model that cannot be
+      // moved is a cosmetic problem, and it must not skip the session init
+      // and finalization drain below.
+      try {
+        final store = ModelStore();
+        await store.migrateLegacyInstalls();
+        // Startup is the one moment no install can be in flight, so it is
+        // also the only safe moment to drop scratch left by a download the
+        // OS killed halfway.
+        await store.clearScratch();
+      } catch (e) {
+        debugPrint('Model migration error: $e');
+      }
 
       // Deliberately after the loads: the finalization queue lives entirely
       // in the database, so starting it before storage has proven usable

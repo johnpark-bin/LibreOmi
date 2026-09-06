@@ -13,6 +13,7 @@ import '../platform/battery_optimization.dart';
 import '../platform/battery_optimization_gateway.dart';
 import 'battery_guidance_page.dart';
 import 'device_settings_page.dart';
+import 'models_page.dart';
 import 'stats_page.dart';
 import 'sdcard_sync_page.dart';
 
@@ -278,6 +279,47 @@ class _SettingsPageState extends State<SettingsPage> {
                   groupValue: SettingsService.transcriptionMode,
                   icon: Icons.bolt_outlined,
                   onChanged: (value) => setState(() => SettingsService.transcriptionMode = value!),
+                ),
+
+                // A local mode does nothing until its model is on disk, and
+                // a silent no-transcript session is worse than a reminder.
+                // Phrased so it stays true after the model is installed:
+                // checking that here would mean an async store lookup in a
+                // synchronous build, for a line the user reads once.
+                if (SettingsService.transcriptionMode == 'whisper' ||
+                    SettingsService.transcriptionMode == 'sherpa') ...[
+                  Divider(height: 1, color: theme.dividerColor.withOpacity(0.1)),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(56, 12, 16, 12),
+                    child: Text(
+                      'Local modes transcribe on the phone and need their '
+                      'model downloaded first — see Manage models below.',
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurface.withOpacity(0.6),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+
+                Divider(height: 1, color: theme.dividerColor.withOpacity(0.1)),
+                ListTile(
+                  leading: Icon(Icons.storage_outlined,
+                      color: theme.colorScheme.onSurface.withOpacity(0.7)),
+                  title: const Text('Manage models',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text(
+                    'Download or remove on-device speech models',
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      fontSize: 13,
+                    ),
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => ModelsPage()),
+                  ),
                 ),
               ],
             ),

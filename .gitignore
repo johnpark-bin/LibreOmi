@@ -56,3 +56,6 @@ xcuserdata/
 # Secrets
 .env
 *.env
+
+# Agent scratch space: model downloads used by the network-tagged tests.
+.tmp/

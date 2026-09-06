@@ -63,6 +63,18 @@ void main() {
     String? storedModel,
     BatteryOptimization? batteryOptimizationOverride,
   }) async {
+    // LO-40 added a "Manage models" row (and, conditionally, a hint line) to
+    // the Transcription Engine card, which pushed the Deepgram/OpenAI
+    // dropdowns just past the default 800x600 test surface's cache extent —
+    // `ListView` only inflates elements within the viewport plus a small
+    // cache, so anything further down is never built at all. A taller
+    // surface keeps every section reachable without a scroll in every test
+    // below, existing ones included.
+    tester.view.physicalSize = const Size(1080, 3000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     SharedPreferences.setMockInitialValues(<String, Object>{
       'transcription_mode': 'cloud',
       if (storedModel != null) 'deepgram_model': storedModel,
@@ -106,6 +118,23 @@ void main() {
       find.widgetWithText(DropdownButtonFormField<String>, 'Nova-2'),
       findsNothing,
     );
+  });
+
+  testWidgets('shows the Manage models tile in the Transcription Engine section', (
+    WidgetTester tester,
+  ) async {
+    await pumpSettingsPage(tester);
+
+    final headerFinder = find.text('Transcription Engine'.toUpperCase());
+    await tester.scrollUntilVisible(
+      headerFinder,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(headerFinder, findsOneWidget);
+    expect(find.text('Manage models'), findsOneWidget);
   });
 
   testWidgets('selecting Nova-3 updates SettingsService.deepgramModel', (

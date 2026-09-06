@@ -1,139 +1,83 @@
 /// Whisper transcription service using Sherpa-ONNX offline recognition
-/// Supports tiny and base model sizes for local speech-to-text
+/// Supports tiny and base model sizes for local speech-to-text.
+///
+/// Model files are no longer downloaded here: they come from the
+/// `ModelStore` in `transcription/model_store.dart`, which the models page
+/// installs into ahead of time (see `transcription/model_catalog.dart` for
+/// the tiny/base entries this service resolves via [modelSize]).
+library;
+
 import 'dart:async';
-import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
-import 'package:path_provider/path_provider.dart';
-import 'package:http/http.dart' as http;
-import 'package:archive/archive.dart';
 import '../models/conversation.dart';
+import '../transcription/model_catalog.dart';
+import '../transcription/model_store.dart';
 
 class WhisperService {
   sherpa.OfflineRecognizer? _recognizer;
   bool _isInitialized = false;
   bool _isProcessing = false;
-  
+
   final Function(List<TranscriptSegment>)? onTranscript;
   final Function(String)? onError;
-  
-  // Audio format settings
-  static const int sampleRate = 16000;
-  
+
   // Model info - configurable size
   final String modelSize; // 'tiny' or 'base'
-  
-  String get modelName => 'sherpa-onnx-whisper-$modelSize';
-  String get modelUrl => 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/$modelName.tar.bz2';
-  
+
+  /// Overrides model resolution for tests. When null, [initialize] asks
+  /// [modelStore] (or a fresh [ModelStore]) for the installed directory.
+  final String? modelDir;
+  final ModelStore? modelStore;
+
+  // Audio format settings
+  static const int sampleRate = 16000;
+
   // Audio buffer for batch processing
   List<double> _audioBuffer = [];
   Timer? _processTimer;
   static const Duration _processInterval = Duration(seconds: 3); // Process every 3 seconds
-  
+
   WhisperService({
     this.onTranscript,
     this.onError,
     this.modelSize = 'tiny', // Default to tiny for faster loading
+    this.modelDir,
+    this.modelStore,
   });
 
   bool get isInitialized => _isInitialized;
   bool get isProcessing => _isProcessing;
 
-  /// Get the model directory path
-  Future<String> _getModelDir() async {
-    final appDir = await getApplicationDocumentsDirectory();
-    return '${appDir.path}/whisper_models/$modelName';
-  }
-
-  /// Check if model is downloaded
-  Future<bool> _isModelDownloaded() async {
-    final modelDir = await _getModelDir();
-    final encoderFile = File('$modelDir/$modelSize-encoder.onnx');
-    return encoderFile.existsSync();
-  }
-
-  /// Download and extract the model
-  Future<void> _downloadModel() async {
-    debugPrint('Downloading Whisper $modelSize model...');
-    
-    try {
-      final modelDir = await _getModelDir();
-      final modelDirPath = Directory(modelDir);
-      if (!modelDirPath.existsSync()) {
-        modelDirPath.createSync(recursive: true);
-      }
-      
-      // Download tar.bz2 file
-      debugPrint('Downloading from: $modelUrl');
-      final response = await http.get(Uri.parse(modelUrl));
-      if (response.statusCode != 200) {
-        throw Exception('Failed to download model: ${response.statusCode}');
-      }
-      
-      debugPrint('Whisper model downloaded, extracting...');
-      
-      // Save and extract
-      final archivePath = '$modelDir/model.tar.bz2';
-      await File(archivePath).writeAsBytes(response.bodyBytes);
-      
-      // Extract using bzip2 + tar
-      final bytes = await File(archivePath).readAsBytes();
-      final bz2Decoded = BZip2Decoder().decodeBytes(bytes);
-      final archive = TarDecoder().decodeBytes(bz2Decoded);
-      
-      for (final file in archive) {
-        final filename = file.name;
-        if (file.isFile) {
-          // Remove the top-level directory from path
-          final relativePath = filename.split('/').skip(1).join('/');
-          if (relativePath.isNotEmpty) {
-            final outFile = File('$modelDir/$relativePath');
-            outFile.createSync(recursive: true);
-            outFile.writeAsBytesSync(file.content as List<int>);
-          }
-        }
-      }
-      
-      // Cleanup archive
-      await File(archivePath).delete();
-      debugPrint('Whisper model extraction complete');
-      
-    } catch (e) {
-      debugPrint('Whisper model download error: $e');
-      rethrow;
-    }
-  }
-
   /// Initialize Whisper with offline ASR model
   Future<void> initialize() async {
     if (_isInitialized) return;
-    
+
     try {
       debugPrint('Initializing Whisper $modelSize...');
-      
-      // Check if model is downloaded
-      if (!await _isModelDownloaded()) {
-        debugPrint('Whisper model not found, downloading...');
-        await _downloadModel();
-      }
-      
-      final modelDir = await _getModelDir();
+
+      // The catalog is what decides which model a size string maps to, so
+      // the file names below have to come from the same reduction — a stale
+      // preference otherwise resolves to the tiny directory and then looks
+      // for files named after a size that is not in it.
+      final size = ModelCatalog.whisperSize(modelSize);
+      final modelDir = this.modelDir ??
+          await (modelStore ?? ModelStore())
+              .requireInstalledDir(ModelCatalog.whisper(modelSize));
       debugPrint('Using Whisper model from: $modelDir');
-      
+
       // Initialize sherpa-onnx bindings first
       sherpa.initBindings();
       
       // Configure the Whisper model
       final whisperConfig = sherpa.OfflineWhisperModelConfig(
-        encoder: '$modelDir/$modelSize-encoder.onnx',
-        decoder: '$modelDir/$modelSize-decoder.onnx',
+        encoder: '$modelDir/$size-encoder.onnx',
+        decoder: '$modelDir/$size-decoder.onnx',
       );
       
       final modelConfig = sherpa.OfflineModelConfig(
         whisper: whisperConfig,
-        tokens: '$modelDir/$modelSize-tokens.txt',
+        tokens: '$modelDir/$size-tokens.txt',
         debug: false,
         numThreads: 2,
       );
@@ -147,6 +91,10 @@ class WhisperService {
       _isInitialized = true;
       debugPrint('Whisper $modelSize initialized successfully');
       
+    } on ModelNotInstalledException catch (e) {
+      debugPrint('Failed to initialize Whisper: ${e.message}');
+      onError?.call(e.message);
+      rethrow;
     } catch (e) {
       debugPrint('Failed to initialize Whisper: $e');
       onError?.call('Failed to initialize Whisper: $e');
