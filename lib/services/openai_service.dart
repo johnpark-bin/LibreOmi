@@ -4,14 +4,41 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'settings_service.dart';
 
+/// Thrown when the OpenAI HTTP API responds with a non-200 status.
+///
+/// Callers (see `lib/intelligence/openai_client.dart`) map this into a
+/// retryable/permanent distinction based on [statusCode].
+class OpenAiHttpException implements Exception {
+  OpenAiHttpException(this.statusCode, [this.body]);
+  final int statusCode;
+  final String? body;
+  @override
+  String toString() => 'OpenAI API error: $statusCode';
+}
+
 class OpenAIService {
   final String apiKey;
   final String model;
-  
+
+  /// Optional HTTP client for tests. When null, a fresh [http.Client] is
+  /// used per call via the top-level `http.post`, matching the original
+  /// behaviour; tests can inject a `MockClient` to avoid real network calls.
+  final http.Client? _client;
+
   OpenAIService({
     required this.apiKey,
     String? model,
-  }) : model = model ?? SettingsService.openaiModel;
+    http.Client? client,
+  })  : model = model ?? SettingsService.openaiModel,
+        _client = client;
+
+  Future<http.Response> _post(Uri url, {required Map<String, String> headers, required Object body}) {
+    final client = _client;
+    if (client == null) {
+      return http.post(url, headers: headers, body: body);
+    }
+    return client.post(url, headers: headers, body: body);
+  }
 
   /// Chat with OpenAI using conversation context
   Future<String> chat({
@@ -44,7 +71,7 @@ Use this context to provide personalized and relevant responses. Reference speci
         'content': userMessage,
       });
 
-      final response = await http.post(
+      final response = await _post(
         Uri.parse('https://api.openai.com/v1/chat/completions'),
         headers: {
           'Content-Type': 'application/json',
@@ -73,7 +100,7 @@ Use this context to provide personalized and relevant responses. Reference speci
         return content ?? 'No response generated';
       } else {
         debugPrint('OpenAI API error: ${response.statusCode} ${response.body}');
-        throw Exception('OpenAI API error: ${response.statusCode}');
+        throw OpenAiHttpException(response.statusCode, response.body);
       }
     } catch (e) {
       debugPrint('OpenAI chat error: $e');
@@ -81,24 +108,32 @@ Use this context to provide personalized and relevant responses. Reference speci
     }
   }
 
-  /// Generate a title, summary, extract memories and tasks from a conversation
+  /// Generate a title, summary, extract memories and tasks from a conversation.
+  ///
+  /// Throws [OpenAiHttpException] on a non-200 response, [FormatException]
+  /// if a 200 response has no message content, and lets network exceptions
+  /// propagate unchanged. This used to swallow all failures and return a
+  /// fixed "Untitled Conversation" sentinel map instead; callers that relied
+  /// on that sentinel (see `FinalizationQueue`) now need to reconstruct it
+  /// from the thrown exception.
+  // TODO(LO-23): FinalizationQueue's sentinel-map heuristic is retired once
+  // the queue itself is migrated to consume typed errors directly.
   Future<Map<String, dynamic>> summarizeConversation(String transcript, {DateTime? currentTime}) async {
     final now = currentTime ?? DateTime.now();
     final timeContext = 'Current date/time: ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-    
-    try {
-      final response = await http.post(
-        Uri.parse('https://api.openai.com/v1/chat/completions'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $apiKey',
-        },
-        body: jsonEncode({
-          'model': model,
-          'messages': [
-            {
-              'role': 'system',
-              'content': '''You analyze conversations and extract key information.
+
+    final response = await _post(
+      Uri.parse('https://api.openai.com/v1/chat/completions'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $apiKey',
+      },
+      body: jsonEncode({
+        'model': model,
+        'messages': [
+          {
+            'role': 'system',
+            'content': '''You analyze conversations and extract key information.
 $timeContext
 
 Respond with JSON only:
@@ -124,46 +159,45 @@ For tasks, extract actionable items mentioned:
 
 If there are no notable facts/tasks, return empty arrays.
 Keep each item as a short, clear statement.'''
-            },
-            {
-              'role': 'user',
-              'content': 'Analyze this conversation:\n\n$transcript'
-            }
-          ],
-          'max_tokens': 700,
-          'response_format': {'type': 'json_object'},
-        }),
-      );
+          },
+          {
+            'role': 'user',
+            'content': 'Analyze this conversation:\n\n$transcript'
+          }
+        ],
+        'max_tokens': 700,
+        'response_format': {'type': 'json_object'},
+      }),
+    );
 
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
-        final content = json['choices']?[0]?['message']?['content'];
-        
-        // Track token usage
-        final usage = json['usage'];
-        if (usage != null) {
-          SettingsService.addOpenAIUsage(
-            usage['prompt_tokens'] ?? 0,
-            usage['completion_tokens'] ?? 0,
-          );
-        }
-        
-        if (content != null) {
-          final parsed = jsonDecode(content);
-          return {
-            'title': parsed['title'] ?? 'Untitled Conversation',
-            'summary': parsed['summary'] ?? '',
-            'memories': (parsed['memories'] as List?)?.cast<String>() ?? [],
-            'tasks': parsed['tasks'] ?? [],
-          };
-        }
-      } else {
-        debugPrint('OpenAI summarize API error: ${response.statusCode} ${response.body}');
-      }
-      return {'title': 'Untitled Conversation', 'summary': '', 'memories': <String>[], 'tasks': []};
-    } catch (e) {
-      debugPrint('OpenAI summarize error: $e');
-      return {'title': 'Untitled Conversation', 'summary': '', 'memories': <String>[], 'tasks': []};
+    if (response.statusCode != 200) {
+      debugPrint('OpenAI summarize API error: ${response.statusCode} ${response.body}');
+      throw OpenAiHttpException(response.statusCode, response.body);
     }
+
+    final json = jsonDecode(response.body);
+    final content = json['choices']?[0]?['message']?['content'];
+
+    // Track token usage
+    final usage = json['usage'];
+    if (usage != null) {
+      SettingsService.addOpenAIUsage(
+        usage['prompt_tokens'] ?? 0,
+        usage['completion_tokens'] ?? 0,
+      );
+    }
+
+    if (content == null) {
+      debugPrint('OpenAI summarize error: no content in response');
+      throw FormatException('OpenAI returned no summary content');
+    }
+
+    final parsed = jsonDecode(content);
+    return {
+      'title': parsed['title'] ?? 'Untitled Conversation',
+      'summary': parsed['summary'] ?? '',
+      'memories': (parsed['memories'] as List?)?.cast<String>() ?? [],
+      'tasks': parsed['tasks'] ?? [],
+    };
   }
 }
