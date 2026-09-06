@@ -93,7 +93,10 @@ completion and 5 s for the first packet.
 
 ## Connection sequence (LibreOmi)
 
-1. `connect(timeout 10 s, autoConnect for saved device)`
+1. user-initiated: `connect(timeout 10 s, autoConnect: false, mtu: null)`, retrying
+   GATT 133/257 up to 3× (1 s, 2 s). Saved device: `connect(autoConnect: true, mtu: null)`,
+   which only *arms* the request — steps 2-6 then run when `connectionState` reports
+   connected (`BleService._onConnectedSetup`).
 2. Android: `requestMtu(512)` **before** `discoverServices()` (an unsolicited MTU update
    otherwise races discovery); refuse the session if the negotiated MTU is < 86. Then
    `requestConnectionPriority(high)` while streaming, `balanced` when idle. Both calls
@@ -105,4 +108,6 @@ completion and 5 s for the first packet.
 5. subscribe button notify
 6. probe storage control (presence ⇒ SD-card UI enabled)
 7. subscribe audio notify only when a session starts; unsubscribe on stop
-8. on disconnect: cancel every subscription, clear cache, schedule reconnect
+8. on disconnect: cancel every subscription, clear cache, schedule reconnect. The
+   auto-connect listener is deliberately *not* cancelled — it is what observes the
+   reconnection the OS performs on its own.

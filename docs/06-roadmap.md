@@ -41,7 +41,7 @@ Goal: screen off / app backgrounded for hours, transcript still captured.
 |----|------|------|------------|
 | LO-20 | `BackgroundRunner` abstraction + `flutter_foreground_task` implementation (`connectedDevice|microphone`), persistent notification with state | M | Session survives 1 h with screen off |
 | LO-21 | Battery-optimisation exemption prompt + OEM guidance page (`device_info_plus`) | S | Prompt appears once; guidance links per vendor |
-| LO-22 | Reconnect strategy: `autoConnect: true` for saved device, exponential backoff for scans, GATT 133 retry, subscription cleanup on disconnect | M | Walk out of range and back: reconnects within 30 s, audio resumes |
+| LO-22 | Reconnect strategy: `autoConnect: true` for saved device, exponential backoff for re-arming that request (never for scans — an armed request needs none), GATT 133/257 retry on manual connects, subscription cleanup on disconnect | M | Walk out of range and back: reconnects within 30 s, audio resumes |
 | LO-23 | Network retry queue for finalization (Deepgram/OpenAI calls during Doze) | M | Airplane mode during silence timeout → conversation summarised after network returns |
 | LO-24 | Wake lock while listening; service stops when idle | S | No persistent notification when disconnected |
 | LO-25 | Secure storage for API keys with migration | S | Keys survive upgrade; not readable in `shared_prefs` XML |

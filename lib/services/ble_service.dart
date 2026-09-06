@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import 'ble/ble_protocol.dart';
+import 'ble/connection_ownership.dart';
+import 'ble/gatt_retry.dart';
 
 export 'ble/ble_protocol.dart';
 
@@ -34,6 +36,16 @@ class BleService {
   BleService._internal();
 
   BluetoothDevice? _connectedDevice;
+
+  // Auto-connect state for the saved device (LO-22). `_autoConnectSubscription`
+  // deliberately lives outside `_cleanupSubscriptions()`: once armed, the
+  // Android stack keeps retrying the link on its own (the plugin skips
+  // `gatt.close()` for auto-connected devices), so the listener has to survive
+  // a disconnect to see the reconnection that follows it.
+  BluetoothDevice? _autoConnectDevice;
+  StreamSubscription? _autoConnectSubscription;
+  bool _isSettingUpConnection = false;
+
   BluetoothCharacteristic? _audioCharacteristic;
   StreamSubscription? _audioSubscription;
   StreamSubscription? _connectionSubscription;
@@ -83,12 +95,23 @@ class BleService {
   int _audioLengthLogCount = 0;
   int _lastLoggedAudioPacketLength = -1;
 
-  /// Try to connect to a previously saved device by its remote ID
+  /// Arms `autoConnect: true` for a previously saved device.
+  ///
+  /// The returned bool says whether the request was *armed*, not whether the
+  /// device is connected: with `autoConnect: true` flutter_blue_plus returns
+  /// from `connect()` immediately and ignores the timeout, so the link comes
+  /// up whenever the OS next sees the device. Callers observe [stateStream]
+  /// for the actual connection and [isConnected] for the current state.
+  ///
+  /// This costs no BLE scan of our own — the Android stack keeps the
+  /// connection request pending in its own background scheduling — so the
+  /// reconnect path can never trip the 5-scans-per-30-seconds throttle.
+  /// Arming is cancelled by [disconnect] or by a manual [connect].
   Future<bool> connectToSavedDevice(String deviceId) async {
     if (deviceId.isEmpty) return false;
 
     try {
-      debugPrint('Attempting to reconnect to saved device: $deviceId');
+      debugPrint('[LibreOmi/BLE] arming autoConnect for saved device: $deviceId');
 
       // Wait for Bluetooth adapter to be ready (skip unknown state)
       await FlutterBluePlus.adapterState
@@ -102,12 +125,141 @@ class BleService {
         return false;
       }
 
-      // Create device from ID and try to connect
       final device = BluetoothDevice.fromId(deviceId);
-      return await connect(device);
+
+      // The Android plugin returns early — without registering the request in
+      // `mAutoConnected` — when the device is already connected or already
+      // connecting, and Dart cannot see that refusal. Recording the arm anyway
+      // would make every later attempt short-circuit below on a request that
+      // does not exist, and the OS would never retry the link.
+      if (_isSettingUpConnection) {
+        debugPrint('[LibreOmi/BLE] a connection is being set up, not arming autoConnect');
+        return false;
+      }
+      if (device.isConnected) {
+        debugPrint('[LibreOmi/BLE] $deviceId is already connected, not arming autoConnect');
+        return false;
+      }
+
+      // Already armed for this device: re-arming would be a no-op on the
+      // platform side, so keep the existing listener rather than tearing a
+      // pending connection request down and back up. `isAutoConnectEnabled` is
+      // the plugin's own record, so a request that was dropped elsewhere is
+      // re-armed rather than assumed live.
+      if (_autoConnectDevice?.remoteId == device.remoteId &&
+          device.isAutoConnectEnabled) {
+        debugPrint('[LibreOmi/BLE] autoConnect already armed for $deviceId');
+        return true;
+      }
+
+      await _disarmAutoConnect();
+      _autoConnectDevice = device;
+      _autoConnectSubscription =
+          device.connectionState.listen((state) => _onAutoConnectStateChanged(device, state));
+
+      // `mtu: null` is mandatory here: flutter_blue_plus asserts that mtu and
+      // autoConnect are incompatible, so the MTU is negotiated in
+      // `_onConnectedSetup()` once the link is actually up.
+      await device.connect(autoConnect: true, mtu: null);
+      debugPrint('[LibreOmi/BLE] autoConnect armed for $deviceId');
+      return true;
     } catch (e) {
-      debugPrint('Failed to reconnect to saved device: $e');
+      debugPrint('Failed to arm auto-connect for saved device: $e');
+      _lastError = 'Failed to arm auto-connect: $e';
+      await _disarmAutoConnect();
       return false;
+    }
+  }
+
+  /// Cancels a pending or established `autoConnect` request.
+  ///
+  /// `BluetoothDevice.disconnect()` is what removes the device from the
+  /// plugin's auto-connect list, so it has to run even when no link is up.
+  /// Returns the device that was disarmed, so callers can avoid disconnecting
+  /// the same device twice.
+  Future<BluetoothDevice?> _disarmAutoConnect() async {
+    final subscription = _autoConnectSubscription;
+    final device = _autoConnectDevice;
+    _autoConnectSubscription = null;
+    _autoConnectDevice = null;
+    await subscription?.cancel();
+    if (device == null) return null;
+    try {
+      await device.disconnect();
+    } catch (e) {
+      debugPrint('[LibreOmi/BLE] error disarming autoConnect: $e');
+    }
+    return device;
+  }
+
+  /// Handles connection-state events for the auto-connected saved device.
+  ///
+  /// While merely armed the service stays [DeviceConnectionState.disconnected]:
+  /// the wait is open-ended (the device may be out of range for hours) and a
+  /// permanent `connecting` state would misreport that to the UI. The state
+  /// only moves once the OS actually brings the link up.
+  void _onAutoConnectStateChanged(BluetoothDevice device, BluetoothConnectionState state) {
+    if (_autoConnectDevice?.remoteId != device.remoteId) return;
+    if (state == BluetoothConnectionState.connected) {
+      unawaited(_setUpAutoConnectedDevice(device));
+      return;
+    }
+    // `connectionState` replays its current value to a new listener, so
+    // arming device B while device A is connected delivers `disconnected(B)`
+    // immediately. Only a drop of the link we actually hold may tear our
+    // state down. The platform keeps the auto-connect request alive, so this
+    // listener stays and fires again on the reconnection that follows.
+    if (state == BluetoothConnectionState.disconnected &&
+        _connectedDevice?.remoteId == device.remoteId) {
+      _onDisconnected();
+    }
+  }
+
+  /// Runs the post-connect setup for a device the OS auto-connected for us.
+  Future<void> _setUpAutoConnectedDevice(BluetoothDevice device) async {
+    // A manual connect in flight owns the service state until it finishes.
+    if (_isSettingUpConnection) return;
+    if (_connectedDevice != null && _connectedDevice!.remoteId != device.remoteId) {
+      // Another device holds the connection. Walking away silently would leave
+      // this link open behind the user's back with nothing left to notify us
+      // about it, so drop it; the backoff re-arms once the service is idle.
+      debugPrint('[LibreOmi/BLE] dropping auto-connect for ${device.remoteId} while '
+          '${_connectedDevice!.remoteId} holds the connection');
+      unawaited(_disarmAutoConnect());
+      return;
+    }
+    if (_state == DeviceConnectionState.connected &&
+        _connectedDevice?.remoteId == device.remoteId) {
+      return;
+    }
+    _isSettingUpConnection = true;
+    try {
+      _lastError = null;
+      _lastMtu = 0;
+      _state = DeviceConnectionState.connecting;
+      _stateController.add(_state);
+      _connectedDevice = device;
+
+      var ready = false;
+      try {
+        ready = await _onConnectedSetup(device);
+      } catch (e) {
+        debugPrint('[LibreOmi/BLE] auto-connect setup failed: $e');
+        _lastError ??= 'Auto-connect setup failed: $e';
+      }
+      if (ready) {
+        debugPrint('[LibreOmi/BLE] auto-connected to Omi device');
+        return;
+      }
+
+      // Setup failed after the link came up (too-small MTU, missing audio
+      // characteristic, a throwing discovery, or a manual connect that
+      // superseded us). Tear this link down including the auto-connect
+      // request; the caller's backoff re-arms it, which is what keeps a
+      // permanently failing device from spinning at full speed.
+      await _teardownFailedConnection(device);
+    } finally {
+      _isSettingUpConnection = false;
     }
   }
 
@@ -164,95 +316,41 @@ class BleService {
     await FlutterBluePlus.stopScan();
   }
 
-  /// Connect to Omi device
+  /// Connect to Omi device, user-initiated.
+  ///
+  /// Stays `autoConnect: false` (a direct connection is much faster than the
+  /// OS-scheduled one) and disarms any auto-connect request first, so the two
+  /// paths can never race for the same link.
   Future<bool> connect(BluetoothDevice device) async {
     _lastError = null;
     // Drop anything left over from a previous connection before we start, so
     // a failure part-way through this method can never leave stale handles
     // behind, and so a stale connection-state subscription is cancelled
-    // rather than silently overwritten below.
+    // rather than silently overwritten below. This runs *before* the disarm:
+    // cancelling a pending auto-connect makes the platform synthesise a
+    // disconnect event, which a stale listener would otherwise act on.
     await _cleanupSubscriptions();
+    await _disarmAutoConnect();
     _lastMtu = 0;
+    // Claims the setup slot for the whole method, so an auto-connect armed by
+    // the reconnect backoff while this is still in flight cannot run a second,
+    // concurrent `_onConnectedSetup()` for the same device.
+    _isSettingUpConnection = true;
     try {
       _state = DeviceConnectionState.connecting;
       _stateController.add(_state);
-
-      // `mtu: null` disables the plugin's own post-connect MTU request
-      // (flutter_blue_plus defaults it to 512). We negotiate explicitly below
-      // so we can observe and gate on the result; leaving the default on
-      // would exchange MTU twice per connect.
-      await device.connect(timeout: const Duration(seconds: 10), mtu: null);
+      // Claim the ownership token now, not after the link is up: a connect
+      // that fails while opening the radio link must still be recognised as
+      // the service's owner by `_teardownFailedConnection`, or the state
+      // would stay stuck at `connecting` with nothing left to reset it.
       _connectedDevice = device;
 
-      // Listen for disconnection
-      _connectionSubscription = device.connectionState.listen((state) {
-        if (state == BluetoothConnectionState.disconnected) {
-          _onDisconnected();
-        }
-      });
+      await _connectWithGattRetry(device);
 
-      // MTU negotiation must happen AFTER connect() and BEFORE service
-      // discovery below: the flutter_blue_plus source documents a race
-      // where an unsolicited MTU update makes a later discovery call
-      // time out.
-      //
-      // `Platform.isAndroid` is normally banned outside `platform/` per
-      // AGENTS.md, but that rule is waived in this file by the LO-12
-      // direction record — this logic moves to `platform/` in M3.
-      if (Platform.isAndroid) {
-        try {
-          _lastMtu = await device.requestMtu(512);
-        } catch (e) {
-          debugPrint('[LibreOmi/BLE] requestMtu failed: $e');
-          _lastMtu = device.mtuNow;
-        }
-        debugPrint('[LibreOmi/BLE] negotiated MTU=$_lastMtu (minimum $minimumUsableMtu)');
-
-        if (!isMtuSufficient(_lastMtu)) {
-          final message =
-              '[LibreOmi/BLE] MTU too small: negotiated=$_lastMtu, required minimum=$minimumUsableMtu';
-          debugPrint(message);
-          _lastError = message;
-          await disconnect();
-          return false;
-        }
-      } else {
-        // iOS/other platforms negotiate their own MTU and requestMtu()
-        // throws off Android. `mtuNow` may still read the platform default
-        // right after connect, so it is informational only — do not gate.
-        _lastMtu = device.mtuNow;
-        debugPrint('[LibreOmi/BLE] informational MTU=$_lastMtu (non-Android, not gated)');
-      }
-
-      // Discover services exactly once per connection; cache characteristics.
-      final services = await device.discoverServices();
-      for (var service in services) {
-        for (var char in service.characteristics) {
-          _characteristics[normalizeUuid(char.uuid.toString())] = char;
-        }
-      }
-
-      _audioCharacteristic = _characteristic(audioDataStreamCharacteristicUuid);
-      if (_audioCharacteristic == null) {
-        const message = 'Audio characteristic not found';
-        debugPrint(message);
-        _lastError = message;
-        await disconnect();
+      if (!await _onConnectedSetup(device)) {
+        await _teardownFailedConnection(device);
         return false;
       }
-
-      // Subscribe to button characteristic, if present.
-      final buttonCharacteristic = _characteristic(buttonTriggerCharacteristicUuid);
-      if (buttonCharacteristic != null) {
-        await buttonCharacteristic.setNotifyValue(true);
-        _buttonSubscription = buttonCharacteristic.onValueReceived.listen((value) {
-          if (value.isNotEmpty) _buttonController.add(value);
-        });
-        debugPrint('Subscribed to button events');
-      }
-
-      _state = DeviceConnectionState.connected;
-      _stateController.add(_state);
 
       debugPrint('Connected to Omi device');
       return true;
@@ -266,17 +364,191 @@ class BleService {
       // Keep a more specific reason (e.g. the MTU rejection) if one was
       // already recorded before the throw.
       _lastError ??= 'Failed to connect: $e';
-      await _cleanupSubscriptions();
+      await _teardownFailedConnection(device);
+      return false;
+    } finally {
+      _isSettingUpConnection = false;
+    }
+  }
+
+  /// Opens the link for a user-initiated connect, retrying the transient
+  /// Android GATT statuses (133 / 257, see `ble/gatt_retry.dart`) up to
+  /// [maxConnectAttempts] times with [connectRetryDelays] in between. Any
+  /// other failure is rethrown immediately — retrying it would only delay the
+  /// error the user is waiting for.
+  Future<void> _connectWithGattRetry(BluetoothDevice device) async {
+    for (var attempt = 1;; attempt++) {
       try {
-        await _connectedDevice?.disconnect();
+        // `mtu: null` disables the plugin's own post-connect MTU request
+        // (flutter_blue_plus defaults it to 512). We negotiate explicitly in
+        // `_onConnectedSetup()` so we can observe and gate on the result;
+        // leaving the default on would exchange MTU twice per connect.
+        await device.connect(timeout: const Duration(seconds: 10), mtu: null);
+        return;
+      } catch (e) {
+        final status = _connectErrorStatus(e);
+        if (attempt >= maxConnectAttempts ||
+            status == null ||
+            !isRetryableGattStatus(status)) {
+          rethrow;
+        }
+        final delay = connectRetryDelays[attempt - 1];
+        debugPrint('[LibreOmi/BLE] connect attempt $attempt/$maxConnectAttempts failed with '
+            'retryable GATT status $status; retrying in ${delay.inSeconds}s');
+        await Future.delayed(delay);
+      }
+    }
+  }
+
+  /// The platform status behind a failed connect, if there is one.
+  ///
+  /// `FlutterBluePlusException` carries it as a field, which is the reliable
+  /// source; `gattStatusOf` parses `toString()` and is the fallback for the
+  /// error types the plugin lets through unwrapped.
+  int? _connectErrorStatus(Object error) {
+    if (error is FlutterBluePlusException) return error.code;
+    return gattStatusOf(error);
+  }
+
+  /// Everything that has to happen once a link is up, shared by the manual
+  /// and the auto-connect paths: MTU negotiation and gate, one-time service
+  /// discovery, characteristic cache, button subscription.
+  ///
+  /// Returns false when the link came up but is unusable (too small an MTU,
+  /// no audio characteristic); the caller tears the connection down. May also
+  /// throw, which callers treat the same way.
+  Future<bool> _onConnectedSetup(BluetoothDevice device) async {
+    // `_connectedDevice` is the ownership token: a manual connect can take the
+    // service over while the platform calls below are in flight, and then none
+    // of the shared state (cache, characteristics, subscriptions) is ours to
+    // write any more.
+    bool stillOwns() => _connectedDevice?.remoteId == device.remoteId;
+
+    // Listen for disconnection. The auto-connect path already owns a
+    // longer-lived listener for this device, so only the manual path needs
+    // one of its own.
+    if (_autoConnectDevice?.remoteId != device.remoteId) {
+      _connectionSubscription = device.connectionState.listen((state) {
+        if (state == BluetoothConnectionState.disconnected) {
+          _onDisconnected();
+        }
+      });
+    }
+
+    // MTU negotiation must happen AFTER connect() and BEFORE service
+    // discovery below: the flutter_blue_plus source documents a race
+    // where an unsolicited MTU update makes a later discovery call
+    // time out.
+    //
+    // `Platform.isAndroid` is normally banned outside `platform/` per
+    // AGENTS.md, but that rule is waived in this file by the LO-12
+    // direction record — this logic moves to `platform/` in M3.
+    if (Platform.isAndroid) {
+      try {
+        _lastMtu = await device.requestMtu(512);
+      } catch (e) {
+        debugPrint('[LibreOmi/BLE] requestMtu failed: $e');
+        _lastMtu = device.mtuNow;
+      }
+      debugPrint('[LibreOmi/BLE] negotiated MTU=$_lastMtu (minimum $minimumUsableMtu)');
+
+      if (!isMtuSufficient(_lastMtu)) {
+        final message =
+            '[LibreOmi/BLE] MTU too small: negotiated=$_lastMtu, required minimum=$minimumUsableMtu';
+        debugPrint(message);
+        _lastError = message;
+        return false;
+      }
+    } else {
+      // iOS/other platforms negotiate their own MTU and requestMtu()
+      // throws off Android. `mtuNow` may still read the platform default
+      // right after connect, so it is informational only — do not gate.
+      _lastMtu = device.mtuNow;
+      debugPrint('[LibreOmi/BLE] informational MTU=$_lastMtu (non-Android, not gated)');
+    }
+
+    // Discover services exactly once per connection; cache characteristics.
+    final services = await device.discoverServices();
+    if (!stillOwns()) {
+      debugPrint('[LibreOmi/BLE] setup for ${device.remoteId} was superseded during discovery');
+      return false;
+    }
+    for (var service in services) {
+      for (var char in service.characteristics) {
+        _characteristics[normalizeUuid(char.uuid.toString())] = char;
+      }
+    }
+
+    _audioCharacteristic = _characteristic(audioDataStreamCharacteristicUuid);
+    if (_audioCharacteristic == null) {
+      const message = 'Audio characteristic not found';
+      debugPrint(message);
+      _lastError = message;
+      return false;
+    }
+
+    // Subscribe to button characteristic, if present.
+    final buttonCharacteristic = _characteristic(buttonTriggerCharacteristicUuid);
+    if (buttonCharacteristic != null) {
+      await buttonCharacteristic.setNotifyValue(true);
+      if (!stillOwns()) {
+        debugPrint('[LibreOmi/BLE] setup for ${device.remoteId} was superseded, '
+            'not subscribing to button events');
+        return false;
+      }
+      _buttonSubscription = buttonCharacteristic.onValueReceived.listen((value) {
+        if (value.isNotEmpty) _buttonController.add(value);
+      });
+      debugPrint('Subscribed to button events');
+    }
+
+    if (!stillOwns()) {
+      debugPrint('[LibreOmi/BLE] setup for ${device.remoteId} was superseded');
+      return false;
+    }
+
+    _state = DeviceConnectionState.connected;
+    _stateController.add(_state);
+    return true;
+  }
+
+  /// Releases a link that came up but could not be used, and disarms
+  /// auto-connect for it: the caller's backoff re-arms after its next delay,
+  /// which is what stops a device that fails setup every time from retrying
+  /// at full speed.
+  ///
+  /// Scoped to [device]: a setup that was superseded while it awaited must
+  /// drop its own link without touching the connection that replaced it, so
+  /// the shared state is only reset when [device] still owns it.
+  Future<void> _teardownFailedConnection(BluetoothDevice device) async {
+    final action = teardownActionFor(
+      serviceOwnerId: _connectedDevice?.remoteId.str,
+      failedDeviceId: device.remoteId.str,
+    );
+
+    BluetoothDevice? disarmed;
+    if (_autoConnectDevice?.remoteId == device.remoteId) {
+      disarmed = await _disarmAutoConnect();
+    }
+    if (action == TeardownAction.resetService) {
+      await _cleanupSubscriptions();
+    }
+    if (disarmed?.remoteId != device.remoteId) {
+      try {
+        await device.disconnect();
       } catch (e) {
         debugPrint('Error disconnecting after a failed connect: $e');
       }
-      _connectedDevice = null;
-      _state = DeviceConnectionState.disconnected;
-      _stateController.add(_state);
-      return false;
     }
+    if (action == TeardownAction.releaseLinkOnly) {
+      debugPrint('[LibreOmi/BLE] released ${device.remoteId} without touching '
+          'the connection that superseded it');
+      return;
+    }
+
+    _connectedDevice = null;
+    _state = DeviceConnectionState.disconnected;
+    _stateController.add(_state);
   }
 
   /// Set Microphone Gain (0-100)
@@ -469,14 +741,22 @@ class BleService {
     await connection?.cancel();
   }
 
-  /// Disconnect from device
+  /// Disconnect from device.
+  ///
+  /// This is the explicit, user-initiated teardown: it also disarms
+  /// auto-connect, so the OS will not bring the link back up behind the
+  /// user's back.
   Future<void> disconnect() async {
     await _cleanupSubscriptions();
+    final disarmed = await _disarmAutoConnect();
 
-    try {
-      await _connectedDevice?.disconnect();
-    } catch (e) {
-      debugPrint('Error disconnecting: $e');
+    final device = _connectedDevice;
+    if (device != null && device.remoteId != disarmed?.remoteId) {
+      try {
+        await device.disconnect();
+      } catch (e) {
+        debugPrint('Error disconnecting: $e');
+      }
     }
 
     _connectedDevice = null;

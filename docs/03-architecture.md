@@ -173,8 +173,14 @@ Design (M2):
    OEM-specific guidance if the user declines.
 4. Hold a partial wake lock while listening (`flutter_foreground_task` option).
 5. Reconnect: `DeviceManager` uses `autoConnect: true` for the saved device and an
-   exponential backoff (5 s → 60 s) for manual scans, instead of the upstream fixed
-   5-second timer.
+   exponential backoff (5 s → 60 s, ±10 % jitter) for *re-arming* that request, instead
+   of the upstream fixed 5-second timer. The backoff never scans: an armed
+   `autoConnect` is retried by the OS itself, so a re-arm is only needed when the
+   request could not be placed at all. Watch for the silent refusals: the Android
+   plugin returns without registering the request when the device is already
+   connected or already connecting, and Dart cannot see that — so only ever arm from
+   a disconnected state, or the app ends up believing in a request that does not
+   exist. See `services/ble/reconnect_backoff.dart` (LO-22).
 6. STT in a background isolate (M4) so a 16 kHz decode loop never blocks the UI or the
    BLE callback queue.
 

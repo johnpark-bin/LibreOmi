@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import '../models/conversation.dart';
 import '../platform/background_runner.dart';
 import '../platform/background_runner_factory.dart';
+import '../services/ble/reconnect_backoff.dart';
 import '../services/ble_service.dart';
 import '../services/database_service.dart';
 import '../services/deepgram_service.dart';
@@ -76,9 +77,23 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   DateTime? _lastTranscriptTime;
   bool _hasActiveConversation = false;
 
-  // Timer for connection polling
+  // Auto-reconnect scheduling (LO-22). Upstream polled every 5 s forever;
+  // the saved device is now armed with `autoConnect`, so this timer only
+  // re-arms a request that could not be placed and backs off 5 s -> 60 s.
   Timer? _reconnectTimer;
+  final ReconnectBackoff _reconnectBackoff = ReconnectBackoff();
   bool _isAutoReconnectEnabled = true;
+  bool _isReconnecting = false;
+
+  /// While the wearable is out of range the process has to stay alive or
+  /// Android may kill it and no reconnect happens at all, so the foreground
+  /// service outlives an involuntary disconnect for [reconnectGraceWindow].
+  /// Without a bound an app left out of range would show a persistent
+  /// notification forever, which is exactly what LO-24 (docs/04 section 4)
+  /// forbids.
+  static const Duration reconnectGraceWindow = Duration(minutes: 5);
+  bool _isAwaitingReconnect = false;
+  Timer? _reconnectGraceTimer;
 
   // Hold-to-Ask AI
   DateTime? _buttonPressStartTime;
@@ -150,6 +165,18 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
         final previousState = _deviceState;
         _deviceState = state;
 
+        if (state == DeviceConnectionState.connected) {
+          // The link may have come up on its own (autoConnect), so the
+          // post-connect work belongs here rather than at the call site that
+          // only *armed* the request.
+          _endAwaitingReconnect();
+          _reconnectBackoff.reset();
+          _reconnectTimer?.cancel();
+          _reconnectTimer = null;
+          _batteryLevel = await _bleService.getBatteryLevel();
+          _checkBatteryNotification();
+        }
+
         // Auto-start listening when device connects (only if not using phone mic)
         if (state == DeviceConnectionState.connected &&
             !_isListening &&
@@ -160,10 +187,25 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
         }
 
         if (state == DeviceConnectionState.disconnected) {
+          // A session that was interrupted by the wearable going out of range
+          // keeps the foreground service (and the process) alive while the
+          // reconnect is pending. Must run before `stopListening()`, which
+          // would otherwise take the service straight down.
+          if (previousState == DeviceConnectionState.connected &&
+              _isListening &&
+              !_isUsingPhoneMic) {
+            _beginAwaitingReconnect();
+          }
+
           // Only stop listening if we were using Omi, not phone mic
           if (_isListening && !_isUsingPhoneMic) {
             stopListening();
           }
+
+          // (Re)start the ladder without advancing it: the previous
+          // `connected` reset it, so this schedules the first 5 s attempt, and
+          // a duplicate disconnect event cannot push that attempt further out.
+          _scheduleReconnect(advanceBackoff: false);
 
           // Notify user of disconnection if it was previously connected
           // Only show notification if app is in background
@@ -194,48 +236,149 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
       debugPrint('AppProvider init error: $e');
     }
 
-    // Start auto-reconnect timer
-    _startReconnectTimer();
+    // Start auto-reconnect scheduling. No attempt has been made yet, so this
+    // must not consume a rung of the ladder.
+    _scheduleReconnect(advanceBackoff: false);
   }
 
-  void _startReconnectTimer() {
+  /// Schedules the next auto-reconnect attempt with an exponential backoff
+  /// (LO-22, `docs/03-architecture.md` section 5). No BLE scan is involved:
+  /// the saved device is armed with `autoConnect`, which the OS retries on its
+  /// own, so an attempt here is only a cheap re-arm of that request.
+  ///
+  /// [advanceBackoff] is false when no attempt was actually made (a duplicate
+  /// disconnect event, a tick the guards skipped): the ladder must only grow
+  /// for attempts that happened, or a phone-mic session or a slow
+  /// `stopListening()` would silently push the first real attempt out to the
+  /// 60 s ceiling.
+  void _scheduleReconnect({bool advanceBackoff = true}) {
     _reconnectTimer?.cancel();
-    _reconnectTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      if (!_isAutoReconnectEnabled) return;
+    _reconnectTimer = null;
+    if (!_isAutoReconnectEnabled) return;
+    if (_deviceState == DeviceConnectionState.connected) return;
 
-      // Don't auto-reconnect when using phone mic
-      if (_isUsingPhoneMic || _isListening) return;
-
-      final savedId = SettingsService.savedDeviceId;
-      if (savedId.isNotEmpty &&
-          _deviceState == DeviceConnectionState.disconnected) {
-        debugPrint('Auto-reconnect: Scanning for saved device...');
-        scanAndConnectToSavedDevice();
-      }
+    final delay = advanceBackoff
+        ? _reconnectBackoff.nextDelay()
+        : _reconnectBackoff.currentBaseDelay;
+    debugPrint(
+      '[LibreOmi/BLE] auto-reconnect: next attempt in ${delay.inMilliseconds} ms '
+      '(attempt ${_reconnectBackoff.attempt})',
+    );
+    _reconnectTimer = Timer(delay, () {
+      unawaited(_attemptReconnect());
     });
   }
 
-  Future<void> scanAndConnectToSavedDevice() async {
+  Future<void> _attemptReconnect() async {
+    _reconnectTimer = null;
+    if (!_isAutoReconnectEnabled) return;
+
     final savedId = SettingsService.savedDeviceId;
-    if (savedId.isNotEmpty) {
-      debugPrint('Trying to auto-connect to saved device: $savedId');
-      try {
-        final success = await _bleService.connectToSavedDevice(savedId);
-        if (success) {
-          _batteryLevel = await _bleService.getBatteryLevel();
-          _checkBatteryNotification();
+    // Don't auto-reconnect when using the phone mic, while a session is
+    // running, while an attempt is already in flight, or while a connection
+    // (including a manual one) is being set up — `connecting` is not
+    // `disconnected`, and arming on top of a manual connect would race it.
+    final canAttempt = savedId.isNotEmpty &&
+        !_isReconnecting &&
+        !_isUsingPhoneMic &&
+        !_isListening &&
+        _deviceState == DeviceConnectionState.disconnected;
+    if (canAttempt) {
+      await _armSavedDeviceConnection();
+    }
 
-          // Check for SD card storage support
-          await _checkStorageSupport();
+    // Arming is not connecting: keep the ladder running until the device
+    // actually comes back, at which point the state listener resets it.
+    _scheduleReconnect(advanceBackoff: canAttempt);
+  }
 
-          notifyListeners();
-          debugPrint('Auto-connected to saved device!');
-        } else {
-          debugPrint('Auto-connect failed - device may be out of range');
-        }
-      } catch (e) {
-        debugPrint('Auto-connect error: $e');
+  /// Asks the BLE service to keep waiting for the saved device.
+  ///
+  /// `BleService.connectToSavedDevice()` returns as soon as the request is
+  /// armed, so there is no connection to post-process here — the device-state
+  /// listener does that whenever the link actually comes up.
+  Future<void> _armSavedDeviceConnection() async {
+    final savedId = SettingsService.savedDeviceId;
+    if (savedId.isEmpty) return;
+    // Arming while a link is up or coming up is refused by the platform
+    // without telling us, which would leave the service believing in a
+    // request that does not exist.
+    if (_deviceState != DeviceConnectionState.disconnected) {
+      debugPrint('[LibreOmi/BLE] not arming autoConnect while $_deviceState');
+      return;
+    }
+    _isReconnecting = true;
+    try {
+      final armed = await _bleService.connectToSavedDevice(savedId);
+      debugPrint(
+        armed
+            ? '[LibreOmi/BLE] auto-reconnect: autoConnect armed for $savedId'
+            : '[LibreOmi/BLE] auto-reconnect: could not arm autoConnect, retrying with backoff',
+      );
+    } catch (e) {
+      debugPrint('Auto-connect error: $e');
+    } finally {
+      _isReconnecting = false;
+    }
+  }
+
+  /// User-initiated "connect to my saved device" (settings screen, audio
+  /// test). Re-enables auto-reconnect, because an explicit disconnect turns
+  /// it off, and restarts the backoff from its shortest delay.
+  Future<void> scanAndConnectToSavedDevice() async {
+    _isAutoReconnectEnabled = true;
+    _reconnectBackoff.reset();
+    if (!_isReconnecting) {
+      await _armSavedDeviceConnection();
+    }
+    _scheduleReconnect(advanceBackoff: false);
+  }
+
+  /// Keeps the foreground service up while an interrupted session waits for
+  /// the wearable to come back, for at most [reconnectGraceWindow].
+  void _beginAwaitingReconnect() {
+    if (!_isAutoReconnectEnabled) return;
+    if (SettingsService.savedDeviceId.isEmpty) return;
+    _isAwaitingReconnect = true;
+    _reconnectGraceTimer?.cancel();
+    _reconnectGraceTimer = Timer(reconnectGraceWindow, () {
+      _reconnectGraceTimer = null;
+      _isAwaitingReconnect = false;
+      debugPrint('[LibreOmi/BLE] reconnect grace window expired, stopping background runner');
+      // Stopping the runner takes the notification with it, so there is
+      // nothing left to refresh here.
+      unawaited(_stopBackgroundRunnerWhenIdle());
+    });
+    _updateSessionNotification();
+  }
+
+  void _endAwaitingReconnect() {
+    _reconnectGraceTimer?.cancel();
+    _reconnectGraceTimer = null;
+    _isAwaitingReconnect = false;
+  }
+
+  /// Resolves true once the device is connected, false on timeout.
+  ///
+  /// Uses an explicit subscription rather than `firstWhere().timeout()`:
+  /// a timeout on the future would leave the underlying listener on the
+  /// broadcast stream until the next connection.
+  Future<bool> _waitForConnection(Duration timeout) async {
+    if (_deviceState == DeviceConnectionState.connected) return true;
+    final completer = Completer<bool>();
+    final subscription = _bleService.stateStream.listen((state) {
+      if (state == DeviceConnectionState.connected && !completer.isCompleted) {
+        completer.complete(true);
       }
+    });
+    final timer = Timer(timeout, () {
+      if (!completer.isCompleted) completer.complete(false);
+    });
+    try {
+      return await completer.future;
+    } finally {
+      timer.cancel();
+      await subscription.cancel();
     }
   }
 
@@ -250,6 +393,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   }
 
   Future<bool> connectToDevice(BleDevice device) async {
+    _isAutoReconnectEnabled = true;
     final success = await _bleService.connect(device.device);
     if (success) {
       // Save device for auto-reconnect
@@ -280,9 +424,20 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     notifyListeners();
   }
 
+  /// Explicit, user-initiated disconnect.
+  ///
+  /// Auto-reconnect is switched off here: `autoConnect` would otherwise bring
+  /// the link straight back up and the button would do nothing. A later
+  /// `connectToDevice()` or `scanAndConnectToSavedDevice()` turns it back on.
   Future<void> disconnectDevice() async {
+    _isAutoReconnectEnabled = false;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _reconnectBackoff.reset();
+    _endAwaitingReconnect();
     await stopListening();
     await _bleService.disconnect();
+    await _stopBackgroundRunnerWhenIdle();
     _batteryLevel = null;
     _notified50 = false;
     _notified20 = false;
@@ -392,6 +547,9 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     }
 
     _isUsingPhoneMic = true;
+    // The session continues on the phone mic, so there is no interrupted Omi
+    // session left to hold the service open for.
+    _endAwaitingReconnect();
 
     // Microphone-type foreground services may only be started while the app is
     // in the foreground on Android 14+ (docs/04 §3/§4), and this method is only
@@ -510,6 +668,11 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     if (_isListening) {
       return;
     }
+    // An interrupted session is not idle: the process has to survive until the
+    // wearable is back or the grace window expires (LO-22).
+    if (_isAwaitingReconnect) {
+      return;
+    }
     _sessionNotificationThrottle.reset();
     try {
       await _backgroundRunner.stop();
@@ -522,7 +685,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   /// length of the conversation being recorded. Cheap to call often: the
   /// throttle drops updates that only move the clock forward.
   void _updateSessionNotification() {
-    if (!_isListening) {
+    if (!_isListening && !_isAwaitingReconnect) {
       return;
     }
     final startedAt = _currentConversation?.createdAt;
@@ -1197,7 +1360,10 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
     if (!_isListening) {
       if (SettingsService.savedDeviceId.isNotEmpty) {
         await scanAndConnectToSavedDevice();
-        await Future.delayed(const Duration(seconds: 1)); // Wait for connection
+        // Arming autoConnect returns immediately, so wait for the link itself
+        // rather than for a fixed delay. A timeout falls through to the
+        // not-connected branch below.
+        await _waitForConnection(const Duration(seconds: 5));
       }
       if (_deviceState == DeviceConnectionState.connected) {
         await startListening();
@@ -1517,6 +1683,7 @@ class AppProvider with ChangeNotifier, WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _reconnectTimer?.cancel();
+    _reconnectGraceTimer?.cancel();
     _stateSubscription?.cancel();
     _audioSubscription?.cancel();
     _buttonSubscription?.cancel();
