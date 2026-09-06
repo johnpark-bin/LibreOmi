@@ -9,8 +9,9 @@ void main() {
       expect(ids.toSet().length, ids.length);
     });
 
-    test('every entry downloads a tar.bz2 named after its top directory', () {
-      for (final spec in ModelCatalog.all) {
+    test('every archive entry downloads a tar.bz2 named after its top '
+        'directory', () {
+      for (final spec in ModelCatalog.all.where((s) => !s.isSingleFile)) {
         expect(
           spec.url,
           endsWith('${spec.archiveTopDir}.tar.bz2'),
@@ -18,6 +19,20 @@ void main() {
               'archive name and that directory must agree',
         );
         expect(spec.id, spec.archiveTopDir);
+      }
+    });
+
+    test('every single-file entry names exactly the file it downloads', () {
+      final singles = ModelCatalog.all.where((s) => s.isSingleFile).toList();
+      // A single-file spec is installed by moving the download into place
+      // under its one required name, so more than one name has nowhere to
+      // come from.
+      expect(singles, isNotEmpty);
+      for (final spec in singles) {
+        expect(spec.requiredFiles, hasLength(1), reason: spec.id);
+        expect(spec.url, endsWith('/${spec.requiredFiles.single}'),
+            reason: spec.id);
+        expect(spec.url, isNot(endsWith('.tar.bz2')), reason: spec.id);
       }
     });
 
@@ -41,6 +56,18 @@ void main() {
       for (final spec in ModelCatalog.all) {
         expect(spec.sha256, isNull, reason: spec.id);
       }
+    });
+
+    test('silero VAD is a single-file spec the whisper path can find', () {
+      const spec = ModelCatalog.sileroVad;
+      expect(spec.kind, ModelKind.vad);
+      expect(spec.isSingleFile, isTrue);
+      expect(spec.requiredFiles, [ModelCatalog.sileroVadFileName]);
+      expect(spec.archiveBytes, spec.installedBytes,
+          reason: 'nothing is decompressed, so the two sizes are one number');
+      expect(ModelCatalog.all, contains(spec),
+          reason: 'the models page installs only what `all` lists, and '
+              'without an installable VAD the whisper mode cannot start');
     });
 
     test('byId finds catalog entries and rejects strangers', () {

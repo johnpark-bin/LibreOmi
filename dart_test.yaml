@@ -4,5 +4,11 @@
 # `network` marks a test that talks to a real server. Those tests also guard
 # themselves with an environment variable so a plain `flutter test` — the one
 # CI runs (docs/08-dev-workflow.md §2) — skips them without any extra flags.
+#
+# `native` marks a test that loads a real sherpa-onnx model through the native
+# library. Same deal: the test itself checks for the environment variables
+# naming the model directories and registers a skipped placeholder when they
+# are absent, so CI — which has no models — stays green.
 tags:
   network:
+  native:

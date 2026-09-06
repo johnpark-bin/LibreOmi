@@ -361,24 +361,31 @@ class ModelStore {
       _throwIfCancelled(token, spec);
 
       // 2. Extract, in an isolate: bunzip2 over ~120 MB is seconds of solid
-      // CPU and would otherwise freeze the UI thread.
+      // CPU and would otherwise freeze the UI thread. A single-file spec has
+      // nothing to decode — what was downloaded is already the model — so it
+      // is simply moved into the staging directory under its catalog name.
       yield const ModelInstallProgress(phase: ModelInstallPhase.extracting);
-      // Locals, not the File/Directory/ModelSpec objects: only plain
-      // sendable values may be captured by the isolate closure.
-      final archivePath = archive.path;
-      final tarPath = tar.path;
-      final stagingPath = staging.path;
-      final topDirectory = spec.archiveTopDir;
-      final requiredFiles = List<String>.of(spec.requiredFiles);
-      final extracted = await Isolate.run(
-        () => _extractRequiredFiles(
-          archivePath: archivePath,
-          tarPath: tarPath,
-          destinationPath: stagingPath,
-          topDirectory: topDirectory,
-          requiredFiles: requiredFiles,
-        ),
-      );
+      final List<String> extracted;
+      if (spec.isSingleFile) {
+        extracted = _stageDownloadedFile(archive, staging, spec);
+      } else {
+        // Locals, not the File/Directory/ModelSpec objects: only plain
+        // sendable values may be captured by the isolate closure.
+        final archivePath = archive.path;
+        final tarPath = tar.path;
+        final stagingPath = staging.path;
+        final topDirectory = spec.archiveTopDir;
+        final requiredFiles = List<String>.of(spec.requiredFiles);
+        extracted = await Isolate.run(
+          () => _extractRequiredFiles(
+            archivePath: archivePath,
+            tarPath: tarPath,
+            destinationPath: stagingPath,
+            topDirectory: topDirectory,
+            requiredFiles: requiredFiles,
+          ),
+        );
+      }
       _throwIfCancelled(token, spec);
 
       // 3. Verify before anything is promoted.
@@ -460,6 +467,25 @@ class ModelStore {
     if (token.isCancelled) {
       throw ModelInstallCancelled(spec.id);
     }
+  }
+
+  /// Moves the downloaded file into [staging] under the single name
+  /// [ModelSpec.requiredFiles] gives it, and reports it as extracted so the
+  /// verification step below is the same one an archive goes through.
+  static List<String> _stageDownloadedFile(
+    File downloaded,
+    Directory staging,
+    ModelSpec spec,
+  ) {
+    if (spec.requiredFiles.length != 1) {
+      throw ModelInstallException(
+        'Single-file model ${spec.id} must name exactly one required file, '
+        'not ${spec.requiredFiles.length}',
+      );
+    }
+    final name = spec.requiredFiles.single;
+    downloaded.renameSync('${staging.path}/$name');
+    return <String>[name];
   }
 
   static bool _hasAllRequiredFiles(Directory dir, ModelSpec spec) {
