@@ -46,10 +46,18 @@
         android:name="android.permission.RECEIVE_BOOT_COMPLETED"
         tools:node="remove"/>
 
+    <!-- Auto Backup stays on (default allowBackup=true) because the conversation
+         database is worth restoring; the API keys are not. Both rule files carve the
+         credential-bearing SharedPreferences files out of backup and device transfer.
+         fullBackupContent covers API <= 30, dataExtractionRules API 31+; Android picks
+         one by version, so both have to say the same thing. See
+         docs/04-android-platform-notes.md §9 (LO-25). -->
     <application
         android:label="LibreOmi"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules">
         <activity
             android:name=".MainActivity"
             android:exported="true"

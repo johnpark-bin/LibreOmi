@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:libreomi/main.dart';
+import 'package:libreomi/services/secret_store.dart';
 import 'package:libreomi/services/settings_service.dart';
 
 void main() {
@@ -9,7 +10,7 @@ void main() {
     // The home page reads settings while building, so the service has to be
     // initialised the way main() does it, against an in-memory store.
     SharedPreferences.setMockInitialValues(<String, Object>{});
-    await SettingsService.init();
+    await SettingsService.init(secretStore: InMemorySecretStore());
   });
 
   testWidgets('App builds successfully', (WidgetTester tester) async {
