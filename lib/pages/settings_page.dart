@@ -216,7 +216,7 @@ class _SettingsPageState extends State<SettingsPage> {
       status = await _exactAlarm.openSettings();
     } catch (e) {
       debugPrint('exact alarm: open settings failed: $e');
-      if (!context.mounted) {
+      if (!mounted) {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
@@ -226,7 +226,7 @@ class _SettingsPageState extends State<SettingsPage> {
       );
       return;
     }
-    if (!context.mounted) {
+    if (!mounted) {
       return;
     }
     setState(() {

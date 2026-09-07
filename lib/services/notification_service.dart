@@ -83,9 +83,18 @@ class NotificationService {
     // granted right now (LO-50). Re-read here rather than cached, so a
     // permission revoked between two reminders degrades to inexact instead of
     // being rejected by the platform.
-    final precise = await exactAlarmFacade.shouldUsePreciseAlarm(
-      optIn: SettingsService.exactTaskReminders,
-    );
+    bool precise;
+    try {
+      precise = await exactAlarmFacade.shouldUsePreciseAlarm(
+        optIn: SettingsService.exactTaskReminders,
+      );
+    } catch (e) {
+      // An unreachable permission channel must not cost the user the
+      // reminder: fall back to the inexact schedule this method used before
+      // the opt-in existed.
+      debugPrint('Exact-alarm status unavailable, scheduling inexact: $e');
+      precise = false;
+    }
 
     await AwesomeNotifications().createNotification(
       content: NotificationContent(
