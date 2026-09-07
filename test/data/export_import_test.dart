@@ -421,6 +421,44 @@ void main() {
       );
     });
 
+    test('the exported rows carry their seq', () async {
+      // The array order alone would restore correctly, so without this the
+      // field could silently vanish from the format and every other test here
+      // would still pass -- while a merge lost its ability to place the
+      // imported history relative to what is already stored.
+      final db = await openTestDb();
+      await ChatRepo(db).save(message('m1'));
+      await ChatRepo(db).save(message('m2'));
+
+      final document = await exportAll(db);
+
+      expect(
+        (document['chat_messages'] as List)
+            .map((row) => (row as Map)['seq'])
+            .toList(),
+        [1, 2],
+      );
+    });
+
+    test('re-importing a backup does not drag its messages past newer chat',
+        () async {
+      // `ChatRepo.save` keeps a re-saved message where it is; a merge import
+      // of a file already restored once has to do the same, or the second
+      // import moves the old transcript to the end of the history.
+      final source = await openTestDb();
+      for (final id in ['old 1', 'old 2']) {
+        await ChatRepo(source).save(message(id));
+      }
+      final document = await exportAll(source);
+
+      final db = await openTestDb();
+      await importAll(db, document);
+      await ChatRepo(db).save(message('newer'));
+      await importAll(db, document);
+
+      expect(await chatTexts(db), ['old 1', 'old 2', 'newer']);
+    });
+
     test('a replace import restores the order the file was written in',
         () async {
       final source = await openTestDb();

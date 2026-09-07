@@ -97,6 +97,30 @@ void main() {
       expect((await repo.all()).map((m) => m.text), ['Q edited', 'A']);
     });
 
+    test('a row left without a seq still sorts deterministically', () async {
+      // `all()` keeps `created_at, id` as trailing tiebreakers for a row that
+      // reached the table without going through `save` -- nothing writes one
+      // today, but the order must not become arbitrary if something ever
+      // does. SQLite sorts NULL below every value, and `all()` reverses the
+      // descending query, so such a row lands at the oldest end.
+      final db = await openTestDb();
+      final repo = ChatRepo(db);
+      await db.insert('chat_messages', <String, Object?>{
+        'id': 'legacy',
+        'conversation_id': null,
+        'text': 'no seq',
+        'is_user': 1,
+        'created_at': 1000,
+      });
+      await repo.save(makeMessage(
+        id: 'stamped',
+        createdAt: DateTime.fromMillisecondsSinceEpoch(1000),
+        text: 'stamped',
+      ));
+
+      expect((await repo.all()).map((m) => m.text), ['no seq', 'stamped']);
+    });
+
     test('the newest messages are the ones kept when limit bites', () async {
       // Same instant throughout, so only `seq` can tell the two ends of the
       // history apart -- which is what makes `limit` mean "the recent end".

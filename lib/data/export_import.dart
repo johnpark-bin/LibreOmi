@@ -196,14 +196,30 @@ Future<ImportReport> importAll(
               .map((row) => row['id'] as String)
               .toSet();
 
-      // Where the file's chat history is placed (LO-65). Read once, after a
-      // replace has emptied the table: in `replace` this is 0, so the file's
-      // own `seq` values survive the round trip untouched, and in `merge` the
-      // whole imported history is shifted past what is already stored rather
-      // than interleaving with it at arbitrary positions.
+      // Where the file's chat history is placed (LO-65). `chatSeqBase` is the
+      // shift applied to the file's own `seq` values: 0 after a replace has
+      // emptied the table, so they survive the round trip untouched, and the
+      // stored maximum in a merge, so the whole imported history lands past
+      // what is already there instead of interleaving with it at arbitrary
+      // positions. `nextChatSeq` is the counter for rows the file gives no
+      // `seq` at all.
       var nextChatSeq =
           table == 'chat_messages' ? await ChatRepo.nextSeq(txn) : 0;
       final chatSeqBase = nextChatSeq - 1;
+
+      // Chat rows the file re-sends keep the place they already have, the
+      // same rule `ChatRepo.save` applies to a replayed write: importing one
+      // backup twice must not drag its messages past the chat that happened
+      // in between.
+      final storedChatSeqs = table == 'chat_messages' && existingIds.isNotEmpty
+          ? <String, int>{
+              for (final row in await txn.query(
+                'chat_messages',
+                columns: ['id', 'seq'],
+              ))
+                if (row['seq'] != null) row['id'] as String: row['seq'] as int,
+            }
+          : const <String, int>{};
 
       for (var index = 0; index < rows.length; index++) {
         final raw = rows[index];
@@ -233,9 +249,11 @@ Future<ImportReport> importAll(
           // the order it was written in; the running counter turns that into
           // a `seq` that cannot collide with the ones already handed out.
           final fileSeq = values['seq'] as int?;
-          final seq = fileSeq != null && fileSeq > 0
-              ? chatSeqBase + fileSeq
-              : nextChatSeq;
+          final stored = storedChatSeqs[values['id'] as String];
+          final seq = stored ??
+              (fileSeq != null && fileSeq > 0
+                  ? chatSeqBase + fileSeq
+                  : nextChatSeq);
           values['seq'] = seq;
           if (seq >= nextChatSeq) nextChatSeq = seq + 1;
         }
