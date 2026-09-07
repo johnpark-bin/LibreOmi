@@ -14,6 +14,8 @@ import 'package:flutter/material.dart';
 
 import '../platform/battery_optimization.dart';
 import '../platform/battery_optimization_gateway.dart' show batteryOptimization;
+import '../platform/exact_alarm.dart';
+import '../platform/exact_alarm_gateway.dart' show exactAlarm;
 import '../platform/permission_gateway.dart' show appPermissions;
 import '../platform/permissions.dart';
 import '../services/settings_service.dart';
@@ -35,6 +37,7 @@ class PermissionsRationalePage extends StatefulWidget {
     this.isFirstRun = false,
     this.permissionsOverride,
     this.batteryOptimizationOverride,
+    this.exactAlarmOverride,
     this.onContinue,
   });
 
@@ -49,6 +52,10 @@ class PermissionsRationalePage extends StatefulWidget {
   /// Injected for widget tests so they never touch a plugin channel.
   /// Defaults to the app-wide instance.
   final BatteryOptimization? batteryOptimizationOverride;
+
+  /// Injected for widget tests so they never touch a plugin channel.
+  /// Defaults to the app-wide instance.
+  final ExactAlarm? exactAlarmOverride;
 
   /// Called after Continue records that the rationale has been shown. This
   /// page never navigates itself (and never imports `home_page.dart`) so the
@@ -66,13 +73,16 @@ class _PermissionsRationalePageState extends State<PermissionsRationalePage> {
   Map<AppPermission, PermissionOutcome> _statuses =
       <AppPermission, PermissionOutcome>{};
   bool _notificationIsRuntime = false;
+  bool _statusLoadFailed = false;
   bool? _batteryIgnoring;
   bool _batteryLoadFailed = false;
+  ExactAlarmStatus? _exactAlarmStatus;
 
   AppPermissions get _permissions =>
       widget.permissionsOverride ?? appPermissions;
   BatteryOptimization get _battery =>
       widget.batteryOptimizationOverride ?? batteryOptimization;
+  ExactAlarm get _exactAlarm => widget.exactAlarmOverride ?? exactAlarm;
 
   @override
   void initState() {
@@ -85,8 +95,10 @@ class _PermissionsRationalePageState extends State<PermissionsRationalePage> {
     Map<AppPermission, PermissionOutcome> statuses =
         <AppPermission, PermissionOutcome>{};
     bool notificationIsRuntime = false;
+    bool statusLoadFailed = false;
     bool? batteryIgnoring;
     bool batteryLoadFailed = false;
+    ExactAlarmStatus? exactAlarmStatus;
     try {
       sdkInt = await _permissions.gateway.androidSdkInt();
       final ble = sdkInt == null || sdkInt >= 31
@@ -106,6 +118,7 @@ class _PermissionsRationalePageState extends State<PermissionsRationalePage> {
       // Never leave the page spinning on a plugin failure: every runtime
       // status renders as unknown instead (mirrors battery_guidance_page.dart's
       // fallback-on-failure behaviour).
+      statusLoadFailed = true;
       debugPrint('permissions rationale: status load failed: $e');
     }
     try {
@@ -114,6 +127,12 @@ class _PermissionsRationalePageState extends State<PermissionsRationalePage> {
       batteryLoadFailed = true;
       debugPrint('permissions rationale: battery status load failed: $e');
     }
+    try {
+      exactAlarmStatus = await _exactAlarm.status();
+    } catch (e) {
+      // Left null, which the row renders as unknown.
+      debugPrint('permissions rationale: exact-alarm status load failed: $e');
+    }
     if (!mounted) {
       return;
     }
@@ -121,8 +140,10 @@ class _PermissionsRationalePageState extends State<PermissionsRationalePage> {
       _sdkInt = sdkInt;
       _statuses = statuses;
       _notificationIsRuntime = notificationIsRuntime;
+      _statusLoadFailed = statusLoadFailed;
       _batteryIgnoring = batteryIgnoring;
       _batteryLoadFailed = batteryLoadFailed;
+      _exactAlarmStatus = exactAlarmStatus;
       _loaded = true;
     });
   }
@@ -141,6 +162,16 @@ class _PermissionsRationalePageState extends State<PermissionsRationalePage> {
   }
 
   Future<void> _openSettings() => _permissions.openAppSettings();
+
+  /// Exact alarms have their own system screen ("Alarms & reminders"), which
+  /// the app-settings page does not lead to on every OEM skin.
+  Future<void> _openAlarmSettings() async {
+    final status = await _exactAlarm.openSettings();
+    if (!mounted) {
+      return;
+    }
+    setState(() => _exactAlarmStatus = status);
+  }
 
   /// "Worst wins" over the given permissions' statuses: permanentlyDenied >
   /// denied > granted. A permission missing from [_statuses] (i.e. the load
@@ -178,9 +209,18 @@ class _PermissionsRationalePageState extends State<PermissionsRationalePage> {
     final microphoneStatus = _aggregate(<AppPermission>[
       AppPermission.microphone,
     ]);
-    final notificationStatus = _notificationIsRuntime
-        ? _aggregate(<AppPermission>[AppPermission.notification])
-        : _RowStatus.notRequired;
+    // A failed load leaves the API level unknown, and "not required on this
+    // Android version" would then be a claim rather than a fact.
+    final _RowStatus notificationStatus;
+    if (_statusLoadFailed) {
+      notificationStatus = _RowStatus.unknown;
+    } else if (_notificationIsRuntime) {
+      notificationStatus = _aggregate(<AppPermission>[
+        AppPermission.notification,
+      ]);
+    } else {
+      notificationStatus = _RowStatus.notRequired;
+    }
 
     final _RowStatus batteryStatus;
     if (!_loaded || _batteryLoadFailed) {
@@ -191,6 +231,18 @@ class _PermissionsRationalePageState extends State<PermissionsRationalePage> {
       batteryStatus = _RowStatus.granted;
     } else {
       batteryStatus = _RowStatus.notGranted;
+    }
+
+    final _RowStatus exactAlarmStatus;
+    switch (_exactAlarmStatus) {
+      case null:
+        exactAlarmStatus = _RowStatus.unknown;
+      case ExactAlarmStatus.granted:
+        exactAlarmStatus = _RowStatus.granted;
+      case ExactAlarmStatus.denied:
+        exactAlarmStatus = _RowStatus.notGranted;
+      case ExactAlarmStatus.unsupported:
+        exactAlarmStatus = _RowStatus.notApplicable;
     }
 
     return Scaffold(
@@ -205,10 +257,11 @@ class _PermissionsRationalePageState extends State<PermissionsRationalePage> {
               bleLegacy: bleLegacy,
               bleStatus: bleStatus,
               microphoneStatus: microphoneStatus,
-              notificationIsRuntime: _notificationIsRuntime,
               notificationStatus: notificationStatus,
               batteryStatus: batteryStatus,
+              exactAlarmStatus: exactAlarmStatus,
               onOpenSettings: _openSettings,
+              onOpenAlarmSettings: _openAlarmSettings,
               onContinue: _continue,
             ),
     );
@@ -221,10 +274,11 @@ class _RationaleView extends StatelessWidget {
     required this.bleLegacy,
     required this.bleStatus,
     required this.microphoneStatus,
-    required this.notificationIsRuntime,
     required this.notificationStatus,
     required this.batteryStatus,
+    required this.exactAlarmStatus,
     required this.onOpenSettings,
+    required this.onOpenAlarmSettings,
     required this.onContinue,
   });
 
@@ -232,10 +286,11 @@ class _RationaleView extends StatelessWidget {
   final bool bleLegacy;
   final _RowStatus bleStatus;
   final _RowStatus microphoneStatus;
-  final bool notificationIsRuntime;
   final _RowStatus notificationStatus;
   final _RowStatus batteryStatus;
+  final _RowStatus exactAlarmStatus;
   final Future<void> Function() onOpenSettings;
+  final Future<void> Function() onOpenAlarmSettings;
   final VoidCallback onContinue;
 
   @override
@@ -318,7 +373,9 @@ class _RationaleView extends StatelessWidget {
               'Shows the ongoing capture notification Android requires for '
               'background recording, and alerts when a conversation is saved.',
           status: notificationStatus,
-          onOpenSettings: notificationIsRuntime ? onOpenSettings : null,
+          onOpenSettings: notificationStatus == _RowStatus.notRequired
+              ? null
+              : onOpenSettings,
         ),
         _PermissionRow(
           title: 'Foreground service',
@@ -328,6 +385,17 @@ class _RationaleView extends StatelessWidget {
           status: null,
           fixedChipText: 'Declared in the manifest',
           onOpenSettings: null,
+        ),
+        _PermissionRow(
+          title: 'Exact alarms',
+          description:
+              'Optional, and off unless you turn on exact task reminders in '
+              'Settings. Without it a reminder still arrives, just at an '
+              'approximate time chosen by Android.',
+          status: exactAlarmStatus,
+          onOpenSettings: exactAlarmStatus == _RowStatus.notApplicable
+              ? null
+              : onOpenAlarmSettings,
         ),
         _PermissionRow(
           title: 'Battery optimisation exemption',

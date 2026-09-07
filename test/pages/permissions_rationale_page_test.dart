@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:libreomi/pages/permissions_rationale_page.dart';
 import 'package:libreomi/platform/battery_optimization.dart';
+import 'package:libreomi/platform/exact_alarm.dart';
 import 'package:libreomi/platform/permissions.dart';
 import 'package:libreomi/services/secret_store.dart';
 import 'package:libreomi/services/settings_service.dart';
@@ -64,6 +65,36 @@ class _FakePermissionGateway implements PermissionGateway {
   }
 }
 
+/// Scripts the exact-alarm row's status, and records whether the row sent the
+/// user to the system's "Alarms & reminders" screen.
+class _FakeExactAlarmGateway implements ExactAlarmGateway {
+  _FakeExactAlarmGateway({
+    this.scriptedStatus = ExactAlarmStatus.granted,
+    this.statusAfterSettings,
+    this.failing = false,
+  });
+
+  final ExactAlarmStatus scriptedStatus;
+  final ExactAlarmStatus? statusAfterSettings;
+  final bool failing;
+
+  int openSettingsCalls = 0;
+
+  @override
+  Future<ExactAlarmStatus> status() async {
+    if (failing) {
+      throw StateError('exact alarm channel unavailable');
+    }
+    return scriptedStatus;
+  }
+
+  @override
+  Future<ExactAlarmStatus> openSettings() async {
+    openSettingsCalls++;
+    return statusAfterSettings ?? scriptedStatus;
+  }
+}
+
 /// Scripts battery-optimisation status for the last row.
 class _FakeBatteryOptimizationGateway implements BatteryOptimizationGateway {
   _FakeBatteryOptimizationGateway({this.ignoring, this.failing = false});
@@ -92,6 +123,7 @@ void main() {
     required _FakePermissionGateway permissionGateway,
     bool? batteryIgnoring,
     bool batteryFailing = false,
+    _FakeExactAlarmGateway? exactAlarmGateway,
     bool isFirstRun = false,
     VoidCallback? onContinue,
   }) async {
@@ -121,6 +153,9 @@ void main() {
               ignoring: batteryIgnoring,
               failing: batteryFailing,
             ),
+          ),
+          exactAlarmOverride: ExactAlarm(
+            exactAlarmGateway ?? _FakeExactAlarmGateway(),
           ),
           onContinue: onContinue,
         ),
@@ -184,7 +219,8 @@ void main() {
 
     await pumpPage(tester, permissionGateway: gateway, batteryIgnoring: true);
 
-    expect(find.text('Granted'), findsNWidgets(3)); // Bluetooth, notif, battery
+    // Bluetooth, notifications, battery and exact alarms.
+    expect(find.text('Granted'), findsNWidgets(4));
     expect(find.text('Not granted'), findsOneWidget); // Microphone
   });
 
@@ -301,7 +337,7 @@ void main() {
     );
 
     await pumpPage(tester, permissionGateway: gateway, batteryIgnoring: true);
-    expect(find.text('Granted'), findsNWidgets(4));
+    expect(find.text('Granted'), findsNWidgets(5));
 
     await pumpPage(
       tester,
@@ -334,15 +370,97 @@ void main() {
     expect(find.text('Not applicable'), findsOneWidget);
   });
 
+  testWidgets('the exact-alarm row reflects the platform status', (
+    tester,
+  ) async {
+    _FakePermissionGateway granted() => _FakePermissionGateway(
+      sdkInt: 33,
+      statuses: <AppPermission, PermissionOutcome>{
+        AppPermission.bluetoothScan: PermissionOutcome.granted,
+        AppPermission.bluetoothConnect: PermissionOutcome.granted,
+        AppPermission.microphone: PermissionOutcome.granted,
+        AppPermission.notification: PermissionOutcome.granted,
+      },
+    );
+
+    await pumpPage(
+      tester,
+      permissionGateway: granted(),
+      batteryIgnoring: true,
+      exactAlarmGateway: _FakeExactAlarmGateway(
+        scriptedStatus: ExactAlarmStatus.denied,
+      ),
+    );
+    expect(find.text('Exact alarms'), findsOneWidget);
+    // Bluetooth, microphone, notifications and the battery row are granted,
+    // so this is the only row that is not.
+    expect(find.text('Not granted'), findsOneWidget);
+
+    await pumpPage(
+      tester,
+      permissionGateway: granted(),
+      batteryIgnoring: true,
+      exactAlarmGateway: _FakeExactAlarmGateway(
+        scriptedStatus: ExactAlarmStatus.unsupported,
+      ),
+    );
+    expect(find.text('Not applicable'), findsOneWidget);
+  });
+
+  testWidgets('the exact-alarm row opens the alarms screen and re-reads it', (
+    tester,
+  ) async {
+    final alarms = _FakeExactAlarmGateway(
+      scriptedStatus: ExactAlarmStatus.denied,
+      statusAfterSettings: ExactAlarmStatus.granted,
+    );
+    final gateway = _FakePermissionGateway(
+      sdkInt: 33,
+      statuses: <AppPermission, PermissionOutcome>{
+        AppPermission.bluetoothScan: PermissionOutcome.granted,
+        AppPermission.bluetoothConnect: PermissionOutcome.granted,
+        AppPermission.microphone: PermissionOutcome.granted,
+        AppPermission.notification: PermissionOutcome.granted,
+      },
+    );
+
+    await pumpPage(
+      tester,
+      permissionGateway: gateway,
+      batteryIgnoring: true,
+      exactAlarmGateway: alarms,
+    );
+
+    // The exact-alarm row is the only ungranted one, so its button is the
+    // only "Open settings" on screen.
+    await tester.tap(find.text('Open settings'));
+    await tester.pumpAndSettle();
+
+    expect(alarms.openSettingsCalls, 1);
+    // It goes to the alarms screen, not the generic app-settings page.
+    expect(gateway.openSettingsCalls, 0);
+    // And the row picks up what the user did while they were there.
+    expect(find.text('Not granted'), findsNothing);
+  });
+
   testWidgets('a throwing gateway leaves no spinner and renders Unknown', (
     tester,
   ) async {
     final gateway = _FakePermissionGateway(failing: true);
 
-    await pumpPage(tester, permissionGateway: gateway, batteryFailing: true);
+    await pumpPage(
+      tester,
+      permissionGateway: gateway,
+      batteryFailing: true,
+      exactAlarmGateway: _FakeExactAlarmGateway(failing: true),
+    );
 
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.text('Unknown'), findsWidgets);
+    // Every row that has a runtime status: bluetooth, microphone,
+    // notifications, exact alarms and battery. Only the foreground-service
+    // row, which has no status to fail at, keeps its fixed chip.
+    expect(find.text('Unknown'), findsNWidgets(5));
   });
 
   testWidgets(

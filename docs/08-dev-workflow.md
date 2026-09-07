@@ -213,14 +213,17 @@ Play Console paraphrase of it. If one changes, change the other in the same PR.
 >   running while the screen is off. No data is collected that is not already covered above.
 > - `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` — optional; OEM battery managers otherwise stop the
 >   capture service.
+> - `SCHEDULE_EXACT_ALARM` — optional, and only used when the user turns on exact task reminders.
+>   A reminder is delivered inexactly when the permission is absent; no additional data is
+>   collected either way.
 
 ### 8.2 Before submitting
 
 - Verify each bullet against `android/app/src/main/AndroidManifest.xml`; the manifest is the
   authority, this list is a copy.
-- The exact-alarm opt-in (`SCHEDULE_EXACT_ALARM`, in flight in a separate branch) is deliberately
-  **not** listed here or on the rationale screen: it is not in the manifest yet. Add a row to both
-  when that branch merges.
+- Every permission in the manifest is listed above and has a row on the rationale screen. When a
+  future issue adds one, add it to both in the same PR — a declaration that is narrower than the
+  manifest is what Play rejects.
 - Fill the Data safety form from the same facts: audio and "other user-generated content" are
   collected, are not shared with third parties except the transcription/LLM endpoint the user
   configures themselves, and are not used for advertising or analytics.
