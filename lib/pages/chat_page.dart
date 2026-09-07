@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../controllers/chat_controller.dart';
 import '../controllers/library_controller.dart';
+import '../l10n/l10n.dart';
 
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key});
@@ -18,15 +19,16 @@ class _ChatPageState extends State<ChatPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+    final l10n = L10n.of(context);
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('AI Chat'),
+        title: Text(l10n.chat_title),
         backgroundColor: Colors.transparent,
         actions: [
           IconButton(
             icon: Icon(Icons.delete_outline, color: theme.colorScheme.onSurface.withOpacity(0.6)),
-            tooltip: 'Clear Chat',
+            tooltip: l10n.chat_clearChatTooltip,
             onPressed: () => context.read<ChatController>().clearChat(),
           ),
         ],
@@ -46,7 +48,7 @@ class _ChatPageState extends State<ChatPage> {
                     Icon(Icons.auto_awesome, color: theme.colorScheme.primary, size: 14),
                     const SizedBox(width: 8),
                     Text(
-                      'Chatting with context of ${library.conversations.length} conversations',
+                      l10n.chat_contextBanner(library.conversations.length),
                       style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), fontSize: 12),
                     ),
                   ],
@@ -71,7 +73,7 @@ class _ChatPageState extends State<ChatPage> {
                             ),
                             const SizedBox(height: 24),
                             Text(
-                              'Ask me anything about your\npast conversations',
+                              l10n.chat_emptyHint,
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: theme.colorScheme.onSurface.withOpacity(0.7),
@@ -109,7 +111,7 @@ class _ChatPageState extends State<ChatPage> {
                         child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.primary),
                       ),
                       const SizedBox(width: 8),
-                      Text('Thinking...', style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), fontSize: 12)),
+                      Text(l10n.chat_thinkingLabel, style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), fontSize: 12)),
                     ],
                   ),
                 ),
@@ -131,7 +133,7 @@ class _ChatPageState extends State<ChatPage> {
                           controller: _controller,
                           style: TextStyle(color: theme.colorScheme.onSurface),
                           decoration: InputDecoration(
-                            hintText: 'Ask a question...',
+                            hintText: l10n.chat_inputHint,
                             hintStyle: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.3)),
                             filled: true,
                             fillColor: theme.colorScheme.surface,

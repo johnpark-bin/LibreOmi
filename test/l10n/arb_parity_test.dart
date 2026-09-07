@@ -88,6 +88,10 @@ void main() {
       'models_kindWhisper',
       'models_kindSenseVoice',
       'models_kindVad',
+      // The AI-response notification title is the product name ("Omi"), a
+      // proper noun left untranslated in every locale, same treatment as the
+      // model-family names above.
+      'notification_aiResponseTitle',
     };
     for (final key in _messageKeys(en)) {
       if (sameInBothLanguages.contains(key)) continue;

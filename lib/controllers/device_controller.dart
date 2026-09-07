@@ -17,6 +17,7 @@ import 'package:flutter/widgets.dart';
 import '../device/device_manager.dart';
 import '../device/omi_ble_device.dart';
 import '../device/omi_device.dart';
+import '../l10n/l10n.dart';
 import '../platform/ble_capture_file.dart';
 import '../services/ble/reconnect_backoff.dart';
 import '../services/notification_service.dart';
@@ -194,8 +195,8 @@ class DeviceController with ChangeNotifier, WidgetsBindingObserver {
             _appLifecycleState != AppLifecycleState.resumed) {
           unawaited(
             _notify(
-              "Omi Disconnected",
-              "Your device connection was lost.",
+              L10n.current.deviceController_disconnectedNotificationTitle,
+              L10n.current.deviceController_disconnectedNotificationBody,
             ),
           );
         }
@@ -382,8 +383,8 @@ class DeviceController with ChangeNotifier, WidgetsBindingObserver {
       if (SettingsService.notifyBatteryCritical) {
         unawaited(
           _notify(
-            'Low Battery Warning',
-            'Omi battery is at $_batteryLevel%. Please charge soon.',
+            L10n.current.deviceController_lowBatteryTitle,
+            L10n.current.deviceController_lowBatteryCriticalBody(_batteryLevel!),
           ),
         );
       }
@@ -392,8 +393,8 @@ class DeviceController with ChangeNotifier, WidgetsBindingObserver {
       if (SettingsService.notifyBatteryLow) {
         unawaited(
           _notify(
-            'Battery Getting Low',
-            'Omi battery is at $_batteryLevel%.',
+            L10n.current.deviceController_batteryGettingLowTitle,
+            L10n.current.deviceController_batteryGettingLowBody(_batteryLevel!),
           ),
         );
       }

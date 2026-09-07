@@ -7,6 +7,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/l10n.dart';
 import '../platform/battery_optimization.dart';
 import '../platform/battery_optimization_gateway.dart';
 
@@ -53,7 +54,7 @@ class _BatteryGuidancePageState extends State<BatteryGuidancePage> {
   Widget build(BuildContext context) {
     final guidance = _guidance;
     return Scaffold(
-      appBar: AppBar(title: const Text('Background reliability')),
+      appBar: AppBar(title: Text(L10n.of(context).batteryGuidance_title)),
       body: guidance == null
           ? const Center(child: CircularProgressIndicator())
           : _GuidanceView(guidance: guidance),
@@ -67,18 +68,20 @@ class _GuidanceView extends StatelessWidget {
   final OemGuidance guidance;
 
   Future<void> _copyLink(BuildContext context) async {
+    final l10n = L10n.of(context);
     await Clipboard.setData(ClipboardData(text: guidance.url));
     if (!context.mounted) {
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Link copied to clipboard')),
+      SnackBar(content: Text(l10n.batteryGuidance_linkCopiedSnackbar)),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = L10n.of(context);
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
@@ -90,16 +93,13 @@ class _GuidanceView extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         Text(
-          'Some phone makers kill background services even while LibreOmi '
-          'keeps a foreground notification running. Follow the steps below '
-          'in your phone\'s own settings app so recording is not stopped '
-          'while the app is in the background.',
+          l10n.batteryGuidance_description,
           style: TextStyle(
             color: theme.colorScheme.onSurface.withOpacity(0.7),
           ),
         ),
         const SizedBox(height: 24),
-        _buildSectionHeader(context, 'Steps'),
+        _buildSectionHeader(context, l10n.batteryGuidance_stepsHeader),
         Card(
           clipBehavior: Clip.antiAlias,
           child: Column(
@@ -115,7 +115,7 @@ class _GuidanceView extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 24),
-        _buildSectionHeader(context, 'Full write-up'),
+        _buildSectionHeader(context, l10n.batteryGuidance_writeUpHeader),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -130,7 +130,7 @@ class _GuidanceView extends StatelessWidget {
                 OutlinedButton.icon(
                   onPressed: () => _copyLink(context),
                   icon: const Icon(Icons.copy),
-                  label: const Text('Copy link'),
+                  label: Text(l10n.batteryGuidance_copyLinkButton),
                 ),
               ],
             ),

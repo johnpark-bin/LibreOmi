@@ -1419,5 +1419,532 @@
   "models_progressDone": "Done",
   "@models_progressDone": {
     "description": "Install progress label once installation has finished"
+  },
+  "conversations_title": "Conversations",
+  "@conversations_title": {
+    "description": "App bar title of the Conversations tab when not searching or selecting"
+  },
+  "conversations_searchHint": "Search conversations...",
+  "@conversations_searchHint": {
+    "description": "Hint text of the search field on the Conversations tab"
+  },
+  "conversations_selectedCountTitle": "{count, plural, one{{count} selected} other{{count} selected}}",
+  "@conversations_selectedCountTitle": {
+    "description": "App bar title while selecting conversations, showing how many are selected",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "conversations_cancelSearchTooltip": "Cancel Search",
+  "@conversations_cancelSearchTooltip": {
+    "description": "Tooltip on the button that exits search mode on the Conversations tab"
+  },
+  "conversations_selectAllTooltip": "Select All",
+  "@conversations_selectAllTooltip": {
+    "description": "Tooltip on the button that selects every conversation"
+  },
+  "conversations_deleteSelectedTooltip": "Delete Selected",
+  "@conversations_deleteSelectedTooltip": {
+    "description": "Tooltip on the button that deletes the selected conversations"
+  },
+  "conversations_searchTooltip": "Search",
+  "@conversations_searchTooltip": {
+    "description": "Tooltip on the button that enters search mode on the Conversations tab"
+  },
+  "conversations_selectTooltip": "Select",
+  "@conversations_selectTooltip": {
+    "description": "Tooltip on the button that enters selection mode on the Conversations tab"
+  },
+  "conversations_emptyTitle": "No conversations yet",
+  "@conversations_emptyTitle": {
+    "description": "Title shown on the Conversations tab before any conversation has been recorded"
+  },
+  "conversations_emptySubtitle": "Start recording to create your first conversation",
+  "@conversations_emptySubtitle": {
+    "description": "Subtitle shown under conversations_emptyTitle"
+  },
+  "conversations_noSearchResults": "No results for \"{query}\"",
+  "@conversations_noSearchResults": {
+    "description": "Shown when a conversation search finds no matches",
+    "placeholders": {
+      "query": { "type": "String" }
+    }
+  },
+  "conversations_untitledLabel": "Untitled",
+  "@conversations_untitledLabel": {
+    "description": "Title shown for a conversation with no title"
+  },
+  "conversations_dateToday": "Today {hour}:{minute}",
+  "@conversations_dateToday": {
+    "description": "Timestamp for a conversation recorded earlier today, in a conversation list",
+    "placeholders": {
+      "hour": { "type": "int" },
+      "minute": { "type": "String" }
+    }
+  },
+  "conversations_dateYesterday": "Yesterday",
+  "@conversations_dateYesterday": {
+    "description": "Timestamp for a conversation recorded yesterday, in a conversation list"
+  },
+  "conversations_dateDaysAgo": "{days} days ago",
+  "@conversations_dateDaysAgo": {
+    "description": "Timestamp for a conversation recorded within the last week, in a conversation list",
+    "placeholders": {
+      "days": { "type": "int" }
+    }
+  },
+  "conversations_deleteSelectedTitle": "Delete Conversations",
+  "@conversations_deleteSelectedTitle": {
+    "description": "Title of the confirmation dialog for deleting selected conversations"
+  },
+  "conversations_deleteSelectedBody": "{count, plural, one{Delete {count} conversation?} other{Delete {count} conversations?}}",
+  "@conversations_deleteSelectedBody": {
+    "description": "Body of the confirmation dialog for deleting selected conversations",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "conversations_deleteButton": "Delete",
+  "@conversations_deleteButton": {
+    "description": "Confirm button in the delete-conversations dialog"
+  },
+  "conversationDetail_untitledTitle": "Conversation",
+  "@conversationDetail_untitledTitle": {
+    "description": "App bar title of the conversation detail page when the conversation has no title"
+  },
+  "conversationDetail_addSelectionTooltip": "Add selection as memory",
+  "@conversationDetail_addSelectionTooltip": {
+    "description": "Tooltip on the app bar button that saves the currently selected transcript text as a memory"
+  },
+  "conversationDetail_summaryHeader": "Summary",
+  "@conversationDetail_summaryHeader": {
+    "description": "Section header above the conversation's AI-generated summary"
+  },
+  "conversationDetail_transcriptHeader": "Transcript",
+  "@conversationDetail_transcriptHeader": {
+    "description": "Section header above the conversation's transcript"
+  },
+  "conversationDetail_selectTextHint": "Select text to add as memory",
+  "@conversationDetail_selectTextHint": {
+    "description": "Hint next to the transcript header explaining that selected text can be saved as a memory"
+  },
+  "conversationDetail_addAsMemoryMenuItem": "Add as Memory",
+  "@conversationDetail_addAsMemoryMenuItem": {
+    "description": "Text-selection context-menu item that saves the selected transcript text as a memory"
+  },
+  "conversationDetail_memoryAddedSnackbar": "Added memory: \"{text}\"",
+  "@conversationDetail_memoryAddedSnackbar": {
+    "description": "Snackbar confirming that selected transcript text was saved as a memory",
+    "placeholders": {
+      "text": { "type": "String" }
+    }
+  },
+  "conversationDetail_viewSnackbarAction": "View",
+  "@conversationDetail_viewSnackbarAction": {
+    "description": "Snackbar action that navigates back after saving a memory from the transcript"
+  },
+  "conversationDetail_speakerLabel": "Speaker {id}",
+  "@conversationDetail_speakerLabel": {
+    "description": "Label above a transcript segment identifying which speaker said it",
+    "placeholders": {
+      "id": { "type": "int" }
+    }
+  },
+  "memories_title": "Memories",
+  "@memories_title": {
+    "description": "App bar title of the Memories tab"
+  },
+  "memories_refreshTooltip": "Refresh",
+  "@memories_refreshTooltip": {
+    "description": "Tooltip on the button that reloads the memories list"
+  },
+  "memories_emptyTitle": "No Memories Yet",
+  "@memories_emptyTitle": {
+    "description": "Title shown on the Memories tab before any memory has been extracted"
+  },
+  "memories_emptySubtitle": "Important facts from your conversations\nwill appear here automatically.",
+  "@memories_emptySubtitle": {
+    "description": "Subtitle shown under memories_emptyTitle"
+  },
+  "memories_emptyHint": "Try mentioning your name or preferences\nin a conversation!",
+  "@memories_emptyHint": {
+    "description": "Hint shown under memories_emptySubtitle, suggesting how to create a memory"
+  },
+  "memories_ageMinutes": "{minutes}m ago",
+  "@memories_ageMinutes": {
+    "description": "Relative age of a memory, shown when it is less than an hour old",
+    "placeholders": {
+      "minutes": { "type": "int" }
+    }
+  },
+  "memories_ageHours": "{hours}h ago",
+  "@memories_ageHours": {
+    "description": "Relative age of a memory, shown when it is less than a day old",
+    "placeholders": {
+      "hours": { "type": "int" }
+    }
+  },
+  "memories_ageDays": "{days}d ago",
+  "@memories_ageDays": {
+    "description": "Relative age of a memory, shown when it is less than a week old",
+    "placeholders": {
+      "days": { "type": "int" }
+    }
+  },
+  "memories_deleteConfirmTitle": "Delete Memory",
+  "@memories_deleteConfirmTitle": {
+    "description": "Title of the confirmation dialog for deleting a memory"
+  },
+  "memories_deleteConfirmBody": "Are you sure you want to delete this memory?",
+  "@memories_deleteConfirmBody": {
+    "description": "Body of the confirmation dialog for deleting a memory"
+  },
+  "memories_deleteButton": "Delete",
+  "@memories_deleteButton": {
+    "description": "Confirm button in the delete-memory dialog"
+  },
+  "memories_editTitle": "Edit Memory",
+  "@memories_editTitle": {
+    "description": "Title of the dialog for editing a memory's content"
+  },
+  "memories_editHint": "Enter memory content",
+  "@memories_editHint": {
+    "description": "Hint text of the text field in the edit-memory dialog"
+  },
+  "memories_saveButton": "Save",
+  "@memories_saveButton": {
+    "description": "Confirm button in the edit-memory dialog"
+  },
+  "tasks_title": "Tasks",
+  "@tasks_title": {
+    "description": "App bar title of the Tasks tab"
+  },
+  "tasks_refreshTooltip": "Refresh",
+  "@tasks_refreshTooltip": {
+    "description": "Tooltip on the button that reloads the tasks list"
+  },
+  "tasks_emptyTitle": "No Tasks Yet",
+  "@tasks_emptyTitle": {
+    "description": "Title shown on the Tasks tab before any task has been extracted"
+  },
+  "tasks_emptySubtitle": "Tasks from your conversations\nwill appear here automatically.",
+  "@tasks_emptySubtitle": {
+    "description": "Subtitle shown under tasks_emptyTitle"
+  },
+  "tasks_emptyHint": "Try saying \"I need to finish my report tonight\"",
+  "@tasks_emptyHint": {
+    "description": "Hint shown under tasks_emptySubtitle, suggesting how to create a task"
+  },
+  "tasks_pendingHeader": "Pending",
+  "@tasks_pendingHeader": {
+    "description": "Section header above tasks not yet completed"
+  },
+  "tasks_completedHeader": "Completed",
+  "@tasks_completedHeader": {
+    "description": "Section header above completed tasks"
+  },
+  "tasks_dueToday": "Today",
+  "@tasks_dueToday": {
+    "description": "Day part of a task's due date when it falls today"
+  },
+  "tasks_dueTomorrow": "Tomorrow",
+  "@tasks_dueTomorrow": {
+    "description": "Day part of a task's due date when it falls tomorrow"
+  },
+  "tasks_dueDateFormat": "{dayPart} at {timePart}",
+  "@tasks_dueDateFormat": {
+    "description": "Combines a task's due-date day part (Today, Tomorrow, a weekday, or a date) with its time part",
+    "placeholders": {
+      "dayPart": { "type": "String" },
+      "timePart": { "type": "String" }
+    }
+  },
+  "tasks_deleteConfirmTitle": "Delete Task",
+  "@tasks_deleteConfirmTitle": {
+    "description": "Title of the confirmation dialog for deleting a task"
+  },
+  "tasks_deleteConfirmBody": "Are you sure you want to delete this task?",
+  "@tasks_deleteConfirmBody": {
+    "description": "Body of the confirmation dialog for deleting a task"
+  },
+  "tasks_deleteButton": "Delete",
+  "@tasks_deleteButton": {
+    "description": "Confirm button in the delete-task dialog"
+  },
+  "chat_title": "AI Chat",
+  "@chat_title": {
+    "description": "App bar title of the AI chat page"
+  },
+  "chat_clearChatTooltip": "Clear Chat",
+  "@chat_clearChatTooltip": {
+    "description": "Tooltip on the button that clears the chat history"
+  },
+  "chat_contextBanner": "{count, plural, one{Chatting with context of {count} conversation} other{Chatting with context of {count} conversations}}",
+  "@chat_contextBanner": {
+    "description": "Banner telling the user how many past conversations the chat can draw on",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "chat_emptyHint": "Ask me anything about your\npast conversations",
+  "@chat_emptyHint": {
+    "description": "Placeholder shown before the first chat message is sent"
+  },
+  "chat_thinkingLabel": "Thinking...",
+  "@chat_thinkingLabel": {
+    "description": "Loading label shown while the AI is generating a chat reply"
+  },
+  "chat_inputHint": "Ask a question...",
+  "@chat_inputHint": {
+    "description": "Hint text of the chat message input field"
+  },
+  "deviceSettings_title": "Device Settings",
+  "@deviceSettings_title": {
+    "description": "App bar title of the device settings page"
+  },
+  "deviceSettings_customizationHeader": "Customization",
+  "@deviceSettings_customizationHeader": {
+    "description": "Section header above the LED-dimming control on the device settings page"
+  },
+  "deviceSettings_dimmingLabel": "Dimming",
+  "@deviceSettings_dimmingLabel": {
+    "description": "Label above the LED dimming slider"
+  },
+  "deviceSettings_deviceInfoHeader": "Device Info",
+  "@deviceSettings_deviceInfoHeader": {
+    "description": "Section header above the device info card (battery level)"
+  },
+  "deviceSettings_batteryLevelLabel": "Battery Level",
+  "@deviceSettings_batteryLevelLabel": {
+    "description": "Label of the battery-level row in the device info card"
+  },
+  "deviceSettings_microphoneGainHeader": "Microphone Gain",
+  "@deviceSettings_microphoneGainHeader": {
+    "description": "Section header above the microphone gain card"
+  },
+  "deviceSettings_debugHeader": "Debug",
+  "@deviceSettings_debugHeader": {
+    "description": "Section header above the debug tools on the device settings page"
+  },
+  "deviceSettings_testMicAudioTitle": "Test Mic Audio",
+  "@deviceSettings_testMicAudioTitle": {
+    "description": "Title of the list tile that starts a microphone recording test"
+  },
+  "deviceSettings_testMicAudioSubtitle": "Record 3s and playback",
+  "@deviceSettings_testMicAudioSubtitle": {
+    "description": "Subtitle explaining what the microphone test does"
+  },
+  "deviceSettings_disconnectButton": "Disconnect",
+  "@deviceSettings_disconnectButton": {
+    "description": "Button that disconnects the current device"
+  },
+  "deviceSettings_notConnectedLabel": "Device not connected",
+  "@deviceSettings_notConnectedLabel": {
+    "description": "Shown on the device settings page when no device is connected"
+  },
+  "deviceSettings_micGainMuteLabel": "Mute",
+  "@deviceSettings_micGainMuteLabel": {
+    "description": "Microphone gain label for the lowest (mute) level"
+  },
+  "deviceSettings_micGainLevelLabel": "Level {level}",
+  "@deviceSettings_micGainLevelLabel": {
+    "description": "Generic microphone gain level label showing its numeric level",
+    "placeholders": {
+      "level": { "type": "int" }
+    }
+  },
+  "deviceSettings_micGainCardTitle": "Mic Gain",
+  "@deviceSettings_micGainCardTitle": {
+    "description": "Title of the microphone gain card"
+  },
+  "deviceSettings_micGainDescription": "High - for distant or soft voices",
+  "@deviceSettings_micGainDescription": {
+    "description": "Description of when to use a high microphone gain setting"
+  },
+  "deviceSettings_micGainMaxLabel": "Max",
+  "@deviceSettings_micGainMaxLabel": {
+    "description": "Label at the top end of the microphone gain slider"
+  },
+  "deviceSettings_presetQuiet": "Quiet",
+  "@deviceSettings_presetQuiet": {
+    "description": "Microphone gain preset button for a quiet environment"
+  },
+  "deviceSettings_presetNormal": "Normal",
+  "@deviceSettings_presetNormal": {
+    "description": "Microphone gain preset button for a normal environment"
+  },
+  "deviceSettings_presetHigh": "High",
+  "@deviceSettings_presetHigh": {
+    "description": "Microphone gain preset button for a high-gain environment; also used as the '(High)' suffix on the current gain label"
+  },
+  "batteryGuidance_title": "Background reliability",
+  "@batteryGuidance_title": {
+    "description": "App bar title of the battery-optimisation guidance page"
+  },
+  "batteryGuidance_description": "Some phone makers kill background services even while LibreOmi keeps a foreground notification running. Follow the steps below in your phone's own settings app so recording is not stopped while the app is in the background.",
+  "@batteryGuidance_description": {
+    "description": "Paragraph explaining why the guidance page exists"
+  },
+  "batteryGuidance_stepsHeader": "Steps",
+  "@batteryGuidance_stepsHeader": {
+    "description": "Section header above the vendor-specific list of steps"
+  },
+  "batteryGuidance_writeUpHeader": "Full write-up",
+  "@batteryGuidance_writeUpHeader": {
+    "description": "Section header above the link to the full vendor write-up"
+  },
+  "batteryGuidance_copyLinkButton": "Copy link",
+  "@batteryGuidance_copyLinkButton": {
+    "description": "Button that copies the vendor write-up URL to the clipboard"
+  },
+  "batteryGuidance_linkCopiedSnackbar": "Link copied to clipboard",
+  "@batteryGuidance_linkCopiedSnackbar": {
+    "description": "Snackbar shown after the vendor write-up URL is copied"
+  },
+  "notification_aiResponseTitle": "Omi",
+  "@notification_aiResponseTitle": {
+    "description": "Title of the push notification carrying an AI chat response. Proper noun (the product name), left untranslated in every locale."
+  },
+  "notification_taskDueTitle": "Task Due: {title}",
+  "@notification_taskDueTitle": {
+    "description": "Title of the push notification reminding the user a task is due",
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+  "notification_taskDueBody": "It is time to complete your task.",
+  "@notification_taskDueBody": {
+    "description": "Body of the push notification reminding the user a task is due"
+  },
+  "sdcardController_notSupportedStatus": "SD card storage not supported on this device",
+  "@sdcardController_notSupportedStatus": {
+    "description": "SD-card sync status line shown when the connected device has no SD-card storage"
+  },
+  "sdcardController_checkingStatus": "Checking for data...",
+  "@sdcardController_checkingStatus": {
+    "description": "SD-card sync status line while asking the device what it still holds"
+  },
+  "sdcardController_checkFailedStatus": "Failed to check the device: {error}",
+  "@sdcardController_checkFailedStatus": {
+    "description": "SD-card sync status line when checking the device for pending data failed",
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "sdcardController_foundPendingStatus": "Found {duration} of audio ({size})",
+  "@sdcardController_foundPendingStatus": {
+    "description": "SD-card sync status line reporting how much unsynced audio is on the device",
+    "placeholders": {
+      "duration": { "type": "String" },
+      "size": { "type": "String" }
+    }
+  },
+  "sdcardController_noPendingStatus": "No pending data on SD card",
+  "@sdcardController_noPendingStatus": {
+    "description": "SD-card sync status line when the device has nothing left to sync"
+  },
+  "sdcardController_startingSyncStatus": "Starting sync...",
+  "@sdcardController_startingSyncStatus": {
+    "description": "SD-card sync status line right after a transfer starts"
+  },
+  "sdcardController_syncCompleteStatus": "Sync complete!",
+  "@sdcardController_syncCompleteStatus": {
+    "description": "SD-card sync status line once a transfer finishes successfully"
+  },
+  "sdcardController_syncErrorStatus": "Error: {error}",
+  "@sdcardController_syncErrorStatus": {
+    "description": "SD-card sync status line when a transfer fails, with the underlying error text",
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "sdcardController_syncCancelledStatus": "Sync cancelled",
+  "@sdcardController_syncCancelledStatus": {
+    "description": "SD-card sync status line after the user cancels an in-flight transfer"
+  },
+  "sdcardController_transcribingStatus": "Transcribing audio...",
+  "@sdcardController_transcribingStatus": {
+    "description": "SD-card sync status line while a synced recording is being transcribed"
+  },
+  "sdcardController_transcriptionFailedStatus": "Transcription failed",
+  "@sdcardController_transcriptionFailedStatus": {
+    "description": "SD-card sync status line when transcribing a synced recording fails"
+  },
+  "sdcardController_savedWaitingStatus": "Saved — waiting for the summary",
+  "@sdcardController_savedWaitingStatus": {
+    "description": "SD-card sync status line once a recording is saved as a conversation and its summary is queued"
+  },
+  "sdcardController_processingCompleteStatus": "Processing complete!",
+  "@sdcardController_processingCompleteStatus": {
+    "description": "SD-card sync status line once a synced recording has finished importing"
+  },
+  "sdcardController_clearingStorageStatus": "Clearing device storage...",
+  "@sdcardController_clearingStorageStatus": {
+    "description": "SD-card sync status line while the device's SD card is being wiped"
+  },
+  "sdcardController_storageClearedStatus": "Device storage cleared - refresh to verify",
+  "@sdcardController_storageClearedStatus": {
+    "description": "SD-card sync status line once the device's SD card has been wiped"
+  },
+  "sdcardController_clearStorageFailedStatus": "Failed to clear storage",
+  "@sdcardController_clearStorageFailedStatus": {
+    "description": "SD-card sync status line when wiping the device's SD card fails"
+  },
+  "chatController_openAiKeyMissingError": "Please configure OpenAI API key in settings",
+  "@chatController_openAiKeyMissingError": {
+    "description": "Error shown when sending a chat message without an OpenAI API key configured"
+  },
+  "chatController_replyErrorMessage": "Error: {error}",
+  "@chatController_replyErrorMessage": {
+    "description": "Chat bubble text shown in place of an AI reply when the chat request fails",
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "deviceController_disconnectedNotificationTitle": "Omi Disconnected",
+  "@deviceController_disconnectedNotificationTitle": {
+    "description": "Title of the push notification shown when the wearable disconnects while the app is backgrounded"
+  },
+  "deviceController_disconnectedNotificationBody": "Your device connection was lost.",
+  "@deviceController_disconnectedNotificationBody": {
+    "description": "Body of the push notification shown when the wearable disconnects while the app is backgrounded"
+  },
+  "deviceController_lowBatteryTitle": "Low Battery Warning",
+  "@deviceController_lowBatteryTitle": {
+    "description": "Title of the push notification shown when the wearable's battery reaches the critical threshold"
+  },
+  "deviceController_lowBatteryCriticalBody": "Omi battery is at {level}%. Please charge soon.",
+  "@deviceController_lowBatteryCriticalBody": {
+    "description": "Body of the push notification shown when the wearable's battery reaches the critical threshold",
+    "placeholders": {
+      "level": { "type": "int" }
+    }
+  },
+  "deviceController_batteryGettingLowTitle": "Battery Getting Low",
+  "@deviceController_batteryGettingLowTitle": {
+    "description": "Title of the push notification shown when the wearable's battery reaches the low threshold"
+  },
+  "deviceController_batteryGettingLowBody": "Omi battery is at {level}%.",
+  "@deviceController_batteryGettingLowBody": {
+    "description": "Body of the push notification shown when the wearable's battery reaches the low threshold",
+    "placeholders": {
+      "level": { "type": "int" }
+    }
+  },
+  "sessionController_noDeviceConnectedError": "No Omi device connected",
+  "@sessionController_noDeviceConnectedError": {
+    "description": "Error shown when starting a recording session with no wearable connected"
+  },
+  "sessionController_micPermissionDeniedError": "Microphone permission denied. Please enable in Settings.",
+  "@sessionController_micPermissionDeniedError": {
+    "description": "Error shown when starting a phone-microphone recording session without microphone permission"
+  },
+  "sessionController_deepgramKeyMissingError": "Please configure Deepgram API key in settings or switch to local transcription",
+  "@sessionController_deepgramKeyMissingError": {
+    "description": "Error shown when starting a cloud-transcription session with no Deepgram API key configured"
+  },
+  "sessionController_deepgramKeyNotConfiguredError": "Deepgram API key not configured",
+  "@sessionController_deepgramKeyNotConfiguredError": {
+    "description": "Error shown when importing a synced SD-card recording with cloud transcription and no Deepgram API key configured"
   }
 }

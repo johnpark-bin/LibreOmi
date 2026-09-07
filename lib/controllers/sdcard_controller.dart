@@ -17,6 +17,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../l10n/l10n.dart';
 import '../services/sdcard_sync_service.dart';
 import '../session/sdcard_import.dart' show sdCardConversationTitle;
 
@@ -229,13 +230,13 @@ class SdCardController extends ChangeNotifier {
     final service = _syncService();
     if (!hasStorage || service == null) {
       _pending = null;
-      _status = 'SD card storage not supported on this device';
+      _status = L10n.current.sdcardController_notSupportedStatus;
       _notify();
       return;
     }
 
     _checking = true;
-    _status = 'Checking for data...';
+    _status = L10n.current.sdcardController_checkingStatus;
     _notify();
 
     SdCardWal? wal;
@@ -244,7 +245,7 @@ class SdCardController extends ChangeNotifier {
     } catch (e) {
       _checking = false;
       _pending = null;
-      _status = 'Failed to check the device: $e';
+      _status = L10n.current.sdcardController_checkFailedStatus('$e');
       _notify();
       return;
     }
@@ -252,8 +253,9 @@ class SdCardController extends ChangeNotifier {
     _checking = false;
     _pending = wal;
     _status = wal != null
-        ? 'Found ${wal.durationFormatted} of audio (${wal.sizeFormatted})'
-        : 'No pending data on SD card';
+        ? L10n.current.sdcardController_foundPendingStatus(
+            wal.durationFormatted, wal.sizeFormatted)
+        : L10n.current.sdcardController_noPendingStatus;
     _notify();
   }
 
@@ -284,7 +286,7 @@ class SdCardController extends ChangeNotifier {
     _syncing = true;
     _syncProgress = 0.0;
     _syncEtaSeconds = null;
-    _status = 'Starting sync...';
+    _status = L10n.current.sdcardController_startingSyncStatus;
     _notify();
 
     String? syncedPath;
@@ -302,13 +304,13 @@ class SdCardController extends ChangeNotifier {
         _syncing = false;
         _syncProgress = 1.0;
         _syncEtaSeconds = null;
-        _status = 'Sync complete!';
+        _status = L10n.current.sdcardController_syncCompleteStatus;
         _notify();
       },
       onError: (error) {
         _syncing = false;
         _syncError = error;
-        _status = 'Error: $error';
+        _status = L10n.current.sdcardController_syncErrorStatus(error);
         _notify();
       },
     );
@@ -329,7 +331,7 @@ class SdCardController extends ChangeNotifier {
     _syncEtaSeconds = null;
     // A cancel is the user's decision, not a failure to report back to them.
     _syncError = null;
-    _status = 'Sync cancelled';
+    _status = L10n.current.sdcardController_syncCancelledStatus;
     _notify();
   }
 
@@ -343,7 +345,7 @@ class SdCardController extends ChangeNotifier {
 
     _processing[filePath] =
         const FileProcessState(status: FileProcessStatus.transcribing);
-    _status = 'Transcribing audio...';
+    _status = L10n.current.sdcardController_transcribingStatus;
     _notify();
 
     final String transcript;
@@ -354,7 +356,7 @@ class SdCardController extends ChangeNotifier {
         status: FileProcessStatus.failed,
         error: '$e',
       );
-      _status = 'Transcription failed';
+      _status = L10n.current.sdcardController_transcriptionFailedStatus;
       _notify();
       return;
     }
@@ -367,7 +369,7 @@ class SdCardController extends ChangeNotifier {
       conversationTitle: sdCardConversationTitle,
       summaryPending: true,
     );
-    _status = 'Saved — waiting for the summary';
+    _status = L10n.current.sdcardController_savedWaitingStatus;
     _notify();
 
     try {
@@ -387,7 +389,7 @@ class SdCardController extends ChangeNotifier {
       conversationTitle: sdCardConversationTitle,
       summaryPending: true,
     );
-    _status = 'Processing complete!';
+    _status = L10n.current.sdcardController_processingCompleteStatus;
     _notify();
   }
 
@@ -420,7 +422,7 @@ class SdCardController extends ChangeNotifier {
     if (service == null) return false;
 
     _clearing = true;
-    _status = 'Clearing device storage...';
+    _status = L10n.current.sdcardController_clearingStorageStatus;
     _notify();
 
     bool success;
@@ -436,9 +438,9 @@ class SdCardController extends ChangeNotifier {
       // The device reports the new state on the next read, so the page shows
       // nothing pending until a refresh confirms it.
       _pending = null;
-      _status = 'Device storage cleared - refresh to verify';
+      _status = L10n.current.sdcardController_storageClearedStatus;
     } else {
-      _status = 'Failed to clear storage';
+      _status = L10n.current.sdcardController_clearStorageFailedStatus;
     }
     _notify();
     return success;

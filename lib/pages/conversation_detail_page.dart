@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/conversation.dart';
 import '../controllers/library_controller.dart';
+import '../l10n/l10n.dart';
 
 class ConversationDetailPage extends StatefulWidget {
   final Conversation conversation;
@@ -18,16 +19,17 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = L10n.of(context);
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          widget.conversation.title.isNotEmpty ? widget.conversation.title : 'Conversation',
+          widget.conversation.title.isNotEmpty ? widget.conversation.title : l10n.conversationDetail_untitledTitle,
         ),
         actions: [
           if (_selectedText.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.add_circle_outline),
-              tooltip: 'Add selection as memory',
+              tooltip: l10n.conversationDetail_addSelectionTooltip,
               onPressed: () => _addAsMemory(context),
             ),
         ],
@@ -44,7 +46,7 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> {
             buttonItems: [
               ...selectableRegionState.contextMenuButtonItems,
               ContextMenuButtonItem(
-                label: 'Add as Memory',
+                label: l10n.conversationDetail_addAsMemoryMenuItem,
                 onPressed: () {
                   ContextMenuController.removeAny();
                   _addAsMemory(context);
@@ -80,9 +82,9 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> {
 
               // Summary
               if (widget.conversation.summary.isNotEmpty) ...[
-                const Text(
-                  'Summary',
-                  style: TextStyle(
+                Text(
+                  l10n.conversationDetail_summaryHeader,
+                  style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
@@ -103,16 +105,16 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> {
               // Transcript
               Row(
                 children: [
-                  const Text(
-                    'Transcript',
-                    style: TextStyle(
+                  Text(
+                    l10n.conversationDetail_transcriptHeader,
+                    style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   const Spacer(),
                   Text(
-                    'Select text to add as memory',
+                    l10n.conversationDetail_selectTextHint,
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
                   ),
                 ],
@@ -128,20 +130,22 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> {
 
   void _addAsMemory(BuildContext context) {
     if (_selectedText.isEmpty) return;
-    
+
+    final l10n = L10n.of(context);
     final provider = Provider.of<LibraryController>(context, listen: false);
     provider.addMemory(_selectedText, sourceConversationId: widget.conversation.id);
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Added memory: "${_selectedText.length > 50 ? '${_selectedText.substring(0, 50)}...' : _selectedText}"'),
+        content: Text(l10n.conversationDetail_memoryAddedSnackbar(
+            _selectedText.length > 50 ? '${_selectedText.substring(0, 50)}...' : _selectedText)),
         action: SnackBarAction(
-          label: 'View',
+          label: l10n.conversationDetail_viewSnackbarAction,
           onPressed: () => Navigator.pop(context), // Go back to see memories tab
         ),
       ),
     );
-    
+
     setState(() => _selectedText = '');
   }
 
@@ -161,6 +165,7 @@ class _TranscriptRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = L10n.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -190,7 +195,7 @@ class _TranscriptRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Speaker ${segment.speakerId}',
+                  l10n.conversationDetail_speakerLabel(segment.speakerId),
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
                     color: Colors.grey.shade400,

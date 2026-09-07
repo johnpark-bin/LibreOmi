@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../controllers/library_controller.dart';
+import '../l10n/l10n.dart';
 
 class MemoriesPage extends StatelessWidget {
   const MemoriesPage({super.key});
@@ -9,17 +10,18 @@ class MemoriesPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+    final l10n = L10n.of(context);
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Memories'),
+        title: Text(l10n.memories_title),
         actions: [
           Consumer<LibraryController>(
             builder: (context, provider, _) => provider.memories.isNotEmpty
                 ? IconButton(
                     icon: const Icon(Icons.refresh),
                     onPressed: provider.loadMemories,
-                    tooltip: 'Refresh',
+                    tooltip: l10n.memories_refreshTooltip,
                   )
                 : const SizedBox.shrink(),
           ),
@@ -28,15 +30,15 @@ class MemoriesPage extends StatelessWidget {
       body: Consumer<LibraryController>(
         builder: (context, provider, _) {
           if (provider.memories.isEmpty) {
-            return _buildEmptyState(theme);
+            return _buildEmptyState(theme, l10n);
           }
-          return _buildMemoriesList(context, provider, theme);
+          return _buildMemoriesList(context, provider, theme, l10n);
         },
       ),
     );
   }
 
-  Widget _buildEmptyState(ThemeData theme) {
+  Widget _buildEmptyState(ThemeData theme, AppLocalizations l10n) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -56,16 +58,16 @@ class MemoriesPage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 24),
-            const Text(
-              'No Memories Yet',
-              style: TextStyle(
+            Text(
+              l10n.memories_emptyTitle,
+              style: const TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Important facts from your conversations\nwill appear here automatically.',
+              l10n.memories_emptySubtitle,
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: theme.colorScheme.onSurface.withOpacity(0.6),
@@ -73,7 +75,7 @@ class MemoriesPage extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'Try mentioning your name or preferences\nin a conversation!',
+              l10n.memories_emptyHint,
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 12,
@@ -86,7 +88,7 @@ class MemoriesPage extends StatelessWidget {
     );
   }
 
-  Widget _buildMemoriesList(BuildContext context, LibraryController provider, ThemeData theme) {
+  Widget _buildMemoriesList(BuildContext context, LibraryController provider, ThemeData theme, AppLocalizations l10n) {
     final memories = provider.memories;
     
     return ListView.builder(
@@ -134,7 +136,7 @@ class MemoriesPage extends StatelessWidget {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          _formatDate(memory.createdAt),
+                          _formatDate(l10n, memory.createdAt),
                           style: TextStyle(
                             fontSize: 12,
                             color: theme.colorScheme.onSurface.withOpacity(0.4),
@@ -168,31 +170,32 @@ class MemoriesPage extends StatelessWidget {
     );
   }
 
-  String _formatDate(DateTime date) {
+  String _formatDate(AppLocalizations l10n, DateTime date) {
     final now = DateTime.now();
     final diff = now.difference(date);
-    
+
     if (diff.inMinutes < 60) {
-      return '${diff.inMinutes}m ago';
+      return l10n.memories_ageMinutes(diff.inMinutes);
     } else if (diff.inHours < 24) {
-      return '${diff.inHours}h ago';
+      return l10n.memories_ageHours(diff.inHours);
     } else if (diff.inDays < 7) {
-      return '${diff.inDays}d ago';
+      return l10n.memories_ageDays(diff.inDays);
     } else {
       return '${date.month}/${date.day}/${date.year}';
     }
   }
 
   void _confirmDelete(BuildContext context, LibraryController provider, String memoryId) {
+    final l10n = L10n.of(context);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Memory'),
-        content: const Text('Are you sure you want to delete this memory?'),
+        title: Text(l10n.memories_deleteConfirmTitle),
+        content: Text(l10n.memories_deleteConfirmBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(l10n.common_cancelButton),
           ),
           TextButton(
             onPressed: () {
@@ -200,7 +203,7 @@ class MemoriesPage extends StatelessWidget {
               Navigator.pop(context);
             },
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
+            child: Text(l10n.memories_deleteButton),
           ),
         ],
       ),
@@ -209,24 +212,25 @@ class MemoriesPage extends StatelessWidget {
 
   void _showEditDialog(BuildContext context, LibraryController provider, String memoryId, String currentContent) {
     final controller = TextEditingController(text: currentContent);
-    
+    final l10n = L10n.of(context);
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Edit Memory'),
+        title: Text(l10n.memories_editTitle),
         content: TextField(
           controller: controller,
           maxLines: 3,
-          decoration: const InputDecoration(
-            hintText: 'Enter memory content',
-            border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            hintText: l10n.memories_editHint,
+            border: const OutlineInputBorder(),
           ),
           autofocus: true,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(l10n.common_cancelButton),
           ),
           TextButton(
             onPressed: () {
@@ -236,7 +240,7 @@ class MemoriesPage extends StatelessWidget {
               }
               Navigator.pop(context);
             },
-            child: const Text('Save'),
+            child: Text(l10n.memories_saveButton),
           ),
         ],
       ),

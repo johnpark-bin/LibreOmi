@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../controllers/library_controller.dart';
+import '../l10n/l10n.dart';
 import '../models/conversation.dart';
 
 class TasksPage extends StatelessWidget {
@@ -10,17 +11,18 @@ class TasksPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+    final l10n = L10n.of(context);
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Tasks'),
+        title: Text(l10n.tasks_title),
         actions: [
           Consumer<LibraryController>(
             builder: (context, provider, _) => provider.tasks.isNotEmpty
                 ? IconButton(
                     icon: const Icon(Icons.refresh),
                     onPressed: provider.loadTasks,
-                    tooltip: 'Refresh',
+                    tooltip: l10n.tasks_refreshTooltip,
                   )
                 : const SizedBox.shrink(),
           ),
@@ -29,15 +31,15 @@ class TasksPage extends StatelessWidget {
       body: Consumer<LibraryController>(
         builder: (context, provider, _) {
           if (provider.tasks.isEmpty) {
-            return _buildEmptyState(theme);
+            return _buildEmptyState(theme, l10n);
           }
-          return _buildTasksList(context, provider, theme);
+          return _buildTasksList(context, provider, theme, l10n);
         },
       ),
     );
   }
 
-  Widget _buildEmptyState(ThemeData theme) {
+  Widget _buildEmptyState(ThemeData theme, AppLocalizations l10n) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -57,16 +59,16 @@ class TasksPage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 24),
-            const Text(
-              'No Tasks Yet',
-              style: TextStyle(
+            Text(
+              l10n.tasks_emptyTitle,
+              style: const TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Tasks from your conversations\nwill appear here automatically.',
+              l10n.tasks_emptySubtitle,
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: theme.colorScheme.onSurface.withOpacity(0.6),
@@ -74,7 +76,7 @@ class TasksPage extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'Try saying "I need to finish my report tonight"',
+              l10n.tasks_emptyHint,
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 12,
@@ -87,22 +89,22 @@ class TasksPage extends StatelessWidget {
     );
   }
 
-  Widget _buildTasksList(BuildContext context, LibraryController provider, ThemeData theme) {
+  Widget _buildTasksList(BuildContext context, LibraryController provider, ThemeData theme, AppLocalizations l10n) {
     final tasks = provider.tasks;
     final pendingTasks = tasks.where((t) => !t.isCompleted).toList();
     final completedTasks = tasks.where((t) => t.isCompleted).toList();
-    
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         if (pendingTasks.isNotEmpty) ...[
-          _buildSectionHeader('Pending', theme, pendingTasks.length),
-          ...pendingTasks.map((task) => _buildTaskCard(context, provider, task, theme)),
+          _buildSectionHeader(l10n.tasks_pendingHeader, theme, pendingTasks.length),
+          ...pendingTasks.map((task) => _buildTaskCard(context, provider, task, theme, l10n)),
           const SizedBox(height: 16),
         ],
         if (completedTasks.isNotEmpty) ...[
-          _buildSectionHeader('Completed', theme, completedTasks.length),
-          ...completedTasks.map((task) => _buildTaskCard(context, provider, task, theme)),
+          _buildSectionHeader(l10n.tasks_completedHeader, theme, completedTasks.length),
+          ...completedTasks.map((task) => _buildTaskCard(context, provider, task, theme, l10n)),
         ],
       ],
     );
@@ -142,7 +144,7 @@ class TasksPage extends StatelessWidget {
     );
   }
 
-  Widget _buildTaskCard(BuildContext context, LibraryController provider, Task task, ThemeData theme) {
+  Widget _buildTaskCard(BuildContext context, LibraryController provider, Task task, ThemeData theme, AppLocalizations l10n) {
     final isOverdue = task.dueDate != null && 
                       task.dueDate!.isBefore(DateTime.now()) && 
                       !task.isCompleted;
@@ -221,7 +223,7 @@ class TasksPage extends StatelessWidget {
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              _formatDueDate(task.dueDate!),
+                              _formatDueDate(l10n, task.dueDate!),
                               style: TextStyle(
                                 fontSize: 12,
                                 color: isOverdue 
@@ -251,41 +253,42 @@ class TasksPage extends StatelessWidget {
     );
   }
 
-  String _formatDueDate(DateTime date) {
+  String _formatDueDate(AppLocalizations l10n, DateTime date) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final tomorrow = today.add(const Duration(days: 1));
     final taskDate = DateTime(date.year, date.month, date.day);
-    
+
     String dayPart;
     if (taskDate == today) {
-      dayPart = 'Today';
+      dayPart = l10n.tasks_dueToday;
     } else if (taskDate == tomorrow) {
-      dayPart = 'Tomorrow';
+      dayPart = l10n.tasks_dueTomorrow;
     } else if (date.difference(now).inDays < 7) {
       final weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
       dayPart = weekdays[date.weekday - 1];
     } else {
       dayPart = '${date.month}/${date.day}';
     }
-    
+
     final hour = date.hour > 12 ? date.hour - 12 : (date.hour == 0 ? 12 : date.hour);
     final amPm = date.hour >= 12 ? 'PM' : 'AM';
     final timePart = '$hour:${date.minute.toString().padLeft(2, '0')} $amPm';
-    
-    return '$dayPart at $timePart';
+
+    return l10n.tasks_dueDateFormat(dayPart, timePart);
   }
 
   void _confirmDelete(BuildContext context, LibraryController provider, String taskId) {
+    final l10n = L10n.of(context);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Task'),
-        content: const Text('Are you sure you want to delete this task?'),
+        title: Text(l10n.tasks_deleteConfirmTitle),
+        content: Text(l10n.tasks_deleteConfirmBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(l10n.common_cancelButton),
           ),
           TextButton(
             onPressed: () {
@@ -293,7 +296,7 @@ class TasksPage extends StatelessWidget {
               Navigator.pop(context);
             },
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
+            child: Text(l10n.tasks_deleteButton),
           ),
         ],
       ),

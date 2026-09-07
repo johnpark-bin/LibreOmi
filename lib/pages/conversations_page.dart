@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../controllers/library_controller.dart';
+import '../l10n/l10n.dart';
 import '../models/conversation.dart';
 import 'conversation_detail_page.dart';
 
@@ -51,21 +52,22 @@ class _ConversationsPageState extends State<ConversationsPage> {
 
   Future<void> _deleteSelected(BuildContext context) async {
     if (_selectedIds.isEmpty) return;
-    
+
+    final l10n = L10n.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Conversations'),
-        content: Text('Delete ${_selectedIds.length} conversation${_selectedIds.length > 1 ? 's' : ''}?'),
+        title: Text(l10n.conversations_deleteSelectedTitle),
+        content: Text(l10n.conversations_deleteSelectedBody(_selectedIds.length)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.common_cancelButton),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
+            child: Text(l10n.conversations_deleteButton),
           ),
         ],
       ),
@@ -101,28 +103,29 @@ class _ConversationsPageState extends State<ConversationsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = L10n.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: _isSearching 
+        title: _isSearching
           ? TextField(
               controller: _searchController,
               autofocus: true,
-              decoration: const InputDecoration(
-                hintText: 'Search conversations...',
+              decoration: InputDecoration(
+                hintText: l10n.conversations_searchHint,
                 border: InputBorder.none,
-                hintStyle: TextStyle(color: Colors.grey),
+                hintStyle: const TextStyle(color: Colors.grey),
               ),
               style: const TextStyle(color: Colors.white),
               onChanged: (value) => setState(() => _searchQuery = value),
             )
-          : Text(_isSelectionMode 
-              ? '${_selectedIds.length} selected' 
-              : 'Conversations'),
+          : Text(_isSelectionMode
+              ? l10n.conversations_selectedCountTitle(_selectedIds.length)
+              : l10n.conversations_title),
         actions: [
           if (_isSearching) ...[
             IconButton(
               icon: const Icon(Icons.close),
-              tooltip: 'Cancel Search',
+              tooltip: l10n.conversations_cancelSearchTooltip,
               onPressed: () => setState(() {
                 _isSearching = false;
                 _searchQuery = '';
@@ -133,20 +136,20 @@ class _ConversationsPageState extends State<ConversationsPage> {
             Consumer<LibraryController>(
               builder: (context, provider, _) => IconButton(
                 icon: const Icon(Icons.select_all),
-                tooltip: 'Select All',
+                tooltip: l10n.conversations_selectAllTooltip,
                 onPressed: () => _selectAll(provider.conversations),
               ),
             ),
             IconButton(
               icon: const Icon(Icons.delete),
-              tooltip: 'Delete Selected',
-              onPressed: _selectedIds.isNotEmpty 
-                ? () => _deleteSelected(context) 
+              tooltip: l10n.conversations_deleteSelectedTooltip,
+              onPressed: _selectedIds.isNotEmpty
+                ? () => _deleteSelected(context)
                 : null,
             ),
             IconButton(
               icon: const Icon(Icons.close),
-              tooltip: 'Cancel',
+              tooltip: l10n.common_cancelButton,
               onPressed: _toggleSelectionMode,
             ),
           ] else ...[
@@ -158,12 +161,12 @@ class _ConversationsPageState extends State<ConversationsPage> {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.search),
-                      tooltip: 'Search',
+                      tooltip: l10n.conversations_searchTooltip,
                       onPressed: () => setState(() => _isSearching = true),
                     ),
                     IconButton(
                       icon: const Icon(Icons.checklist),
-                      tooltip: 'Select',
+                      tooltip: l10n.conversations_selectTooltip,
                       onPressed: _toggleSelectionMode,
                     ),
                   ],
@@ -176,20 +179,20 @@ class _ConversationsPageState extends State<ConversationsPage> {
       body: Consumer<LibraryController>(
         builder: (context, provider, child) {
           if (provider.conversations.isEmpty) {
-            return const Center(
+            return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.history, size: 64, color: Colors.grey),
-                  SizedBox(height: 16),
+                  const Icon(Icons.history, size: 64, color: Colors.grey),
+                  const SizedBox(height: 16),
                   Text(
-                    'No conversations yet',
-                    style: TextStyle(color: Colors.grey, fontSize: 18),
+                    l10n.conversations_emptyTitle,
+                    style: const TextStyle(color: Colors.grey, fontSize: 18),
                   ),
-                  SizedBox(height: 8),
+                  const SizedBox(height: 8),
                   Text(
-                    'Start recording to create your first conversation',
-                    style: TextStyle(color: Colors.grey),
+                    l10n.conversations_emptySubtitle,
+                    style: const TextStyle(color: Colors.grey),
                   ),
                 ],
               ),
@@ -197,7 +200,7 @@ class _ConversationsPageState extends State<ConversationsPage> {
           }
 
           final filteredConversations = _filterConversations(provider.conversations);
-          
+
           if (filteredConversations.isEmpty && _searchQuery.isNotEmpty) {
             return Center(
               child: Column(
@@ -206,7 +209,7 @@ class _ConversationsPageState extends State<ConversationsPage> {
                   const Icon(Icons.search_off, size: 64, color: Colors.grey),
                   const SizedBox(height: 16),
                   Text(
-                    'No results for "$_searchQuery"',
+                    l10n.conversations_noSearchResults(_searchQuery),
                     style: const TextStyle(color: Colors.grey, fontSize: 18),
                   ),
                 ],
@@ -276,15 +279,16 @@ class _ConversationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = L10n.of(context);
     final tile = ListTile(
-      leading: isSelectionMode 
+      leading: isSelectionMode
         ? Checkbox(
             value: isSelected,
             onChanged: (_) => onTap(),
           )
         : null,
       title: Text(
-        conversation.title.isNotEmpty ? conversation.title : 'Untitled',
+        conversation.title.isNotEmpty ? conversation.title : l10n.conversations_untitledLabel,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -302,7 +306,7 @@ class _ConversationTile extends StatelessWidget {
           Row(
             children: [
               Text(
-                _formatDate(conversation.createdAt),
+                _formatDate(l10n, conversation.createdAt),
                 style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
               ),
               if (conversation.duration.inSeconds > 0) ...[
@@ -346,16 +350,16 @@ class _ConversationTile extends StatelessWidget {
     );
   }
 
-  String _formatDate(DateTime date) {
+  String _formatDate(AppLocalizations l10n, DateTime date) {
     final now = DateTime.now();
     final diff = now.difference(date);
 
     if (diff.inDays == 0) {
-      return 'Today ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+      return l10n.conversations_dateToday(date.hour, date.minute.toString().padLeft(2, '0'));
     } else if (diff.inDays == 1) {
-      return 'Yesterday';
+      return l10n.conversations_dateYesterday;
     } else if (diff.inDays < 7) {
-      return '${diff.inDays} days ago';
+      return l10n.conversations_dateDaysAgo(diff.inDays);
     } else {
       return '${date.month}/${date.day}/${date.year}';
     }
