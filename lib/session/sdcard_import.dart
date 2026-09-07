@@ -19,7 +19,7 @@ import '../audio/opus_decoder.dart';
 import '../audio/wav.dart';
 import '../core/clock.dart';
 import '../core/ids.dart';
-import '../models/conversation.dart';
+import '../core/models.dart';
 import '../transcription/transcriber.dart';
 import 'conversation_finalizer.dart';
 

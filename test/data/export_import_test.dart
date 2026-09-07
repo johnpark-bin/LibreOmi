@@ -8,7 +8,7 @@ import 'package:libreomi/data/conversation_repo.dart';
 import 'package:libreomi/data/export_import.dart';
 import 'package:libreomi/data/memory_repo.dart';
 import 'package:libreomi/data/task_repo.dart';
-import 'package:libreomi/models/conversation.dart';
+import 'package:libreomi/core/models.dart';
 
 import 'test_db.dart';
 

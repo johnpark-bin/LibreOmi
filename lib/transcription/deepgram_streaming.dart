@@ -6,7 +6,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../audio/audio_source.dart';
-import '../models/conversation.dart';
+import '../core/models.dart';
 import '../services/deepgram_service.dart';
 import 'transcriber.dart';
 

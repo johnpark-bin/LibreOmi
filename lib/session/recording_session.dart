@@ -28,7 +28,7 @@ import '../core/log.dart';
 import '../device/omi_device.dart';
 import '../device/omi_gatt.dart';
 import '../intelligence/llm_client.dart';
-import '../models/conversation.dart';
+import '../core/models.dart';
 import '../transcription/transcriber.dart';
 import 'button_handler.dart';
 import 'conversation_finalizer.dart';

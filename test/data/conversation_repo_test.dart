@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:libreomi/data/conversation_repo.dart';
-import 'package:libreomi/models/conversation.dart';
+import 'package:libreomi/core/models.dart';
 
 import 'test_db.dart';
 

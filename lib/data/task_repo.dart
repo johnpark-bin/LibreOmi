@@ -7,7 +7,7 @@ library;
 import 'package:sqflite/sqflite.dart';
 
 import '../core/ids.dart';
-import '../models/conversation.dart';
+import '../core/models.dart';
 
 class TaskRepo {
   TaskRepo(this._db);

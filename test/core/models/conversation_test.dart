@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:libreomi/models/conversation.dart';
+import 'package:libreomi/core/models.dart';
 
 void main() {
   group('TranscriptSegment JSON round-trip', () {

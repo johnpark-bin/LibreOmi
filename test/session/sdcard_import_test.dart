@@ -8,7 +8,7 @@ import 'package:libreomi/audio/wav.dart';
 import 'package:libreomi/core/clock.dart';
 import 'package:libreomi/core/ids.dart';
 import 'package:libreomi/data/conversation_repo.dart';
-import 'package:libreomi/models/conversation.dart';
+import 'package:libreomi/core/models.dart';
 import 'package:libreomi/session/conversation_finalizer.dart';
 import 'package:libreomi/session/sdcard_import.dart';
 import 'package:libreomi/transcription/transcriber.dart';

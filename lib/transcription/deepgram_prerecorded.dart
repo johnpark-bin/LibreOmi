@@ -11,7 +11,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
-import '../models/conversation.dart';
+import '../core/models.dart';
 import '../services/deepgram/deepgram_parser.dart';
 import 'transcriber.dart';
 

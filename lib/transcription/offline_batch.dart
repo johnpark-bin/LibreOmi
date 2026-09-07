@@ -20,7 +20,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import '../audio/audio_source.dart';
-import '../models/conversation.dart';
+import '../core/models.dart';
 import 'isolate_channel.dart';
 import 'model_catalog.dart';
 import 'model_store.dart';

@@ -15,7 +15,7 @@ import '../data/db.dart';
 import '../data/export_import.dart';
 import '../data/memory_repo.dart';
 import '../data/task_repo.dart';
-import '../models/conversation.dart';
+import '../core/models.dart';
 import '../services/notification_ids.dart';
 import '../services/notification_service.dart';
 

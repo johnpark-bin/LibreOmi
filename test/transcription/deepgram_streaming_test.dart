@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libreomi/audio/audio_source.dart';
-import 'package:libreomi/models/conversation.dart';
+import 'package:libreomi/core/models.dart';
 import 'package:libreomi/services/deepgram_service.dart';
 import 'package:libreomi/transcription/deepgram_streaming.dart';
 

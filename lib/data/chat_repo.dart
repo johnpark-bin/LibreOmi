@@ -7,7 +7,7 @@ library;
 
 import 'package:sqflite/sqflite.dart';
 
-import '../models/conversation.dart';
+import '../core/models.dart';
 
 class ChatRepo {
   ChatRepo(this._db);

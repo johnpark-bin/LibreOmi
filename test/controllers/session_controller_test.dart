@@ -18,7 +18,7 @@ import 'package:libreomi/core/ids.dart';
 import 'package:libreomi/device/device_manager.dart';
 import 'package:libreomi/device/omi_gatt.dart';
 import 'package:libreomi/intelligence/llm_client.dart';
-import 'package:libreomi/models/conversation.dart';
+import 'package:libreomi/core/models.dart';
 import 'package:libreomi/platform/background_reasons.dart';
 import 'package:libreomi/platform/fake_background_runner.dart';
 import 'package:libreomi/services/finalization_queue.dart';

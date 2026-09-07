@@ -20,7 +20,7 @@ import '../data/conversation_repo.dart';
 import '../data/memory_repo.dart';
 import '../data/task_repo.dart';
 import '../intelligence/llm_client.dart';
-import '../models/conversation.dart';
+import '../core/models.dart';
 import '../services/notification_ids.dart';
 
 /// Lazily opens (or returns) the process-wide database. Repos are built from

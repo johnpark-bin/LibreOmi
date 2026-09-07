@@ -31,7 +31,7 @@ import '../device/omi_gatt.dart';
 import '../intelligence/llm_client.dart';
 import '../intelligence/openai_client.dart';
 import '../l10n/l10n.dart';
-import '../models/conversation.dart';
+import '../core/models.dart';
 import '../platform/background_runner.dart';
 import '../platform/background_runner_factory.dart';
 import '../services/finalization_queue.dart';

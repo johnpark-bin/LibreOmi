@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import '../models/conversation.dart';
+import '../core/models.dart';
 import '../controllers/library_controller.dart';
 import '../l10n/l10n.dart';
 

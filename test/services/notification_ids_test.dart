@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libreomi/core/ids.dart' show fallbackNotificationId;
-import 'package:libreomi/models/conversation.dart';
+import 'package:libreomi/core/models.dart';
 import 'package:libreomi/services/notification_ids.dart';
 
 Task taskAt(DateTime createdAt, {String id = 'task-1'}) => Task(
