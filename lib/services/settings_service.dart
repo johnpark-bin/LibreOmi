@@ -185,9 +185,28 @@ class SettingsService {
   static String get transcriptionMode => prefs.getString('transcription_mode') ?? 'cloud';
   static set transcriptionMode(String value) => prefs.setString('transcription_mode', value);
   
-  // Whisper model size: 'tiny' or 'base'
-  static String get whisperModelSize => prefs.getString('whisper_model_size') ?? 'tiny';
-  static set whisperModelSize(String value) => prefs.setString('whisper_model_size', value);
+  /// Catalog id of the offline model the batch ("Local") mode decodes with:
+  /// Whisper tiny, Whisper base or SenseVoice (LO-71).
+  ///
+  /// Reduced through [ModelCatalog.offlineModel] on read, so a value written
+  /// by a future build — or a corrupted preference — can never point the
+  /// batch mode at a model this build cannot install.
+  ///
+  /// Before LO-71 this was `whisper_model_size`, holding `'tiny'` or
+  /// `'base'`. That key is still read when the new one is absent, which
+  /// carries an existing user's choice over without a migration step; the
+  /// next write lands under the new key and the old one is never written
+  /// again.
+  static String get offlineSttModelId {
+    final stored = prefs.getString('offline_stt_model');
+    if (stored != null) return ModelCatalog.offlineModel(stored).id;
+    final legacySize = prefs.getString('whisper_model_size');
+    if (legacySize != null) return ModelCatalog.whisper(legacySize).id;
+    return ModelCatalog.defaultOfflineModel.id;
+  }
+
+  static set offlineSttModelId(String value) =>
+      prefs.setString('offline_stt_model', value);
 
   /// Language the on-device modes transcribe in: `'en'` (default) or `'ko'`
   /// (LO-44). Separate from [language], which is the Deepgram code for the

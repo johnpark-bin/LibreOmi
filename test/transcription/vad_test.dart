@@ -5,7 +5,7 @@ import 'package:libreomi/transcription/vad.dart';
 
 /// A queue-backed [VadApi] fake, just enough to prove the interface is
 /// drainable the way a worker's decode loop will use it. The real drain loop
-/// belongs to another unit (`whisper_worker.dart`).
+/// belongs to another unit (`offline_worker.dart`).
 class FakeVadApi implements VadApi {
   final List<VadSpeechSegment> _queue = [];
   bool disposed = false;

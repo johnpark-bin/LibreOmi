@@ -11,6 +11,7 @@ import '../device/omi_device.dart';
 import '../services/llm_endpoint.dart';
 import '../services/openai_service.dart';
 import '../services/settings_service.dart';
+import '../transcription/model_catalog.dart';
 import '../platform/battery_optimization.dart';
 import '../platform/battery_optimization_gateway.dart';
 import 'battery_guidance_page.dart';
@@ -246,36 +247,48 @@ class _SettingsPageState extends State<SettingsPage> {
                 Divider(height: 1, color: theme.dividerColor.withOpacity(0.1)),
 
                 _buildRadioTile(
-                  title: 'Local (Whisper)',
-                  subtitle: 'OpenAI Whisper, high accuracy',
+                  // The stored value is still 'whisper' — renaming it would
+                  // need a preference migration for a string no user sees —
+                  // but the mode now covers every offline model, so the label
+                  // names the path rather than one of the models on it.
+                  title: 'Local (offline model)',
+                  subtitle: 'Whisper or SenseVoice, high accuracy',
                   value: 'whisper',
                   groupValue: SettingsService.transcriptionMode,
                   icon: Icons.record_voice_over_outlined,
                   onChanged: (value) => setState(() => SettingsService.transcriptionMode = value!),
                 ),
-                
-                // Whisper model size selector
+
+                // Offline model selector. Built from ModelCatalog.offlineModels
+                // rather than a literal list, so adding a model to the catalog
+                // adds it here too (LO-71).
                 if (SettingsService.useWhisper)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(56, 0, 16, 16),
-                    child: Row(
-                      children: [
-                        Text('Model Size:', style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7))),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: SegmentedButton<String>(
-                            segments: const [
-                              ButtonSegment(value: 'tiny', label: Text('Tiny'), icon: Icon(Icons.speed, size: 16)),
-                              ButtonSegment(value: 'base', label: Text('Base'), icon: Icon(Icons.high_quality, size: 16)),
-                            ],
-                            selected: {SettingsService.whisperModelSize},
-                            onSelectionChanged: (values) => setState(() => SettingsService.whisperModelSize = values.first),
-                            style: ButtonStyle(
-                              visualDensity: VisualDensity.compact,
+                    child: DropdownButtonFormField<String>(
+                      value: SettingsService.offlineSttModelId,
+                      dropdownColor: const Color(0xFF2D2D2D),
+                      decoration: const InputDecoration(
+                        labelText: 'Model',
+                      ),
+                      icon: Icon(Icons.arrow_drop_down,
+                          color: theme.colorScheme.onSurface.withOpacity(0.5)),
+                      items: [
+                        for (final spec in ModelCatalog.offlineModels)
+                          DropdownMenuItem(
+                            value: spec.id,
+                            child: Text(
+                              '${spec.displayName} '
+                              '(${_installedMegabytes(spec)} MB)',
                             ),
                           ),
-                        ),
                       ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() =>
+                              SettingsService.offlineSttModelId = value);
+                        }
+                      },
                     ),
                   ),
                 
@@ -327,7 +340,9 @@ class _SettingsPageState extends State<SettingsPage> {
                     child: Text(
                       'Local modes transcribe on the phone and need their '
                       'model downloaded first — see Manage models below. '
-                      'Korean needs its own model downloaded (~399 MB).',
+                      'Korean needs its own streaming model downloaded '
+                      '(~399 MB); SenseVoice covers Korean, English, '
+                      'Chinese, Japanese and Cantonese in one offline model.',
                       style: TextStyle(
                         color: theme.colorScheme.onSurface.withOpacity(0.6),
                         fontSize: 12,
@@ -1201,3 +1216,12 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 }
+
+/// On-disk size of [spec] in whole megabytes, for the offline model picker.
+///
+/// `models_page.dart` formats the same number the same way for its own
+/// listing; the two are a line of arithmetic each and are deliberately not
+/// shared, because a shared helper would have to live in `transcription/`
+/// and that layer has no business formatting UI strings.
+String _installedMegabytes(ModelSpec spec) =>
+    (spec.installedBytes / (1024 * 1024)).round().toString();

@@ -1,8 +1,9 @@
-/// [StreamingTranscriber] for the on-device offline Whisper batch path.
+/// [StreamingTranscriber] for the on-device offline batch path (Whisper or
+/// SenseVoice, whichever the settings pick).
 ///
-/// Both the Whisper recognizer and the Silero VAD it segments audio with live
-/// in a worker isolate (`whisper_worker.dart`), so nothing here decodes
-/// audio: this file resolves the Whisper and VAD model directories, starts
+/// Both the recognizer and the Silero VAD it segments audio with live
+/// in a worker isolate (`offline_worker.dart`), so nothing here decodes
+/// audio: this file resolves the recognizer and VAD model directories, starts
 /// the worker, forwards PCM16 chunks to it and turns the segments it sends
 /// back into [TranscriptSegment]s. That is why `package:sherpa_onnx` is not
 /// imported here — see LO-42 in `docs/06-roadmap.md`.
@@ -25,36 +26,45 @@ import 'model_catalog.dart';
 import 'model_store.dart';
 import 'transcriber.dart';
 import 'vad.dart';
-import 'whisper_worker.dart';
+import 'offline_worker.dart';
 
-/// Always consumes raw PCM16: Whisper never sees Opus, because the Omi path
-/// decodes Opus to PCM before handing audio to a transcriber.
-class WhisperBatchTranscriber implements StreamingTranscriber {
-  WhisperBatchTranscriber({
-    this.modelSize = 'tiny',
+/// Always consumes raw PCM16: the recognizer never sees Opus, because the
+/// Omi path decodes Opus to PCM before handing audio to a transcriber.
+class OfflineBatchTranscriber implements StreamingTranscriber {
+  OfflineBatchTranscriber({
+    this.modelId = '',
     this.language = 'en',
     String? modelDir,
     String? vadModelPath,
     int numThreads = 2,
     ModelStore? modelStore,
-    WhisperWorkerClient? workerClient,
+    OfflineWorkerClient? workerClient,
   })  : _modelDir = modelDir,
         _vadModelPath = vadModelPath,
         _numThreads = numThreads,
         _modelStore = modelStore,
-        _client = workerClient ?? IsolateWhisperWorkerClient();
+        _client = workerClient ?? IsolateOfflineWorkerClient();
 
-  final String modelSize;
+  /// Catalog id of the offline model to decode with, straight off
+  /// `SettingsService.offlineSttModelId`. Reduced through
+  /// [ModelCatalog.offlineModel] in [start], so `''` — and any id this build
+  /// does not know — resolves to [ModelCatalog.defaultOfflineModel] rather
+  /// than failing.
+  final String modelId;
+
+  /// [modelId] resolved to a catalog entry, and the single place this class
+  /// reduces it.
+  ModelSpec get model => ModelCatalog.offlineModel(modelId);
 
   /// Language to transcribe in (`'en'` or `'ko'`, LO-44). Reduced through
   /// [ModelCatalog.localSttLanguage] in [start] before it reaches the
-  /// worker — same defensive contract [ModelCatalog.whisperSize] already
-  /// gives [modelSize], so a stale or corrupted preference cannot leave the
-  /// worker with a language the catalog does not offer.
+  /// worker — same defensive contract [modelId] gets, so a stale or
+  /// corrupted preference cannot leave the worker with a language the
+  /// catalog does not offer.
   final String language;
 
-  /// Where the Whisper model files live. Null means "wherever the
-  /// [ModelStore] installed `ModelCatalog.whisper(modelSize)`", resolved on
+  /// Where the model files live. Null means "wherever the [ModelStore]
+  /// installed `ModelCatalog.offlineModel(modelId)`", resolved on
   /// [start].
   final String? _modelDir;
 
@@ -68,7 +78,7 @@ class WhisperBatchTranscriber implements StreamingTranscriber {
   /// so a test never touches `path_provider`.
   final ModelStore? _modelStore;
 
-  final WhisperWorkerClient _client;
+  final OfflineWorkerClient _client;
 
   StreamSubscription<Object?>? _events;
   bool _started = false;
@@ -100,7 +110,7 @@ class WhisperBatchTranscriber implements StreamingTranscriber {
       // per model.
       final store = _modelStore ?? ModelStore();
       modelDir = _modelDir ??
-          await store.requireInstalledDir(ModelCatalog.whisper(modelSize));
+          await store.requireInstalledDir(model);
       vadModelPath = _vadModelPath ??
           '${await store.requireInstalledDir(ModelCatalog.sileroVad)}/'
               '${ModelCatalog.sileroVadFileName}';
@@ -111,18 +121,14 @@ class WhisperBatchTranscriber implements StreamingTranscriber {
       rethrow;
     }
 
-    final config = WhisperWorkerConfig(
+    final config = OfflineWorkerConfig(
+      model: model,
       modelDir: modelDir,
-      // Reduced through ModelCatalog.whisperSize: the worker builds
-      // `<size>-encoder.onnx` file names out of this, so a stale 'small'
-      // preference would otherwise look for a file that is not in the tiny
-      // directory.
-      modelSize: ModelCatalog.whisperSize(modelSize),
       vad: VadConfig(modelPath: vadModelPath),
       numThreads: _numThreads,
-      // Reduced through ModelCatalog.localSttLanguage, same as modelSize
-      // above: an empty language would let Whisper auto-detect and risk
-      // mislabeling Korean speech as something else.
+      // Reduced through ModelCatalog.localSttLanguage, same as the model
+      // above: an empty language would let the recognizer auto-detect and
+      // risk mislabeling Korean speech as something else.
       //
       // The trade-off is deliberate and is a behaviour change: before LO-44
       // this path passed no language at all, so Whisper auto-detected. It is
@@ -144,7 +150,7 @@ class WhisperBatchTranscriber implements StreamingTranscriber {
     try {
       await _client.start(config);
     } catch (e) {
-      _reportError('Failed to start Whisper: $e');
+      _reportError('Failed to start ${model.displayName}: $e');
       rethrow;
     }
   }
@@ -171,11 +177,11 @@ class WhisperBatchTranscriber implements StreamingTranscriber {
   }
 
   void _onWorkerEvent(Object? event) {
-    if (event is WhisperSegmentEvent) {
+    if (event is OfflineSegmentEvent) {
       if (_segmentsController.isClosed) return;
       _segmentsController.add(TranscriptSegment(
         text: event.text,
-        // Whisper has no diarization, so every segment is speaker 0 — the
+        // Neither offline recognizer diarizes, so every segment is speaker 0 — the
         // same assumption the upstream service made.
         speakerId: 0,
         startTime: event.startTime,

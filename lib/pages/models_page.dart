@@ -336,6 +336,8 @@ class _ModelsPageState extends State<ModelsPage> {
         return 'Streaming';
       case ModelKind.whisper:
         return 'Whisper';
+      case ModelKind.senseVoice:
+        return 'SenseVoice';
       case ModelKind.vad:
         return 'VAD';
     }

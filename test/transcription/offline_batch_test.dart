@@ -8,14 +8,14 @@ import 'package:libreomi/models/conversation.dart';
 import 'package:libreomi/transcription/isolate_channel.dart';
 import 'package:libreomi/transcription/model_catalog.dart';
 import 'package:libreomi/transcription/model_store.dart';
-import 'package:libreomi/transcription/whisper_batch.dart';
-import 'package:libreomi/transcription/whisper_worker.dart';
+import 'package:libreomi/transcription/offline_batch.dart';
+import 'package:libreomi/transcription/offline_worker.dart';
 
-/// A [WhisperWorkerClient] the test fully controls: no isolate, no model.
-class _FakeWorkerClient implements WhisperWorkerClient {
+/// A [OfflineWorkerClient] the test fully controls: no isolate, no model.
+class _FakeWorkerClient implements OfflineWorkerClient {
   final _events = StreamController<Object?>.broadcast(sync: true);
 
-  WhisperWorkerConfig? startedWith;
+  OfflineWorkerConfig? startedWith;
   Object? startError;
   bool stopped = false;
   int stopCalls = 0;
@@ -27,7 +27,7 @@ class _FakeWorkerClient implements WhisperWorkerClient {
   Stream<Object?> get events => _events.stream;
 
   @override
-  Future<void> start(WhisperWorkerConfig config) async {
+  Future<void> start(OfflineWorkerConfig config) async {
     startedWith = config;
     if (startError != null) {
       throw startError!;
@@ -60,19 +60,19 @@ AudioChunk _chunk(List<int> bytes, DateTime at) => AudioChunk(
     );
 
 void main() {
-  group('WhisperBatchTranscriber', () {
+  group('OfflineBatchTranscriber', () {
     late _FakeWorkerClient fake;
-    late WhisperBatchTranscriber transcriber;
+    late OfflineBatchTranscriber transcriber;
 
-    WhisperBatchTranscriber build({
-      String modelSize = 'tiny',
+    OfflineBatchTranscriber build({
+      String modelId = '',
       String modelDir = '/models/test-whisper',
       String vadModelPath = '/models/test-vad/silero_vad.onnx',
       int numThreads = 2,
     }) {
       fake = _FakeWorkerClient();
-      return WhisperBatchTranscriber(
-        modelSize: modelSize,
+      return OfflineBatchTranscriber(
+        modelId: modelId,
         modelDir: modelDir,
         vadModelPath: vadModelPath,
         numThreads: numThreads,
@@ -104,23 +104,36 @@ void main() {
       expect(fake.startedWith!.numThreads, 4);
     });
 
-    test('modelSize is reduced through ModelCatalog.whisperSize', () async {
-      transcriber = build(modelSize: 'small');
+    test('modelId is reduced through ModelCatalog.offlineModel', () async {
+      // An id this build does not know must land on the default rather than
+      // start a worker pointed at a model that cannot be installed.
+      transcriber = build(modelId: 'sherpa-onnx-whisper-small');
       await transcriber.start();
-      expect(fake.startedWith!.modelSize, 'tiny');
+      expect(fake.startedWith!.model, same(ModelCatalog.defaultOfflineModel));
 
-      transcriber = build(modelSize: 'base');
+      transcriber = build(modelId: ModelCatalog.whisperBase.id);
       await transcriber.start();
-      expect(fake.startedWith!.modelSize, 'base');
+      expect(fake.startedWith!.model, same(ModelCatalog.whisperBase));
+    });
+
+    test('modelId: SenseVoice starts the worker with the SenseVoice spec',
+        () async {
+      // LO-71: picking SenseVoice must reach the worker as the SenseVoice
+      // spec, which is what makes buildOfflineRecognizerConfig build a
+      // SenseVoice recognizer rather than a Whisper one.
+      transcriber = build(modelId: ModelCatalog.senseVoice.id);
+      await transcriber.start();
+      expect(fake.startedWith!.model, same(ModelCatalog.senseVoice));
+      expect(fake.startedWith!.model.kind, ModelKind.senseVoice);
     });
 
     // LO-44: language is forwarded to the worker config, reduced through
-    // ModelCatalog.localSttLanguage the same way modelSize is reduced
-    // through ModelCatalog.whisperSize above.
+    // ModelCatalog.localSttLanguage the same way modelId is reduced
+    // through ModelCatalog.offlineModel above.
     test('language: ko starts the worker with config.language == ko and '
         'task == transcribe', () async {
       fake = _FakeWorkerClient();
-      transcriber = WhisperBatchTranscriber(
+      transcriber = OfflineBatchTranscriber(
         language: 'ko',
         modelDir: '/models/test-whisper',
         vadModelPath: '/models/test-vad/silero_vad.onnx',
@@ -144,7 +157,7 @@ void main() {
 
     test('a stale language reduces to en', () async {
       fake = _FakeWorkerClient();
-      transcriber = WhisperBatchTranscriber(
+      transcriber = OfflineBatchTranscriber(
         language: 'jp', // not in ModelCatalog.localSttLanguages
         modelDir: '/models/test-whisper',
         vadModelPath: '/models/test-vad/silero_vad.onnx',
@@ -155,14 +168,14 @@ void main() {
       expect(fake.startedWith!.language, 'en');
     });
 
-    test('a WhisperSegmentEvent becomes one TranscriptSegment', () async {
+    test('a OfflineSegmentEvent becomes one TranscriptSegment', () async {
       await transcriber.start();
       final segments = <Object?>[];
       transcriber.segments.listen(segments.add);
 
       final startAt = DateTime(2024, 1, 1);
       final endAt = DateTime(2024, 1, 1, 0, 0, 1);
-      fake.emit(WhisperSegmentEvent(
+      fake.emit(OfflineSegmentEvent(
         text: 'hello',
         startTime: 0.5,
         endTime: 1.5,
@@ -186,7 +199,7 @@ void main() {
       transcriber.segments.listen((s) => segments.add(s));
 
       for (var i = 0; i < 3; i++) {
-        fake.emit(WhisperSegmentEvent(
+        fake.emit(OfflineSegmentEvent(
           text: 'seg$i',
           startTime: i.toDouble(),
           endTime: i + 1.0,
@@ -254,7 +267,7 @@ void main() {
 
     test('a start() that fails surfaces on errors AND rethrows', () async {
       fake = _FakeWorkerClient()..startError = StateError('load failed');
-      transcriber = WhisperBatchTranscriber(
+      transcriber = OfflineBatchTranscriber(
         modelDir: '/models/test-whisper',
         vadModelPath: '/models/test-vad/silero_vad.onnx',
         workerClient: fake,
@@ -280,7 +293,7 @@ void main() {
       expect(fake.stopped, isTrue);
 
       // Emitting after stop must not throw, and must not deliver anything.
-      fake.emit(WhisperSegmentEvent(
+      fake.emit(OfflineSegmentEvent(
         text: 'late',
         startTime: 0,
         endTime: 0,
@@ -313,7 +326,7 @@ void main() {
       addTearDown(() => support.deleteSync(recursive: true));
 
       fake = _FakeWorkerClient();
-      final t = WhisperBatchTranscriber(
+      final t = OfflineBatchTranscriber(
         modelStore: ModelStore(supportDirectory: () async => support),
         workerClient: fake,
       );
@@ -349,7 +362,7 @@ void main() {
       }
 
       fake = _FakeWorkerClient();
-      final t = WhisperBatchTranscriber(
+      final t = OfflineBatchTranscriber(
         modelStore: ModelStore(supportDirectory: () async => support),
         workerClient: fake,
       );
@@ -366,7 +379,7 @@ void main() {
     });
   });
 
-  group('IsolateWhisperWorkerClient (real, no fake)', () {
+  group('IsolateOfflineWorkerClient (real, no fake)', () {
     // The same regression LO-41 fixed on the sherpa client, guarded here
     // because this client is a copy of that structure: `events` must be one
     // long-lived broadcast controller, not `_channel?.events ?? const
@@ -382,7 +395,7 @@ void main() {
     test(
         'events is live before start() is called: a pre-start listener does '
         'not see the stream complete on its own', () async {
-      final client = IsolateWhisperWorkerClient();
+      final client = IsolateOfflineWorkerClient();
 
       final received = <Object?>[];
       var done = false;
@@ -412,7 +425,7 @@ void main() {
 
     test('stop() before start() closes events without spawning anything',
         () async {
-      final client = IsolateWhisperWorkerClient();
+      final client = IsolateOfflineWorkerClient();
       var done = false;
       client.events.listen((_) {}, onDone: () => done = true);
 

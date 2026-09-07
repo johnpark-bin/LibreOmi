@@ -46,7 +46,7 @@ import '../transcription/deepgram_streaming.dart';
 import '../transcription/offline_file_transcriber.dart';
 import '../transcription/sherpa_streaming.dart';
 import '../transcription/transcriber.dart';
-import '../transcription/whisper_batch.dart';
+import '../transcription/offline_batch.dart';
 import 'chat_controller.dart';
 import 'library_controller.dart';
 
@@ -458,13 +458,14 @@ class SessionController extends ChangeNotifier {
 
       case 'whisper':
         debugPrint(
-          'Starting with LOCAL Whisper transcription '
-          '(${SettingsService.whisperModelSize}, ${SettingsService.localSttLanguage})',
+          'Starting with LOCAL offline transcription '
+          '(${SettingsService.offlineSttModelId}, '
+          '${SettingsService.localSttLanguage})',
         );
         _isLoadingModel = true;
         notifyListeners();
-        return WhisperBatchTranscriber(
-          modelSize: SettingsService.whisperModelSize,
+        return OfflineBatchTranscriber(
+          modelId: SettingsService.offlineSttModelId,
           language: SettingsService.localSttLanguage,
         );
 
@@ -661,12 +662,12 @@ class SessionController extends ChangeNotifier {
   ///
   /// Both on-device modes resolve to [OfflineFileTranscriber]: the sherpa
   /// streaming model is built to decode audio as it arrives, and pushing a
-  /// whole recording through it is measurably worse than one offline Whisper
+  /// whole recording through it is measurably worse than one offline
   /// decode per VAD-detected utterance (docs/06-roadmap.md, LO-51).
   FileTranscriber _buildFileTranscriber() {
     if (SettingsService.useLocalTranscription) {
       return OfflineFileTranscriber(
-        modelSize: SettingsService.whisperModelSize,
+        modelId: SettingsService.offlineSttModelId,
         language: SettingsService.localSttLanguage,
       );
     }

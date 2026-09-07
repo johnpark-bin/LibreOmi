@@ -117,6 +117,16 @@ void main() {
   }
 
   Future<void> pumpModelsPage(WidgetTester tester, ModelStore store) async {
+    // Tall enough for every catalog row to be built. The list outgrew the
+    // 600 px default test viewport when LO-71 added a sixth model, and a row
+    // scrolled out of view is never built — so the `ModelCatalog.all.length`
+    // expectations below would have been measuring the viewport rather than
+    // the page.
+    tester.view.physicalSize = const Size(1000, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     await tester.pumpWidget(MaterialApp(home: ModelsPage(store: store)));
     await tester.pumpAndSettle();
   }

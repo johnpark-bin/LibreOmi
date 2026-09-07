@@ -15,6 +15,10 @@ enum ModelKind {
   /// sherpa-onnx offline Whisper (encoder/decoder + tokens).
   whisper,
 
+  /// sherpa-onnx offline SenseVoice (one CTC model + tokens), the
+  /// multilingual offline recognizer added in LO-71.
+  senseVoice,
+
   /// Voice activity detection (Silero), used by the Whisper batch path to
   /// cut audio at speech boundaries instead of on a fixed timer (LO-42).
   vad,
@@ -201,6 +205,38 @@ class ModelCatalog {
     languages: ['multi'],
   );
 
+  /// Offline multilingual SenseVoice — Chinese, English, Japanese, Korean
+  /// and Cantonese in one model, with the language either stated or
+  /// auto-detected (LO-71).
+  ///
+  /// The **int8** release asset, deliberately: the float variant of the same
+  /// 2024-07-17 model is a 1,047,870,769-byte archive against this one's
+  /// 163,002,883, and a gigabyte download is not something this app can ask
+  /// a phone user for. Every number here was read off the asset itself —
+  /// the release API for [archiveBytes], and `tar xjf` plus `ls -l` for the
+  /// two extracted files (239,233,841 + 315,894).
+  ///
+  /// Unlike Whisper this is a single-file model: [OfflineWorkerConfig]
+  /// resolves `model.int8.onnx` and `tokens.txt` out of [requiredFiles], so
+  /// the file names live here and nowhere else. The archive also ships
+  /// `test_wavs/`, `README.md`, `LICENSE` and `export-onnx.py`; none are
+  /// extracted.
+  static const ModelSpec senseVoice = ModelSpec(
+    id: 'sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17',
+    kind: ModelKind.senseVoice,
+    displayName: 'SenseVoice (multilingual)',
+    url: '$_releaseBase/'
+        'sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2',
+    archiveTopDir: 'sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17',
+    requiredFiles: [
+      'model.int8.onnx',
+      'tokens.txt',
+    ],
+    archiveBytes: 163002883,
+    installedBytes: 239549735,
+    languages: ['zh', 'en', 'ja', 'ko', 'yue'],
+  );
+
   /// Silero voice activity detection, the model the Whisper batch path cuts
   /// utterances with (LO-42).
   ///
@@ -231,6 +267,7 @@ class ModelCatalog {
     streamingZipformerKo,
     whisperTiny,
     whisperBase,
+    senseVoice,
     sileroVad,
   ];
 
@@ -243,20 +280,65 @@ class ModelCatalog {
     return null;
   }
 
-  /// `SettingsService.whisperModelSize` reduced to a size this catalog has,
-  /// so a stale or corrupted preference cannot leave the app with no model.
+  /// A pre-LO-71 `whisper_model_size` preference (`'tiny'` or `'base'`)
+  /// reduced to a size this catalog has.
   ///
-  /// Callers that build file names out of the size — `whisper_worker.dart` opens
-  /// `<size>-encoder.onnx` — must go through this rather than the raw
-  /// preference, or they would look for `small-encoder.onnx` inside the tiny
-  /// model's directory.
+  /// Legacy only. Nothing picks a model by size any more —
+  /// `SettingsService.offlineSttModelId` stores a catalog id and
+  /// [offlineModel] resolves it — and no code builds file names out of a
+  /// size either: `offline_worker.dart` reads them off
+  /// [ModelSpec.requiredFiles]. This exists so
+  /// `SettingsService.offlineSttModelId` can promote the old preference to
+  /// an id on first read, and has no other caller.
   static String whisperSize(String size) => size == 'base' ? 'base' : 'tiny';
 
-  /// The Whisper model for `SettingsService.whisperModelSize` (`'tiny'` or
-  /// `'base'`), via [whisperSize].
+  /// The Whisper model a pre-LO-71 `whisper_model_size` preference named,
+  /// via [whisperSize]. Legacy only, same as [whisperSize].
   static ModelSpec whisper(String size) {
     return whisperSize(size) == 'base' ? whisperBase : whisperTiny;
   }
+
+  /// The offline recognizers the batch ("Local") mode can be pointed at, in
+  /// the order the settings page lists them.
+  ///
+  /// All three are decoded the same way — the Silero VAD cuts an utterance,
+  /// one offline recognizer call transcribes it — so what separates them is
+  /// only the model, which is why this is a list of specs rather than three
+  /// branches somewhere.
+  static const List<ModelSpec> offlineModels = [
+    whisperTiny,
+    whisperBase,
+    senseVoice,
+  ];
+
+  /// What [offlineModel] falls back to. Whisper tiny is the smallest of the
+  /// three and the size the app shipped with before LO-71.
+  static const ModelSpec defaultOfflineModel = whisperTiny;
+
+  /// The offline model with [id], or [defaultOfflineModel] when the catalog
+  /// has no such entry — a preference written by a future build, or a
+  /// corrupted one, must not leave the batch mode pointing at nothing.
+  ///
+  /// Same defensive contract as [whisperSize] and [localSttLanguage]:
+  /// callers pass the raw preference through this rather than using it.
+  static ModelSpec offlineModel(String id) {
+    for (final spec in offlineModels) {
+      if (spec.id == id) return spec;
+    }
+    return defaultOfflineModel;
+  }
+
+  /// [language] as SenseVoice's `language` option: the code itself when the
+  /// model was trained on it, `'auto'` otherwise.
+  ///
+  /// `'auto'` asks SenseVoice to detect the language from the audio, which
+  /// is the only sensible answer for a language it cannot be pinned to —
+  /// pinning it to an untrained code would decode into that language rather
+  /// than fail. Both of today's [localSttLanguages] are in
+  /// [senseVoice]`.languages`, so this returns them unchanged; the fallback
+  /// exists for whatever LO-44's language list grows into next.
+  static String senseVoiceLanguage(String language) =>
+      senseVoice.languages.contains(language) ? language : 'auto';
 
   /// The languages the local (on-device) transcription modes offer, in the
   /// order the settings page lists them. `'en'` is first because it is the

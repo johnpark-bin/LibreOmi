@@ -7,18 +7,18 @@ import 'package:libreomi/audio/wav.dart';
 import 'package:libreomi/transcription/isolate_channel.dart';
 import 'package:libreomi/transcription/model_store.dart';
 import 'package:libreomi/transcription/offline_file_transcriber.dart';
-import 'package:libreomi/transcription/whisper_worker.dart';
+import 'package:libreomi/transcription/offline_worker.dart';
 
-/// A scriptable [WhisperWorkerClient]. Records every [feed]d chunk and
+/// A scriptable [OfflineWorkerClient]. Records every [feed]d chunk and
 /// whether [flush]/[stop] were called, and lets a test push events onto
 /// [events] to simulate the worker.
-class _FakeWorkerClient implements WhisperWorkerClient {
+class _FakeWorkerClient implements OfflineWorkerClient {
   final StreamController<Object?> _events =
       StreamController<Object?>.broadcast(sync: true);
 
   final List<Uint8List> fedChunks = <Uint8List>[];
   final List<DateTime> fedAt = <DateTime>[];
-  WhisperWorkerConfig? startedWith;
+  OfflineWorkerConfig? startedWith;
 
   final List<String> callOrder = <String>[];
 
@@ -33,7 +33,7 @@ class _FakeWorkerClient implements WhisperWorkerClient {
   Stream<Object?> get events => _events.stream;
 
   @override
-  Future<void> start(WhisperWorkerConfig config) async {
+  Future<void> start(OfflineWorkerConfig config) async {
     startedWith = config;
     callOrder.add('start');
     await startGate.future;
@@ -128,7 +128,7 @@ void main() {
       expect(flushIndex, lessThan(stopIndex));
     });
 
-    test('WhisperSegmentEvents map to TranscriptSegments in order with fields '
+    test('OfflineSegmentEvents map to TranscriptSegments in order with fields '
         'preserved and speakerId 0', () async {
       final file = writeWav(List<int>.filled(3200, 0));
       final transcriber = buildTranscriber();
@@ -141,14 +141,14 @@ void main() {
       // run yet either.
       await _waitForStart(client);
 
-      client.emit(WhisperSegmentEvent(
+      client.emit(OfflineSegmentEvent(
         text: 'first',
         startTime: 0.0,
         endTime: 1.0,
         startAt: DateTime(2024, 1, 1, 0, 0, 0),
         endAt: DateTime(2024, 1, 1, 0, 0, 1),
       ));
-      client.emit(WhisperSegmentEvent(
+      client.emit(OfflineSegmentEvent(
         text: 'second',
         startTime: 1.0,
         endTime: 2.0,
@@ -256,7 +256,7 @@ void main() {
   });
 }
 
-/// Polls until [client] has recorded a [WhisperWorkerClient.start] call, so
+/// Polls until [client] has recorded a [OfflineWorkerClient.start] call, so
 /// a test can safely emit events without racing the transcriber's own
 /// subscribe-then-start sequence.
 Future<void> _waitForStart(_FakeWorkerClient client) async {
