@@ -152,10 +152,14 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> {
 
   /// Formats a conversation's timestamp in the reader's language.
   ///
-  /// `intl` rather than a hand-written month table: the month name, the order
-  /// of the parts and the 12/24-hour clock all differ between English and
-  /// Korean, and the date symbols for the app's locales are loaded by
-  /// `GlobalMaterialLocalizations`.
+  /// `intl` rather than a hand-written month table: the month name and the
+  /// order of the parts differ between English and Korean, and the date
+  /// symbols for the app's locales are loaded by `GlobalMaterialLocalizations`.
+  ///
+  /// `DateFormat.Hm` is the 24-hour clock in every locale, which is what this
+  /// screen showed before. The task list uses `DateFormat.jm` and so shows a
+  /// 12-hour clock in English; unifying the two is a UI decision, not a
+  /// localisation one, and is left alone here.
   String _formatFullDate(AppLocalizations l10n, DateTime date) {
     final locale = l10n.localeName;
     return l10n.conversationDetail_dateTimeFormat(

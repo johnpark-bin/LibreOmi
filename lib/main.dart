@@ -31,6 +31,11 @@ void main() async {
     debugPrint('Settings init error: $e');
   }
 
+  // Before the first frame, so anything that posts a notification or raises a
+  // user-facing error during bootstrap already speaks the user's language.
+  // `MaterialApp.localeResolutionCallback` takes over from here.
+  L10n.locale = LocaleController.effectiveLocale();
+
   final showRationale = shouldShowRationale();
 
   runApp(LibreOmiApp(showRationale: showRationale));

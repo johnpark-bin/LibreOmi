@@ -444,14 +444,18 @@
   "@settings_export_failedMessage": {
     "description": "SnackBar shown when the full data export fails",
     "placeholders": {
-      "error": { "type": "Object" }
+      "error": {
+        "type": "Object"
+      }
     }
   },
   "settings_import_readFailedMessage": "Could not read backup file: {error}",
   "@settings_import_readFailedMessage": {
     "description": "SnackBar shown when the picked backup file cannot be read or parsed",
     "placeholders": {
-      "error": { "type": "Object" }
+      "error": {
+        "type": "Object"
+      }
     }
   },
   "settings_import_confirmTitle": "Restore Backup",
@@ -462,42 +466,54 @@
   "@settings_import_conversationsCount": {
     "description": "Conversation count line in the import summary dialog",
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "settings_import_memoriesCount": "Memories: {count}",
   "@settings_import_memoriesCount": {
     "description": "Memory count line in the import summary dialog",
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "settings_import_tasksCount": "Tasks: {count}",
   "@settings_import_tasksCount": {
     "description": "Task count line in the import summary dialog",
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "settings_import_chatMessagesCount": "Chat messages: {count}",
   "@settings_import_chatMessagesCount": {
     "description": "Chat-message count line in the import summary dialog",
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "settings_import_exportedAt": "Exported: {date}",
   "@settings_import_exportedAt": {
     "description": "Export-timestamp line in the import summary dialog, shown when the backup carries one",
     "placeholders": {
-      "date": { "type": "String" }
+      "date": {
+        "type": "String"
+      }
     }
   },
   "settings_import_appVersion": "App version: {version}",
   "@settings_import_appVersion": {
     "description": "App-version line in the import summary dialog, shown when the backup carries one",
     "placeholders": {
-      "version": { "type": "String" }
+      "version": {
+        "type": "String"
+      }
     }
   },
   "settings_import_modeExplanation": "Merge adds these on top of what you have. Replace deletes everything currently stored first.",
@@ -532,9 +548,15 @@
   "@settings_import_resultMessage": {
     "description": "SnackBar summarising the outcome of a completed import",
     "placeholders": {
-      "inserted": { "type": "int" },
-      "updated": { "type": "int" },
-      "skipped": { "type": "int" }
+      "inserted": {
+        "type": "int"
+      },
+      "updated": {
+        "type": "int"
+      },
+      "skipped": {
+        "type": "int"
+      }
     }
   },
   "settings_import_detailsAction": "Details",
@@ -545,21 +567,27 @@
   "@settings_import_failedMessage": {
     "description": "SnackBar shown when an import fails",
     "placeholders": {
-      "error": { "type": "Object" }
+      "error": {
+        "type": "Object"
+      }
     }
   },
   "settings_import_skippedTitle": "{count} rows skipped",
   "@settings_import_skippedTitle": {
     "description": "Title of the dialog listing skipped import rows",
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "settings_import_skippedMoreMessage": "...and {count} more.",
   "@settings_import_skippedMoreMessage": {
     "description": "Line shown when more rows were skipped than the report lists individually",
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "home_nav_liveLabel": "Live",
@@ -698,14 +726,18 @@
   "@home_connected_segmentsCount": {
     "description": "Segment count shown in the live transcript panel header",
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "home_connected_speakerLabel": "S{speaker}",
   "@home_connected_speakerLabel": {
     "description": "Short speaker tag next to each live transcript line, e.g. S1, S2",
     "placeholders": {
-      "speaker": { "type": "int" }
+      "speaker": {
+        "type": "int"
+      }
     }
   },
   "home_connected_waitingForSpeechMessage": "Waiting for speech...",
@@ -736,15 +768,21 @@
   "@home_permission_errorTemplate": {
     "description": "Combines a localized error prefix with the underlying exception detail",
     "placeholders": {
-      "message": { "type": "String" },
-      "error": { "type": "Object" }
+      "message": {
+        "type": "String"
+      },
+      "error": {
+        "type": "Object"
+      }
     }
   },
   "home_permission_deniedPermanentTemplate": "{message} Enable it in app settings.",
   "@home_permission_deniedPermanentTemplate": {
     "description": "Appends the 'enable in settings' instruction after a permanently-denied permission message",
     "placeholders": {
-      "message": { "type": "String" }
+      "message": {
+        "type": "String"
+      }
     }
   },
   "home_batteryPrompt_title": "Keep recording while the screen is off?",
@@ -791,7 +829,9 @@
   "@sdcard_sync_deleteFileConfirm": {
     "description": "Body of the confirmation dialog for deleting one synced file",
     "placeholders": {
-      "fileName": { "type": "String" }
+      "fileName": {
+        "type": "String"
+      }
     }
   },
   "sdcard_sync_deleteButton": "Delete",
@@ -810,7 +850,9 @@
   "@sdcard_sync_deleteAllConfirm": {
     "description": "Body of the confirmation dialog for deleting every synced file",
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "sdcard_sync_deleteAllButton": "Delete All",
@@ -821,7 +863,9 @@
   "@sdcard_sync_deletedCountSnackbar": {
     "description": "SnackBar shown after bulk-deleting synced files",
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "sdcard_sync_clearStorageTitle": "Clear Device Storage",
@@ -912,7 +956,9 @@
   "@sdcard_sync_transcribingProgress": {
     "description": "Progress label for a synced file currently being transcribed",
     "placeholders": {
-      "fileName": { "type": "String" }
+      "fileName": {
+        "type": "String"
+      }
     }
   },
   "sdcard_sync_summarizingProgress": "Saved — waiting for the summary...",
@@ -955,8 +1001,12 @@
   "@sdcard_sync_syncedFilesSummary": {
     "description": "Subtitle of the synced-files section: how many files and how much space they use",
     "placeholders": {
-      "count": { "type": "int" },
-      "size": { "type": "String" }
+      "count": {
+        "type": "int"
+      },
+      "size": {
+        "type": "String"
+      }
     }
   },
   "sdcard_sync_processTooltip": "Process & Transcribe",
@@ -983,15 +1033,21 @@
   "@sdcard_sync_etaSeconds": {
     "description": "Sync ETA under a minute",
     "placeholders": {
-      "seconds": { "type": "int" }
+      "seconds": {
+        "type": "int"
+      }
     }
   },
   "sdcard_sync_etaMinutes": "{minutes}m {seconds}s remaining",
   "@sdcard_sync_etaMinutes": {
     "description": "Sync ETA of a minute or more",
     "placeholders": {
-      "minutes": { "type": "int" },
-      "seconds": { "type": "int" }
+      "minutes": {
+        "type": "int"
+      },
+      "seconds": {
+        "type": "int"
+      }
     }
   },
   "permissionsRationale_collectsHeader": "What LibreOmi collects",
@@ -1202,14 +1258,18 @@
   "@stats_deepgramLabel": {
     "description": "Detail row label: estimated Deepgram transcription cost, with minutes used",
     "placeholders": {
-      "minutes": { "type": "String" }
+      "minutes": {
+        "type": "String"
+      }
     }
   },
   "stats_llmLabel": "LLM ({tokens} tokens)",
   "@stats_llmLabel": {
     "description": "Detail row label: estimated LLM cost, with tokens used",
     "placeholders": {
-      "tokens": { "type": "String" }
+      "tokens": {
+        "type": "String"
+      }
     }
   },
   "stats_totalEstimatedLabel": "Total Estimated",
@@ -1220,7 +1280,9 @@
   "@stats_modelLabel": {
     "description": "Caption showing the configured LLM model id under the cost breakdown",
     "placeholders": {
-      "model": { "type": "String" }
+      "model": {
+        "type": "String"
+      }
     }
   },
   "stats_noPriceSetHint": "No price set for this model — add one in Settings → LLM → Pricing.",
@@ -1247,23 +1309,33 @@
   "@stats_durationHoursMinutes": {
     "description": "Formatted recording duration of an hour or more",
     "placeholders": {
-      "hours": { "type": "int" },
-      "minutes": { "type": "int" }
+      "hours": {
+        "type": "int"
+      },
+      "minutes": {
+        "type": "int"
+      }
     }
   },
   "stats_durationMinutesSeconds": "{minutes}m {seconds}s",
   "@stats_durationMinutesSeconds": {
     "description": "Formatted recording duration of a minute or more but under an hour",
     "placeholders": {
-      "minutes": { "type": "int" },
-      "seconds": { "type": "int" }
+      "minutes": {
+        "type": "int"
+      },
+      "seconds": {
+        "type": "int"
+      }
     }
   },
   "stats_durationSeconds": "{seconds}s",
   "@stats_durationSeconds": {
     "description": "Formatted recording duration under a minute",
     "placeholders": {
-      "seconds": { "type": "int" }
+      "seconds": {
+        "type": "int"
+      }
     }
   },
   "models_title": "Manage models",
@@ -1274,7 +1346,9 @@
   "@models_readFailedMessage": {
     "description": "SnackBar shown when the model store cannot be read at all",
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "models_otherFilesHeader": "OTHER FILES",
@@ -1285,7 +1359,9 @@
   "@models_deleteConfirmTitle": {
     "description": "Title of the confirmation dialog for deleting a model or unrecognised file",
     "placeholders": {
-      "title": { "type": "String" }
+      "title": {
+        "type": "String"
+      }
     }
   },
   "models_deleteConfirmBody": "This removes the downloaded model from your device. You can download it again later.",
@@ -1300,31 +1376,45 @@
   "@models_deleteSpecFailedMessage": {
     "description": "SnackBar shown when deleting a catalog model fails",
     "placeholders": {
-      "name": { "type": "String" },
-      "error": { "type": "String" }
+      "name": {
+        "type": "String"
+      },
+      "error": {
+        "type": "String"
+      }
     }
   },
   "models_deleteUnknownFailedMessage": "Could not delete {id}: {error}",
   "@models_deleteUnknownFailedMessage": {
     "description": "SnackBar shown when deleting an unrecognised installed file fails",
     "placeholders": {
-      "id": { "type": "String" },
-      "error": { "type": "String" }
+      "id": {
+        "type": "String"
+      },
+      "error": {
+        "type": "String"
+      }
     }
   },
   "models_installedSizeLabel": "{mb} MB installed",
   "@models_installedSizeLabel": {
     "description": "Size line for an installed model",
     "placeholders": {
-      "mb": { "type": "String" }
+      "mb": {
+        "type": "String"
+      }
     }
   },
   "models_downloadSizeLabel": "Download {archiveMb} MB · {installedMb} MB on disk",
   "@models_downloadSizeLabel": {
     "description": "Size line for a not-yet-installed model: download size and installed size",
     "placeholders": {
-      "archiveMb": { "type": "String" },
-      "installedMb": { "type": "String" }
+      "archiveMb": {
+        "type": "String"
+      },
+      "installedMb": {
+        "type": "String"
+      }
     }
   },
   "models_downloadButton": "Download",
@@ -1335,7 +1425,9 @@
   "@models_unknownSizeLabel": {
     "description": "Size line for an installed file with no matching catalog entry",
     "placeholders": {
-      "mb": { "type": "String" }
+      "mb": {
+        "type": "String"
+      }
     }
   },
   "models_kindStreaming": "Streaming",
@@ -1358,16 +1450,24 @@
   "@models_progressWithTotal": {
     "description": "Download progress line once the total size is known",
     "placeholders": {
-      "received": { "type": "String" },
-      "total": { "type": "String" },
-      "percent": { "type": "int" }
+      "received": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "int"
+      }
     }
   },
   "models_progressDownloaded": "{received} MB downloaded",
   "@models_progressDownloaded": {
     "description": "Download progress line before the total size is known",
     "placeholders": {
-      "received": { "type": "String" }
+      "received": {
+        "type": "String"
+      }
     }
   },
   "models_progressExtracting": "Extracting…",
@@ -1394,7 +1494,9 @@
   "@conversations_selectedCountTitle": {
     "description": "App bar title while selecting conversations, showing how many are selected",
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "conversations_cancelSearchTooltip": "Cancel Search",
@@ -1429,7 +1531,9 @@
   "@conversations_noSearchResults": {
     "description": "Shown when a conversation search finds no matches",
     "placeholders": {
-      "query": { "type": "String" }
+      "query": {
+        "type": "String"
+      }
     }
   },
   "conversations_untitledLabel": "Untitled",
@@ -1440,8 +1544,12 @@
   "@conversations_dateToday": {
     "description": "Timestamp for a conversation recorded earlier today, in a conversation list",
     "placeholders": {
-      "hour": { "type": "int" },
-      "minute": { "type": "String" }
+      "hour": {
+        "type": "int"
+      },
+      "minute": {
+        "type": "String"
+      }
     }
   },
   "conversations_dateYesterday": "Yesterday",
@@ -1452,7 +1560,9 @@
   "@conversations_dateDaysAgo": {
     "description": "Timestamp for a conversation recorded within the last week, in a conversation list",
     "placeholders": {
-      "days": { "type": "int" }
+      "days": {
+        "type": "int"
+      }
     }
   },
   "conversations_deleteSelectedTitle": "Delete Conversations",
@@ -1463,7 +1573,9 @@
   "@conversations_deleteSelectedBody": {
     "description": "Body of the confirmation dialog for deleting selected conversations",
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "conversations_deleteButton": "Delete",
@@ -1498,7 +1610,9 @@
   "@conversationDetail_memoryAddedSnackbar": {
     "description": "Snackbar confirming that selected transcript text was saved as a memory",
     "placeholders": {
-      "text": { "type": "String" }
+      "text": {
+        "type": "String"
+      }
     }
   },
   "conversationDetail_viewSnackbarAction": "View",
@@ -1509,7 +1623,9 @@
   "@conversationDetail_speakerLabel": {
     "description": "Label above a transcript segment identifying which speaker said it",
     "placeholders": {
-      "id": { "type": "int" }
+      "id": {
+        "type": "int"
+      }
     }
   },
   "memories_title": "Memories",
@@ -1536,21 +1652,27 @@
   "@memories_ageMinutes": {
     "description": "Relative age of a memory, shown when it is less than an hour old",
     "placeholders": {
-      "minutes": { "type": "int" }
+      "minutes": {
+        "type": "int"
+      }
     }
   },
   "memories_ageHours": "{hours}h ago",
   "@memories_ageHours": {
     "description": "Relative age of a memory, shown when it is less than a day old",
     "placeholders": {
-      "hours": { "type": "int" }
+      "hours": {
+        "type": "int"
+      }
     }
   },
   "memories_ageDays": "{days}d ago",
   "@memories_ageDays": {
     "description": "Relative age of a memory, shown when it is less than a week old",
     "placeholders": {
-      "days": { "type": "int" }
+      "days": {
+        "type": "int"
+      }
     }
   },
   "memories_deleteConfirmTitle": "Delete Memory",
@@ -1617,8 +1739,12 @@
   "@tasks_dueDateFormat": {
     "description": "Combines a task's due-date day part (Today, Tomorrow, a weekday, or a date) with its time part",
     "placeholders": {
-      "dayPart": { "type": "String" },
-      "timePart": { "type": "String" }
+      "dayPart": {
+        "type": "String"
+      },
+      "timePart": {
+        "type": "String"
+      }
     }
   },
   "tasks_deleteConfirmTitle": "Delete Task",
@@ -1645,7 +1771,9 @@
   "@chat_contextBanner": {
     "description": "Banner telling the user how many past conversations the chat can draw on",
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "chat_emptyHint": "Ask me anything about your\npast conversations",
@@ -1712,7 +1840,9 @@
   "@deviceSettings_micGainLevelLabel": {
     "description": "Generic microphone gain level label showing its numeric level",
     "placeholders": {
-      "level": { "type": "int" }
+      "level": {
+        "type": "int"
+      }
     }
   },
   "deviceSettings_micGainCardTitle": "Mic Gain",
@@ -1771,7 +1901,9 @@
   "@notification_taskDueTitle": {
     "description": "Title of the push notification reminding the user a task is due",
     "placeholders": {
-      "title": { "type": "String" }
+      "title": {
+        "type": "String"
+      }
     }
   },
   "notification_taskDueBody": "It is time to complete your task.",
@@ -1790,15 +1922,21 @@
   "@sdcardController_checkFailedStatus": {
     "description": "SD-card sync status line when checking the device for pending data failed",
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "sdcardController_foundPendingStatus": "Found {duration} of audio ({size})",
   "@sdcardController_foundPendingStatus": {
     "description": "SD-card sync status line reporting how much unsynced audio is on the device",
     "placeholders": {
-      "duration": { "type": "String" },
-      "size": { "type": "String" }
+      "duration": {
+        "type": "String"
+      },
+      "size": {
+        "type": "String"
+      }
     }
   },
   "sdcardController_noPendingStatus": "No pending data on SD card",
@@ -1817,7 +1955,9 @@
   "@sdcardController_syncErrorStatus": {
     "description": "SD-card sync status line when a transfer fails, with the underlying error text",
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "sdcardController_syncCancelledStatus": "Sync cancelled",
@@ -1860,7 +2000,9 @@
   "@chatController_replyErrorMessage": {
     "description": "Chat bubble text shown in place of an AI reply when the chat request fails",
     "placeholders": {
-      "error": { "type": "String" }
+      "error": {
+        "type": "String"
+      }
     }
   },
   "deviceController_disconnectedNotificationTitle": "Omi Disconnected",
@@ -1879,7 +2021,9 @@
   "@deviceController_lowBatteryCriticalBody": {
     "description": "Body of the push notification shown when the wearable's battery reaches the critical threshold",
     "placeholders": {
-      "level": { "type": "int" }
+      "level": {
+        "type": "int"
+      }
     }
   },
   "deviceController_batteryGettingLowTitle": "Battery Getting Low",
@@ -1890,7 +2034,9 @@
   "@deviceController_batteryGettingLowBody": {
     "description": "Body of the push notification shown when the wearable's battery reaches the low threshold",
     "placeholders": {
-      "level": { "type": "int" }
+      "level": {
+        "type": "int"
+      }
     }
   },
   "sessionController_noDeviceConnectedError": "No Omi device connected",
@@ -1913,8 +2059,84 @@
   "@conversationDetail_dateTimeFormat": {
     "description": "Joins a conversation's already-formatted date and time in the detail header",
     "placeholders": {
-      "date": { "type": "String" },
-      "time": { "type": "String" }
+      "date": {
+        "type": "String"
+      },
+      "time": {
+        "type": "String"
+      }
     }
+  },
+  "sdcard_file_durationUnknown": "Unknown",
+  "@sdcard_file_durationUnknown": {
+    "description": "Duration column for a synced recording whose length could not be read"
+  },
+  "sdcard_file_durationMinutesSeconds": "{minutes}m {seconds}s",
+  "@sdcard_file_durationMinutesSeconds": {
+    "description": "Length of a synced recording that runs a minute or longer",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      },
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "sdcard_file_durationSeconds": "{seconds}s",
+  "@sdcard_file_durationSeconds": {
+    "description": "Length of a synced recording shorter than a minute",
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "sdcard_file_ageJustNow": "Just now",
+  "@sdcard_file_ageJustNow": {
+    "description": "Age of a synced recording created less than a minute ago"
+  },
+  "sdcard_file_ageMinutes": "{minutes}m ago",
+  "@sdcard_file_ageMinutes": {
+    "description": "Age of a synced recording created within the last hour",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "sdcard_file_ageHours": "{hours}h ago",
+  "@sdcard_file_ageHours": {
+    "description": "Age of a synced recording created within the last day",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
+  "sdcard_file_ageDays": "{days}d ago",
+  "@sdcard_file_ageDays": {
+    "description": "Age of a synced recording created within the last week",
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "session_notification_sourcePhoneMic": "Phone mic",
+  "@session_notification_sourcePhoneMic": {
+    "description": "Audio source shown on the persistent recording notification when the phone's own microphone is in use"
+  },
+  "session_notification_sourceOmiConnected": "Omi connected",
+  "@session_notification_sourceOmiConnected": {
+    "description": "Audio source shown on the persistent recording notification while the wearable is connected"
+  },
+  "session_notification_sourceOmiDisconnected": "Omi disconnected",
+  "@session_notification_sourceOmiDisconnected": {
+    "description": "Audio source shown on the persistent recording notification while the wearable is out of range"
+  },
+  "settings_import_notJsonObjectError": "The file is not a JSON object.",
+  "@settings_import_notJsonObjectError": {
+    "description": "Reason shown when a picked backup file parses as JSON but is not an object at the top level"
   }
 }

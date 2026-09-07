@@ -537,11 +537,17 @@ class SessionController extends ChangeNotifier {
     }
     final startedAt = _session.currentConversation?.createdAt;
     final now = DateTime.now();
+    final l10n = L10n.current;
     final candidate = SessionNotificationText.forSession(
       usingPhoneMic: _isUsingPhoneMic,
       deviceConnected: _deviceManager.isConnected,
       conversationLength:
           startedAt == null ? Duration.zero : now.difference(startedAt),
+      labels: SessionNotificationLabels(
+        phoneMic: l10n.session_notification_sourcePhoneMic,
+        omiConnected: l10n.session_notification_sourceOmiConnected,
+        omiDisconnected: l10n.session_notification_sourceOmiDisconnected,
+      ),
     );
     final next = _sessionNotificationThrottle.next(candidate, now);
     if (next == null) {

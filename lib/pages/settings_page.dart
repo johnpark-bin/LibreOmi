@@ -1456,7 +1456,10 @@ class _SettingsPageState extends State<SettingsPage> {
       final contents = await File(path).readAsString();
       final decoded = await compute(_decodeImportJson, contents);
       if (decoded is! Map<String, dynamic>) {
-        throw const FormatException('The file is not a JSON object.');
+        // The reason is shown to the user, inside
+        // `settings_import_readFailedMessage`'s `{error}`, so it is localised
+        // rather than left as a developer string.
+        throw FormatException(l10n.settings_import_notJsonObjectError);
       }
       document = decoded;
     } catch (e) {

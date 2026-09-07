@@ -25,7 +25,7 @@ void main() {
         final line = lines[i];
         if (_isExempt(line)) continue;
         for (final literal in _literals.allMatches(line)) {
-          final text = literal.group(1)!;
+          final text = literal.group(1) ?? literal.group(2)!;
           if (_isAllowed(text)) continue;
           if (!_looksLikeProse(text)) continue;
           offenders.add(
@@ -59,11 +59,11 @@ void main() {
   });
 }
 
-/// Single-quoted Dart string literals, ignoring any that contain an escape or
-/// an interpolation — those are matched imprecisely by a regex, and an
-/// interpolated string that reaches the user is caught by the reviewer
-/// instead.
-final RegExp _literals = RegExp(r"'([^'\$\\\n]{4,})'");
+/// Dart string literals in either quote style. Escapes are skipped (a regex
+/// reads them unreliably); interpolations are not — `'Failed to save $name'`
+/// is exactly the kind of string that must not stay in the source, so `$` is
+/// allowed inside and stripped before the prose test below.
+final RegExp _literals = RegExp(r''''([^'\\\n]{4,})'|"([^"\\\n]{4,})"''');
 
 /// Lines that never carry user-visible copy.
 bool _isExempt(String line) {
@@ -78,15 +78,33 @@ bool _isExempt(String line) {
       trimmed.startsWith('debugPrint(');
 }
 
-/// English prose heuristic: starts with a capital letter, and is either
-/// several words or a single capitalised word long enough to be a label.
+/// English prose heuristic: starts with a capital letter and reads as words
+/// rather than as an identifier.
+///
+/// Deliberately does **not** reject a literal just because it contains a full
+/// stop — most user-visible copy is a sentence, and rejecting on `.` would
+/// blind the check to exactly the strings it exists to catch. Paths and
+/// identifiers are excluded by their shape instead: they have no space.
 bool _looksLikeProse(String text) {
-  if (!RegExp(r'^[A-Z]').hasMatch(text)) return false;
-  // Identifiers and constants: `CONNECTED`, `snake_case`, `some.path`,
-  // `Some/Path`, `A-B-C`.
-  if (RegExp(r'^[A-Z0-9_]+$').hasMatch(text)) return false;
-  if (RegExp(r'[_/.]').hasMatch(text)) return false;
-  return RegExp(r'^[A-Za-z][A-Za-z0-9 ,;:!?()%&+\x27-]*$').hasMatch(text);
+  // `$name` and `${expr}` are placeholders, not prose; drop them and judge
+  // the words around them.
+  final prose = text.replaceAll(RegExp(r'\$\{[^}]*\}|\$\w+'), ' ').trim();
+  if (!RegExp(r'^[A-Z]').hasMatch(prose)) return false;
+  // Constants and identifiers: `CONNECTED`, `Some_Thing`.
+  if (RegExp(r'^[A-Z0-9_]+$').hasMatch(prose)) return false;
+  if (prose.contains('_')) return false;
+  // A single word with no space is a label, a path segment, a MIME type or a
+  // proper noun; only multi-word text is treated as prose, and single-word
+  // UI labels are caught by review rather than by this heuristic.
+  if (!prose.contains(' ')) return false;
+  // A path, a URL or a package id: slashes, or a dot with no space after it.
+  if (prose.contains('/')) return false;
+  if (RegExp(r'\.\w').hasMatch(prose)) return false;
+  // Raw string on purpose, so the apostrophes and the ellipsis are the
+  // characters themselves; `\u2019` would be four literal characters here.
+  return RegExp(
+    "^[A-Za-z][A-Za-z0-9 ,.;:!?()%&+'\u2019\u2026-]*\$",
+  ).hasMatch(prose);
 }
 
 bool _isAllowed(String text) => _allowedLiterals.contains(text);
@@ -96,13 +114,11 @@ bool _isAllowed(String text) => _allowedLiterals.contains(text);
 /// Keep this list short and each entry justified — it is the only escape
 /// hatch, and a long one would defeat the check.
 const Set<String> _allowedLiterals = <String>{
-  // Product and vendor names.
-  'LibreOmi',
+  // The share-sheet subject: a product name, and the only multi-word literal
+  // in `lib/pages` that is not prose. Single-word product names (LibreOmi,
+  // Deepgram, Nova-2) need no entry — the heuristic already treats a literal
+  // with no space as a label rather than as a sentence.
   'LibreOmi Backup',
-  'Deepgram',
-  'Nova-2',
-  'Nova-3',
-  'English',
 };
 
 Iterable<File> _pageFiles() => Directory('lib/pages')

@@ -70,32 +70,55 @@ String formatConversationLength(Duration duration) {
   return '$mm:$ss';
 }
 
+/// The three translated words [SessionNotificationText.forSession] picks
+/// between, passed in rather than looked up (LO-62).
+///
+/// This file stays pure Dart — no plugin channel, no widget tree — so it
+/// cannot reach `AppLocalizations` itself. The caller that has the locale
+/// supplies the words; the default is English, which is what the foreground
+/// service's own isolate gets, since a fresh isolate has neither the
+/// resolved locale nor an initialised settings store.
+class SessionNotificationLabels {
+  const SessionNotificationLabels({
+    this.phoneMic = 'Phone mic',
+    this.omiConnected = 'Omi connected',
+    this.omiDisconnected = 'Omi disconnected',
+  });
+
+  final String phoneMic;
+  final String omiConnected;
+  final String omiDisconnected;
+}
+
 /// The title/text shown on the persistent foreground-service notification.
 class SessionNotificationText {
   const SessionNotificationText({required this.title, required this.text});
 
   /// Builds the notification text for the current session state.
   ///
-  /// The source part is `'Phone mic'` when [usingPhoneMic] is true;
-  /// otherwise `'Omi connected'` when [deviceConnected] is true, or
-  /// `'Omi disconnected'` when it is false. The full text is
-  /// `'<source> · <duration>'`, where duration is formatted by
+  /// The source part is [SessionNotificationLabels.phoneMic] when
+  /// [usingPhoneMic] is true; otherwise
+  /// [SessionNotificationLabels.omiConnected] when [deviceConnected] is true,
+  /// or [SessionNotificationLabels.omiDisconnected] when it is false. The full
+  /// text is `'<source> · <duration>'`, where duration is formatted by
   /// [formatConversationLength].
   factory SessionNotificationText.forSession({
     required bool usingPhoneMic,
     required bool deviceConnected,
     required Duration conversationLength,
+    SessionNotificationLabels labels = const SessionNotificationLabels(),
   }) {
     final String source;
     if (usingPhoneMic) {
-      source = 'Phone mic';
+      source = labels.phoneMic;
     } else if (deviceConnected) {
-      source = 'Omi connected';
+      source = labels.omiConnected;
     } else {
-      source = 'Omi disconnected';
+      source = labels.omiDisconnected;
     }
     final duration = formatConversationLength(conversationLength);
     return SessionNotificationText(
+      // Not localised: the product name is the same in every language.
       title: 'LibreOmi',
       text: '$source · $duration',
     );

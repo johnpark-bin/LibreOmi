@@ -927,6 +927,9 @@ class _DeviceTabState extends State<DeviceTab> {
   /// denied the system dialog never appears again, so the only way forward is
   /// the app's settings page.
   void _showPermissionDenied(String message, PermissionOutcome outcome) {
+    // Guarded like its sibling above: both are reached after an `await` on a
+    // permission dialog, so the page can be gone by the time they run.
+    if (!mounted) return;
     final l10n = L10n.of(context);
     final isPermanent = outcome == PermissionOutcome.permanentlyDenied;
     ScaffoldMessenger.of(context).showSnackBar(

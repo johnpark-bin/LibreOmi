@@ -1,5 +1,6 @@
 /// Memories page - displays extracted facts from conversations
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../controllers/library_controller.dart';
 import '../l10n/l10n.dart';
@@ -181,7 +182,10 @@ class MemoriesPage extends StatelessWidget {
     } else if (diff.inDays < 7) {
       return l10n.memories_ageDays(diff.inDays);
     } else {
-      return '${date.month}/${date.day}/${date.year}';
+      // `intl` rather than a hardcoded US order: Korean writes the date
+      // year-first. Symbols for both locales are loaded by
+      // `GlobalMaterialLocalizations`.
+      return DateFormat.yMd(l10n.localeName).format(date);
     }
   }
 

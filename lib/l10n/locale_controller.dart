@@ -1,3 +1,5 @@
+import 'dart:ui' show PlatformDispatcher;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
@@ -26,6 +28,17 @@ class LocaleController extends ChangeNotifier {
     _persist(normalised);
     notifyListeners();
   }
+
+  /// The locale the app should render in right now: the user's stored choice
+  /// if there is one, otherwise the system language, reduced to a supported
+  /// locale.
+  ///
+  /// `main()` seeds `L10n.locale` with this before `runApp`, so a
+  /// notification or a controller error raised before the first frame — and
+  /// therefore before `MaterialApp.localeResolutionCallback` has run — is
+  /// already in the user's language rather than in English.
+  static Locale effectiveLocale() =>
+      L10n.resolve(_read() ?? PlatformDispatcher.instance.locale);
 
   /// Writes the preference through, tolerating an uninitialised or broken
   /// settings store: failing to persist the choice must not stop the UI from
