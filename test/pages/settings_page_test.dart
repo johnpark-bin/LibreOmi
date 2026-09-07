@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:libreomi/pages/settings_page.dart';
 import 'package:libreomi/platform/battery_optimization.dart';
+import 'package:libreomi/platform/exact_alarm.dart';
 import 'package:libreomi/services/secret_store.dart';
 import 'package:libreomi/services/settings_service.dart';
 import 'package:libreomi/transcription/model_catalog.dart';
@@ -55,6 +56,45 @@ class _FakeBatteryOptimizationGateway implements BatteryOptimizationGateway {
   Future<String?> manufacturer() async => null;
 }
 
+/// Scripts the platform answers for [ExactAlarm], mirroring
+/// [_FakeBatteryOptimizationGateway] so tests never touch a plugin channel.
+class _FakeExactAlarmGateway implements ExactAlarmGateway {
+  _FakeExactAlarmGateway({
+    this.currentStatus = ExactAlarmStatus.denied,
+    this.afterOpenSettings,
+    this.failing = false,
+  });
+
+  ExactAlarmStatus currentStatus;
+  final ExactAlarmStatus? afterOpenSettings;
+
+  /// Makes both platform calls throw, standing in for a plugin channel that
+  /// is unavailable.
+  final bool failing;
+
+  int openSettingsCalls = 0;
+
+  @override
+  Future<ExactAlarmStatus> status() async {
+    if (failing) {
+      throw StateError('permission_handler unavailable');
+    }
+    return currentStatus;
+  }
+
+  @override
+  Future<ExactAlarmStatus> openSettings() async {
+    openSettingsCalls++;
+    if (failing) {
+      throw StateError('permission_handler unavailable');
+    }
+    if (afterOpenSettings != null) {
+      currentStatus = afterOpenSettings!;
+    }
+    return currentStatus;
+  }
+}
+
 void main() {
   /// Boots SettingsService against an in-memory store and pumps the page.
   /// Every test states the stored settings it wants, so there is no hidden
@@ -64,6 +104,8 @@ void main() {
     String? storedModel,
     String transcriptionMode = 'cloud',
     BatteryOptimization? batteryOptimizationOverride,
+    ExactAlarm? exactAlarmOverride,
+    bool? storedExactTaskReminders,
   }) async {
     // LO-40 added a "Manage models" row (and, conditionally, a hint line) to
     // the Transcription Engine card, which pushed the Deepgram/OpenAI
@@ -80,6 +122,8 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'transcription_mode': transcriptionMode,
       if (storedModel != null) 'deepgram_model': storedModel,
+      if (storedExactTaskReminders != null)
+        'exact_task_reminders': storedExactTaskReminders,
     });
     await SettingsService.init(secretStore: InMemorySecretStore());
 
@@ -89,6 +133,7 @@ void main() {
         MaterialApp(
           home: SettingsPage(
             batteryOptimizationOverride: batteryOptimizationOverride,
+            exactAlarmOverride: exactAlarmOverride,
           ),
         ),
       ),
@@ -413,6 +458,165 @@ void main() {
         expect(gateway.requestCalls, 1);
         expect(find.text('Exempt from battery optimisation'), findsOneWidget);
         expect(find.text('Request exemption'), findsNothing);
+      },
+    );
+  });
+
+  group('Exact task reminders switch', () {
+    Future<Finder> findExactAlarmSwitch(WidgetTester tester) async {
+      final titleFinder = find.text('Exact task reminders');
+      await tester.scrollUntilVisible(
+        titleFinder,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      return find.ancestor(
+        of: titleFinder,
+        matching: find.byType(SwitchListTile),
+      );
+    }
+
+    testWidgets('is off by default', (WidgetTester tester) async {
+      await pumpSettingsPage(
+        tester,
+        exactAlarmOverride: ExactAlarm(_FakeExactAlarmGateway()),
+      );
+
+      final switchFinder = await findExactAlarmSwitch(tester);
+      final tile = tester.widget<SwitchListTile>(switchFinder);
+      expect(tile.value, isFalse);
+    });
+
+    testWidgets(
+      'granted permission: tapping on sets the setting with no dialog',
+      (WidgetTester tester) async {
+        final gateway = _FakeExactAlarmGateway(
+          currentStatus: ExactAlarmStatus.granted,
+        );
+        await pumpSettingsPage(
+          tester,
+          exactAlarmOverride: ExactAlarm(gateway),
+        );
+
+        final switchFinder = await findExactAlarmSwitch(tester);
+        await tester.ensureVisible(switchFinder);
+        await tester.pumpAndSettle();
+
+        await tester.tap(switchFinder);
+        await tester.pumpAndSettle();
+
+        expect(SettingsService.exactTaskReminders, isTrue);
+        expect(
+          tester.widget<SwitchListTile>(switchFinder).value,
+          isTrue,
+        );
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(gateway.openSettingsCalls, 0);
+      },
+    );
+
+    testWidgets(
+      'denied permission: tapping on shows a dialog, granting via settings '
+      'turns the setting on',
+      (WidgetTester tester) async {
+        final gateway = _FakeExactAlarmGateway(
+          currentStatus: ExactAlarmStatus.denied,
+          afterOpenSettings: ExactAlarmStatus.granted,
+        );
+        await pumpSettingsPage(
+          tester,
+          exactAlarmOverride: ExactAlarm(gateway),
+        );
+
+        final switchFinder = await findExactAlarmSwitch(tester);
+        await tester.ensureVisible(switchFinder);
+        await tester.pumpAndSettle();
+
+        await tester.tap(switchFinder);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AlertDialog), findsOneWidget);
+        expect(find.text('Allow exact alarms'), findsOneWidget);
+
+        await tester.tap(find.text('Open settings'));
+        await tester.pumpAndSettle();
+
+        expect(gateway.openSettingsCalls, 1);
+        expect(SettingsService.exactTaskReminders, isTrue);
+        expect(
+          tester.widget<SwitchListTile>(switchFinder).value,
+          isTrue,
+        );
+      },
+    );
+
+    testWidgets(
+      'denied permission: still denied after settings keeps the setting off',
+      (WidgetTester tester) async {
+        final gateway = _FakeExactAlarmGateway(
+          currentStatus: ExactAlarmStatus.denied,
+          afterOpenSettings: ExactAlarmStatus.denied,
+        );
+        await pumpSettingsPage(
+          tester,
+          exactAlarmOverride: ExactAlarm(gateway),
+        );
+
+        final switchFinder = await findExactAlarmSwitch(tester);
+        await tester.ensureVisible(switchFinder);
+        await tester.pumpAndSettle();
+
+        await tester.tap(switchFinder);
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Open settings'));
+        await tester.pumpAndSettle();
+
+        expect(gateway.openSettingsCalls, 1);
+        expect(SettingsService.exactTaskReminders, isFalse);
+        expect(
+          tester.widget<SwitchListTile>(switchFinder).value,
+          isFalse,
+        );
+      },
+    );
+
+    testWidgets(
+      'a failed status check is treated as denied so the row still works',
+      (WidgetTester tester) async {
+        final gateway = _FakeExactAlarmGateway(failing: true);
+        await pumpSettingsPage(
+          tester,
+          exactAlarmOverride: ExactAlarm(gateway),
+        );
+
+        final switchFinder = await findExactAlarmSwitch(tester);
+        expect(
+          tester.widget<SwitchListTile>(switchFinder).value,
+          isFalse,
+        );
+        expect(tester.widget<SwitchListTile>(switchFinder).onChanged, isNotNull);
+      },
+    );
+
+    testWidgets(
+      'a stored opt-in with a denied permission renders the switch off',
+      (WidgetTester tester) async {
+        final gateway = _FakeExactAlarmGateway(
+          currentStatus: ExactAlarmStatus.denied,
+        );
+        await pumpSettingsPage(
+          tester,
+          exactAlarmOverride: ExactAlarm(gateway),
+          storedExactTaskReminders: true,
+        );
+
+        final switchFinder = await findExactAlarmSwitch(tester);
+        expect(
+          tester.widget<SwitchListTile>(switchFinder).value,
+          isFalse,
+        );
       },
     );
   });

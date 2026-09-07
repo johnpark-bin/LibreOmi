@@ -18,6 +18,8 @@ import '../services/settings_service.dart';
 import '../transcription/model_catalog.dart';
 import '../platform/battery_optimization.dart';
 import '../platform/battery_optimization_gateway.dart';
+import '../platform/exact_alarm.dart';
+import '../platform/exact_alarm_gateway.dart';
 import 'battery_guidance_page.dart';
 import 'device_settings_page.dart';
 import 'models_page.dart';
@@ -25,11 +27,19 @@ import 'stats_page.dart';
 import 'sdcard_sync_page.dart';
 
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key, this.batteryOptimizationOverride});
+  const SettingsPage({
+    super.key,
+    this.batteryOptimizationOverride,
+    this.exactAlarmOverride,
+  });
 
   /// Injected for widget tests so they never touch a plugin channel.
   /// Defaults to the app-wide instance.
   final BatteryOptimization? batteryOptimizationOverride;
+
+  /// Injected for widget tests so they never touch a plugin channel.
+  /// Defaults to the app-wide instance.
+  final ExactAlarm? exactAlarmOverride;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -53,6 +63,10 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _batteryStatusCheckFailed = false;
   bool _requestingBatteryExemption = false;
 
+  late final ExactAlarm _exactAlarm;
+  ExactAlarmStatus? _exactAlarmStatus;
+  bool _checkingExactAlarm = true;
+
   @override
   void initState() {
     super.initState();
@@ -62,6 +76,27 @@ class _SettingsPageState extends State<SettingsPage> {
     _batteryOptimization =
         widget.batteryOptimizationOverride ?? batteryOptimization;
     _refreshBatteryOptimizationStatus(notify: false);
+    _exactAlarm = widget.exactAlarmOverride ?? exactAlarm;
+    _refreshExactAlarmStatus();
+  }
+
+  Future<void> _refreshExactAlarmStatus() async {
+    ExactAlarmStatus status;
+    try {
+      status = await _exactAlarm.status();
+    } catch (e) {
+      // A denied status is safe here: the switch still works and the user
+      // can retry, whereas leaving the row stuck on "Checking…" would not.
+      debugPrint('exact alarm: status check failed: $e');
+      status = ExactAlarmStatus.denied;
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _exactAlarmStatus = status;
+      _checkingExactAlarm = false;
+    });
   }
 
   Future<void> _refreshBatteryOptimizationStatus({bool notify = true}) async {
@@ -127,6 +162,85 @@ class _SettingsPageState extends State<SettingsPage> {
       SnackBar(content: Text(message)),
     );
     await _refreshBatteryOptimizationStatus();
+  }
+
+  String _exactAlarmSubtitle() {
+    if (_checkingExactAlarm) {
+      return 'Checking permission…';
+    }
+    if (SettingsService.exactTaskReminders &&
+        _exactAlarmStatus == ExactAlarmStatus.denied) {
+      return 'Needs the Alarms & reminders permission — tap to grant it';
+    }
+    return 'Deliver reminders at the exact due time; needs the Alarms & '
+        'reminders permission';
+  }
+
+  Future<void> _onExactTaskRemindersChanged(bool value) async {
+    if (!value) {
+      setState(() => SettingsService.exactTaskReminders = false);
+      return;
+    }
+    if (_exactAlarmStatus != ExactAlarmStatus.denied) {
+      // Already granted, or the platform has no such permission to ask for
+      // (unsupported) — nothing left to negotiate.
+      setState(() => SettingsService.exactTaskReminders = true);
+      return;
+    }
+    final openSettings = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Allow exact alarms'),
+        content: const Text(
+          'Android needs the "Alarms & reminders" permission to deliver '
+          'task reminders at the exact due time. Without it, reminders may '
+          'arrive a few minutes late.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Not now'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Open settings'),
+          ),
+        ],
+      ),
+    );
+    if (openSettings != true) {
+      return;
+    }
+    ExactAlarmStatus status;
+    try {
+      status = await _exactAlarm.openSettings();
+    } catch (e) {
+      debugPrint('exact alarm: open settings failed: $e');
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not open the Alarms & reminders settings.'),
+        ),
+      );
+      return;
+    }
+    if (!context.mounted) {
+      return;
+    }
+    setState(() {
+      _exactAlarmStatus = status;
+      SettingsService.exactTaskReminders = status == ExactAlarmStatus.granted;
+    });
+    if (status != ExactAlarmStatus.granted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Reminders will stay inexact until the permission '
+              'is granted.'),
+        ),
+      );
+    }
   }
 
   @override
@@ -658,6 +772,24 @@ class _SettingsPageState extends State<SettingsPage> {
                   onChanged: (value) {
                     setState(() => SettingsService.notifyProcessing = value);
                   },
+                  activeColor: const Color(0xFF6C5CE7),
+                ),
+                const Divider(height: 1),
+                SwitchListTile(
+                  title: const Text('Exact task reminders', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text(_exactAlarmSubtitle(),
+                    style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6), fontSize: 13)),
+                  // Never claim exact delivery the system will not honour:
+                  // the switch reads as off while the permission is denied,
+                  // even if the stored opt-in is true. `unsupported` (not
+                  // Android) is not a denial — there is nothing to grant
+                  // there — so the switch still follows the stored value
+                  // rather than becoming a control that does nothing.
+                  value: SettingsService.exactTaskReminders &&
+                      _exactAlarmStatus != ExactAlarmStatus.denied,
+                  onChanged: _checkingExactAlarm
+                      ? null
+                      : (value) => _onExactTaskRemindersChanged(value),
                   activeColor: const Color(0xFF6C5CE7),
                 ),
               ],
