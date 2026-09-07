@@ -74,10 +74,14 @@ String formatConversationLength(Duration duration) {
 /// between, passed in rather than looked up (LO-62).
 ///
 /// This file stays pure Dart — no plugin channel, no widget tree — so it
-/// cannot reach `AppLocalizations` itself. The caller that has the locale
-/// supplies the words; the default is English, which is what the foreground
-/// service's own isolate gets, since a fresh isolate has neither the
-/// resolved locale nor an initialised settings store.
+/// cannot reach `AppLocalizations` itself, and `lib/platform/` would gain a
+/// `flutter/widgets` import it does not otherwise have. The caller that has
+/// the locale supplies the words instead.
+///
+/// The English default exists for callers with no locale to hand — the unit
+/// tests here, and any future call from an isolate where the resolved locale
+/// and the settings store are both unset. Every production path runs in the
+/// main isolate and passes translated labels.
 class SessionNotificationLabels {
   const SessionNotificationLabels({
     this.phoneMic = 'Phone mic',

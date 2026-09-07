@@ -10,7 +10,10 @@ import 'background_runner.dart';
 /// `Platform.isAndroid` itself.
 class NoopBackgroundRunner implements BackgroundRunner {
   @override
-  Future<void> start({required Set<BackgroundReason> reasons}) async {}
+  Future<void> start({
+    required Set<BackgroundReason> reasons,
+    SessionNotificationLabels labels = const SessionNotificationLabels(),
+  }) async {}
 
   @override
   Future<void> update(String notificationText) async {}

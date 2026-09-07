@@ -488,7 +488,15 @@ class SessionController extends ChangeNotifier {
   Future<void> _startBackgroundRunner(Set<BackgroundReason> reasons) async {
     _sessionNotificationThrottle.reset();
     try {
-      await _backgroundRunner.start(reasons: reasons);
+      final l10n = L10n.current;
+      await _backgroundRunner.start(
+        reasons: reasons,
+        labels: SessionNotificationLabels(
+          phoneMic: l10n.session_notification_sourcePhoneMic,
+          omiConnected: l10n.session_notification_sourceOmiConnected,
+          omiDisconnected: l10n.session_notification_sourceOmiDisconnected,
+        ),
+      );
     } catch (e) {
       debugPrint('Background runner failed to start: $e');
     }

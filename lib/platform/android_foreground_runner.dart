@@ -130,7 +130,10 @@ class AndroidForegroundRunner implements BackgroundRunner {
   }
 
   @override
-  Future<void> start({required Set<BackgroundReason> reasons}) async {
+  Future<void> start({
+    required Set<BackgroundReason> reasons,
+    SessionNotificationLabels labels = const SessionNotificationLabels(),
+  }) async {
     if (reasons.isEmpty) {
       return;
     }
@@ -143,14 +146,11 @@ class AndroidForegroundRunner implements BackgroundRunner {
       return;
     }
 
-    // No `labels:` on purpose. This is the one line the service posts before
-    // `SessionController` takes over the updates, and it runs on a path that
-    // may precede the first frame, so the English default is the honest
-    // answer here; the next `update()` carries the user's language.
     final initialText = SessionNotificationText.forSession(
       usingPhoneMic: reasons.contains(BackgroundReason.microphone),
       deviceConnected: reasons.contains(BackgroundReason.connectedDevice),
       conversationLength: Duration.zero,
+      labels: labels,
     );
 
     final result = await FlutterForegroundTask.startService(
