@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite/sqflite.dart';
 
 import 'package:libreomi/data/chat_repo.dart';
 import 'package:libreomi/data/conversation_repo.dart';
@@ -64,8 +65,10 @@ void main() {
       final dueTask = Task(
         id: 't1',
         title: 'Buy milk',
+        description: 'Semi-skimmed, the big carton',
         createdAt: DateTime.fromMillisecondsSinceEpoch(3000),
         dueDate: DateTime.fromMillisecondsSinceEpoch(9000),
+        sourceConversationId: 'c1',
       );
       final completedTask = Task(
         id: 't2',
@@ -99,6 +102,11 @@ void main() {
       await ChatRepo(source).save(chatFromUser);
       await ChatRepo(source).save(chatReply);
 
+      // Every column of every row, so a field dropped from the format or the
+      // importer's row builder fails here rather than surviving because the
+      // assertions below happen not to name it.
+      final before = await _snapshot(source);
+
       // Round-trip the document through JSON, the way a real export/import
       // does via a file, rather than handing importAll the in-memory map
       // exportAll built.
@@ -111,6 +119,8 @@ void main() {
       expect(report.updated, 0);
       expect(report.skipped, 0);
       expect(report.errors, isEmpty);
+
+      expect(await _snapshot(target), before);
 
       final conversations = await ConversationRepo(target).all();
       expect(conversations, hasLength(1));
@@ -380,4 +390,14 @@ void main() {
       expect(memories.single.content, 'legacy memory');
     });
   });
+}
+
+/// Every row of every exported table, keyed by table and ordered by id, as the
+/// database itself stores it. Comparing two of these is the strongest form of
+/// "the round trip kept all rows" available without reimplementing the format.
+Future<Map<String, List<Map<String, Object?>>>> _snapshot(Database db) async {
+  final tables = ['conversations', 'memories', 'tasks', 'chat_messages'];
+  return {
+    for (final table in tables) table: await db.query(table, orderBy: 'id'),
+  };
 }

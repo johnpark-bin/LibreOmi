@@ -70,8 +70,6 @@ class ImportReport {
   final int skipped;
   final List<String> errors;
 
-  int get total => inserted + updated;
-
   @override
   String toString() =>
       'ImportReport(inserted: $inserted, updated: $updated, '
@@ -93,9 +91,9 @@ class ImportFormatException implements Exception {
 
 /// Reads the whole library out of [db] as a JSON-encodable map.
 ///
-/// The row limits are high enough to be "everything" in practice while still
-/// bounding a runaway database; the repositories' own defaults are tuned for
-/// list views, so the queries here are direct.
+/// Queries the tables directly rather than going through the repositories:
+/// their `limit` defaults are sized for list views, and a backup that quietly
+/// stopped at the newest 50 conversations would be worse than no backup.
 Future<Map<String, dynamic>> exportAll(
   Database db, {
   String appVersion = exportAppVersion,

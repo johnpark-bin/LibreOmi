@@ -1185,26 +1185,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ? box.localToGlobal(Offset.zero) & box.size
         : const Rect.fromLTWH(0, 0, 100, 100);
     
-    // Show loading indicator
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => const Center(
-        child: Card(
-          child: Padding(
-            padding: EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('Preparing export...'),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+    _showBlockingProgress(context, 'Preparing export...');
 
     try {
       // Get all data
@@ -1238,9 +1219,10 @@ class _SettingsPageState extends State<SettingsPage> {
   /// Lets the user pick a `.json` backup, confirm what it contains and how to
   /// apply it, then restores it through [LibraryController.importAllData].
   ///
-  /// Every branch pops the loading dialog exactly once: the two `try` blocks
-  /// below each have exactly one success path and one catch path, and neither
-  /// pops before the dialog is known to be showing.
+  /// Every branch pops the progress dialog exactly once: the `try` block below
+  /// has one success path and two catch paths, none of them reached before the
+  /// dialog is showing, and [_showBlockingProgress] blocks the back button so
+  /// the dialog cannot already be gone by then.
   Future<void> _importAllData(BuildContext context) async {
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
@@ -1276,26 +1258,7 @@ class _SettingsPageState extends State<SettingsPage> {
     if (!context.mounted) return;
     final navigator = Navigator.of(context);
 
-    // Show loading indicator
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => const Center(
-        child: Card(
-          child: Padding(
-            padding: EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('Restoring backup...'),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+    _showBlockingProgress(context, 'Restoring backup...');
 
     try {
       final report = await context
@@ -1305,16 +1268,18 @@ class _SettingsPageState extends State<SettingsPage> {
       // Close loading dialog
       navigator.pop();
 
-      final summary =
-          'Imported ${report.inserted} new, updated ${report.updated}, '
-          'skipped ${report.skipped}.';
       scaffoldMessenger.showSnackBar(
         SnackBar(
           content: Text(
-            report.skipped > 0
-                ? '$summary See the skipped rows for details.'
-                : summary,
+            'Imported ${report.inserted} new, updated ${report.updated}, '
+            'skipped ${report.skipped}.',
           ),
+          action: report.errors.isEmpty
+              ? null
+              : SnackBarAction(
+                  label: 'Details',
+                  onPressed: () => _showSkippedRows(report),
+                ),
         ),
       );
     } on ImportFormatException catch (e) {
@@ -1412,6 +1377,67 @@ class _SettingsPageState extends State<SettingsPage> {
     );
 
     return confirmed == true ? ImportMode.replace : null;
+  }
+
+  /// A modal spinner the user cannot dismiss — not by tapping the barrier and
+  /// not with the system back button, which a bare `barrierDismissible: false`
+  /// still allows. Both callers pop it themselves once the work is done, and
+  /// that pop must not be able to take the settings page with it.
+  void _showBlockingProgress(BuildContext context, String message) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => PopScope(
+        canPop: false,
+        child: Center(
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 16),
+                  Text(message),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Shows why rows were skipped. The report describes only the first few, so
+  /// say so when there were more than it kept.
+  void _showSkippedRows(ImportReport report) {
+    if (!mounted) return;
+    final hidden = report.skipped - report.errors.length;
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('${report.skipped} rows skipped'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final error in report.errors) Text(error),
+              if (hidden > 0) ...[
+                const SizedBox(height: 8),
+                Text('...and $hidden more.'),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
