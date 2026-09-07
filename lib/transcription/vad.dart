@@ -1,7 +1,7 @@
 /// Silero voice activity detection, and the only file allowed to import
 /// `package:sherpa_onnx`'s VAD API (LO-42).
 ///
-/// The Whisper batch path (`whisper_worker.dart`, a separate unit) replaces
+/// The Whisper batch path (`offline_worker.dart`, a separate unit) replaces
 /// its old fixed 3-second timer with speech segments cut by this detector:
 /// instead of decoding whatever audio happened to land in a timer tick, it
 /// decodes whole utterances bounded by silence. The layering mirrors

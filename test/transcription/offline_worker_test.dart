@@ -3,7 +3,8 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libreomi/transcription/vad.dart';
-import 'package:libreomi/transcription/whisper_worker.dart';
+import 'package:libreomi/transcription/model_catalog.dart';
+import 'package:libreomi/transcription/offline_worker.dart';
 
 /// A scriptable [VadApi]. Tests enqueue segments with [enqueue] and assert
 /// [flushCalls]/[resetCalls]/[disposeCalls] afterwards.
@@ -53,10 +54,10 @@ class _FakeVad implements VadApi {
   void dispose() => disposeCalls++;
 }
 
-/// A scriptable [WhisperRecognizerApi]. Returns [nextText] (or throws
+/// A scriptable [OfflineRecognizerApi]. Returns [nextText] (or throws
 /// [nextError] if set) for the next call, and records the sample counts it
 /// saw.
-class _FakeRecognizer implements WhisperRecognizerApi {
+class _FakeRecognizer implements OfflineRecognizerApi {
   final List<int> sampleCounts = <int>[];
   int disposeCalls = 0;
 
@@ -86,21 +87,21 @@ VadSpeechSegment _segment({required int startSample, required int sampleCount}) 
       startSample: startSample,
     );
 
-WhisperFeedCommand _feedCommand(int sampleCount, DateTime at) =>
-    WhisperFeedCommand(
+OfflineFeedCommand _feedCommand(int sampleCount, DateTime at) =>
+    OfflineFeedCommand(
       TransferableTypedData.fromList(<Uint8List>[Uint8List(sampleCount * 2)]),
       at,
     );
 
 void main() {
-  group('WhisperWorkerCore', () {
+  group('OfflineWorkerCore', () {
     late List<Object?> events;
     late _FakeVad fakeVad;
     late _FakeRecognizer fakeRecognizer;
-    late WhisperWorkerCore core;
+    late OfflineWorkerCore core;
 
     void init({int sampleRate = 16000}) {
-      core = WhisperWorkerCore(
+      core = OfflineWorkerCore(
         emit: events.add,
         vadFactory: (config) {
           fakeVad = _FakeVad();
@@ -111,9 +112,9 @@ void main() {
           return fakeRecognizer;
         },
       );
-      core.handle(WhisperInitCommand(WhisperWorkerConfig(
+      core.handle(OfflineInitCommand(OfflineWorkerConfig(
+        model: ModelCatalog.whisperTiny,
         modelDir: '/nonexistent',
-        modelSize: 'tiny',
         vad: const VadConfig(modelPath: '/nonexistent'),
         sampleRate: sampleRate,
       )));
@@ -124,14 +125,14 @@ void main() {
     });
 
     test('feeding audio before init throws StateError', () {
-      core = WhisperWorkerCore(emit: events.add);
+      core = OfflineWorkerCore(emit: events.add);
       expect(
         () => core.handle(_feedCommand(100, DateTime(2024))),
         throwsA(isA<StateError>()),
       );
     });
 
-    test('one VAD segment produces one WhisperSegmentEvent with the '
+    test('one VAD segment produces one OfflineSegmentEvent with the '
         'scripted text', () {
       init();
       fakeVad.onNextAccept.add(_segment(startSample: 0, sampleCount: 8000));
@@ -140,7 +141,7 @@ void main() {
       core.handle(_feedCommand(8000, DateTime(2024)));
 
       expect(events, hasLength(1));
-      expect((events.single as WhisperSegmentEvent).text, 'hello world');
+      expect((events.single as OfflineSegmentEvent).text, 'hello world');
     });
 
     test('times are derived from the segment sample indices and the first '
@@ -162,7 +163,7 @@ void main() {
       core.handle(_feedCommand(1600, tLater));
 
       expect(events, hasLength(1));
-      final event = events.single as WhisperSegmentEvent;
+      final event = events.single as OfflineSegmentEvent;
       expect(event.startTime, 1.0);
       expect(event.endTime, 1.5);
       expect(event.startAt, t0.add(const Duration(seconds: 1)));
@@ -183,7 +184,7 @@ void main() {
 
       expect(events, hasLength(2));
       expect(
-        events.map((e) => (e as WhisperSegmentEvent).text),
+        events.map((e) => (e as OfflineSegmentEvent).text),
         <String>['first', 'second'],
       );
     });
@@ -198,7 +199,7 @@ void main() {
       expect(events, isEmpty);
     });
 
-    test('WhisperFlushCommand calls vad.flush() and emits the trailing '
+    test('OfflineFlushCommand calls vad.flush() and emits the trailing '
         'segment, and the core still works afterwards', () {
       init();
       // Anchor the timeline: a chunk with no completed segment yet.
@@ -207,11 +208,11 @@ void main() {
       fakeVad.onNextFlush.add(_segment(startSample: 0, sampleCount: 1600));
       fakeRecognizer.nextText = 'trailing';
 
-      core.handle(const WhisperFlushCommand());
+      core.handle(const OfflineFlushCommand());
 
       expect(fakeVad.flushCalls, 1);
       expect(events, hasLength(1));
-      expect((events.single as WhisperSegmentEvent).text, 'trailing');
+      expect((events.single as OfflineSegmentEvent).text, 'trailing');
 
       // Core still works after the flush.
       fakeRecognizer.nextText = 'after flush';
@@ -221,7 +222,7 @@ void main() {
       expect(events, hasLength(2));
     });
 
-    test('WhisperStopCommand emits the trailing segment, disposes both, '
+    test('OfflineStopCommand emits the trailing segment, disposes both, '
         'and a second stop is a no-op', () {
       init();
       // Anchor the timeline: a chunk with no completed segment yet.
@@ -230,15 +231,15 @@ void main() {
       fakeVad.onNextFlush.add(_segment(startSample: 0, sampleCount: 1600));
       fakeRecognizer.nextText = 'final';
 
-      core.handle(const WhisperStopCommand());
+      core.handle(const OfflineStopCommand());
 
       expect(events, hasLength(1));
-      expect((events.single as WhisperSegmentEvent).text, 'final');
+      expect((events.single as OfflineSegmentEvent).text, 'final');
       expect(fakeVad.disposeCalls, 1);
       expect(fakeRecognizer.disposeCalls, 1);
 
       // Second stop is a no-op: no more dispose calls, no more events.
-      core.handle(const WhisperStopCommand());
+      core.handle(const OfflineStopCommand());
       expect(fakeVad.disposeCalls, 1);
       expect(fakeRecognizer.disposeCalls, 1);
       expect(events, hasLength(1));
@@ -264,9 +265,9 @@ void main() {
       // Draining resumes on the next command and the second segment still
       // comes through, proving the queue was not wedged on the first one.
       fakeRecognizer.nextText = 'second';
-      core.handle(const WhisperFlushCommand());
+      core.handle(const OfflineFlushCommand());
       expect(events, hasLength(1));
-      expect((events.single as WhisperSegmentEvent).text, 'second');
+      expect((events.single as OfflineSegmentEvent).text, 'second');
     });
 
     test('an unknown command throws ArgumentError', () {
@@ -277,11 +278,11 @@ void main() {
     test('odd-length PCM16 and empty chunks are tolerated', () {
       init();
       final oddBytes = Uint8List(5);
-      core.handle(WhisperFeedCommand(
+      core.handle(OfflineFeedCommand(
         TransferableTypedData.fromList(<Uint8List>[oddBytes]),
         DateTime(2024),
       ));
-      core.handle(WhisperFeedCommand(
+      core.handle(OfflineFeedCommand(
         TransferableTypedData.fromList(<Uint8List>[Uint8List(0)]),
         DateTime(2024),
       ));

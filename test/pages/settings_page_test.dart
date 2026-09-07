@@ -6,6 +6,7 @@ import 'package:libreomi/pages/settings_page.dart';
 import 'package:libreomi/platform/battery_optimization.dart';
 import 'package:libreomi/services/secret_store.dart';
 import 'package:libreomi/services/settings_service.dart';
+import 'package:libreomi/transcription/model_catalog.dart';
 
 import 'controller_harness.dart';
 
@@ -217,23 +218,60 @@ void main() {
       expect(find.text('한국어'), findsNothing);
     });
 
-    testWidgets('shows both the language picker and the Model Size picker in whisper mode', (
+    testWidgets('shows both the language picker and the offline model picker '
+        'in whisper mode', (
       WidgetTester tester,
     ) async {
       await pumpSettingsPage(tester, transcriptionMode: 'whisper');
 
-      final modelSizeFinder = find.text('Model Size:');
+      final modelFinder =
+          find.textContaining(ModelCatalog.whisperTiny.displayName);
       await tester.scrollUntilVisible(
-        modelSizeFinder,
+        modelFinder,
         300,
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pumpAndSettle();
 
-      expect(modelSizeFinder, findsOneWidget);
+      expect(modelFinder, findsOneWidget);
       expect(find.text('Language:'), findsOneWidget);
       expect(find.text('English'), findsOneWidget);
       expect(find.text('한국어'), findsOneWidget);
+    });
+
+    testWidgets(
+        'the offline model picker offers every catalog offline model and '
+        'stores the pick (LO-71)', (WidgetTester tester) async {
+      await pumpSettingsPage(tester, transcriptionMode: 'whisper');
+      expect(SettingsService.offlineSttModelId, ModelCatalog.whisperTiny.id);
+
+      final selected =
+          find.textContaining(ModelCatalog.whisperTiny.displayName);
+      await tester.scrollUntilVisible(
+        selected,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(selected.first);
+      await tester.pumpAndSettle();
+
+      // The open menu lists the catalog's offline models and nothing else —
+      // the streaming models are not decodable by this path.
+      for (final spec in ModelCatalog.offlineModels) {
+        expect(find.textContaining(spec.displayName), findsWidgets,
+            reason: spec.id);
+      }
+      expect(
+          find.textContaining(ModelCatalog.streamingZipformerKo.displayName),
+          findsNothing);
+
+      await tester
+          .tap(find.textContaining(ModelCatalog.senseVoice.displayName).last);
+      await tester.pumpAndSettle();
+
+      expect(SettingsService.offlineSttModelId, ModelCatalog.senseVoice.id);
     });
   });
 

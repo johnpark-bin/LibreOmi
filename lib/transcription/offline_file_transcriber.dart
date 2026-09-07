@@ -1,14 +1,14 @@
-/// [FileTranscriber] for the on-device Whisper decode path (LO-51).
+/// [FileTranscriber] for the on-device offline decode path (LO-51).
 ///
 /// Both the "whisper" and the "sherpa" on-device settings modes route FILE
 /// transcription through this class rather than through their respective
 /// streaming transcribers: pushing a whole recording through a streaming
 /// model produces worse text than decoding each VAD-detected utterance
-/// offline, one whole utterance at a time, the way `whisper_batch.dart`
+/// offline, one whole utterance at a time, the way `offline_batch.dart`
 /// already does for a live session. See LO-51 in `docs/06-roadmap.md`.
 ///
-/// This file resolves the Whisper and VAD model directories, starts the
-/// worker isolate from `whisper_worker.dart`, feeds it the WAV's PCM16 in
+/// This file resolves the recognizer and VAD model directories, starts the
+/// worker isolate from `offline_worker.dart`, feeds it the WAV's PCM16 in
 /// chunks and collects the segments it sends back. Nothing here decodes
 /// audio itself.
 library;
@@ -24,24 +24,24 @@ import 'model_catalog.dart';
 import 'model_store.dart';
 import 'transcriber.dart';
 import 'vad.dart';
-import 'whisper_worker.dart';
+import 'offline_worker.dart';
 
-/// Decodes a complete WAV file with the offline Whisper recognizer.
+/// Decodes a complete WAV file with the offline recognizer the settings pick.
 ///
 /// Requires 16 kHz mono PCM16 input — the same assumption the worker's VAD
-/// and the Whisper recognizer both make — and throws an [ArgumentError]
+/// and the offline recognizers both make — and throws an [ArgumentError]
 /// naming the actual format otherwise, rather than silently mistranscribing
 /// resampled or multi-channel audio.
 class OfflineFileTranscriber implements FileTranscriber {
   OfflineFileTranscriber({
-    this.modelSize = 'tiny',
+    this.modelId = '',
     this.language = 'en',
     String? modelDir,
     String? vadModelPath,
     int numThreads = 2,
     this.nativeLibraryDir,
     ModelStore? modelStore,
-    WhisperWorkerClient Function()? workerClientFactory,
+    OfflineWorkerClient Function()? workerClientFactory,
     this.chunkBytes = 32000,
     this.recordingStartedAt,
   })  : _modelDir = modelDir,
@@ -49,18 +49,25 @@ class OfflineFileTranscriber implements FileTranscriber {
         _numThreads = numThreads,
         _modelStore = modelStore,
         _workerClientFactory =
-            workerClientFactory ?? (() => IsolateWhisperWorkerClient());
+            workerClientFactory ?? (() => IsolateOfflineWorkerClient());
 
-  final String modelSize;
+  /// Catalog id of the offline model to decode with, straight off
+  /// `SettingsService.offlineSttModelId` and reduced through
+  /// [ModelCatalog.offlineModel] the same way
+  /// `OfflineBatchTranscriber.modelId` is.
+  final String modelId;
+
+  /// [modelId] resolved to a catalog entry.
+  ModelSpec get model => ModelCatalog.offlineModel(modelId);
 
   /// Language to transcribe in (`'en'` or `'ko'`). Reduced through
   /// [ModelCatalog.localSttLanguage] before it reaches the worker, same
-  /// defensive contract `WhisperBatchTranscriber.language` uses for the
+  /// defensive contract `OfflineBatchTranscriber.language` uses for the
   /// streaming path.
   final String language;
 
-  /// Where the Whisper model files live. Null means "wherever the
-  /// [ModelStore] installed `ModelCatalog.whisper(modelSize)`", resolved on
+  /// Where the model files live. Null means "wherever the [ModelStore]
+  /// installed `ModelCatalog.offlineModel(modelId)`", resolved on
   /// [transcribe].
   final String? _modelDir;
 
@@ -72,22 +79,22 @@ class OfflineFileTranscriber implements FileTranscriber {
   final int _numThreads;
 
   /// Where to load `libsherpa-onnx-c-api` from. Null on device; set only by
-  /// a desktop integration test, same as [WhisperWorkerConfig.nativeLibraryDir].
+  /// a desktop integration test, same as [OfflineWorkerConfig.nativeLibraryDir].
   final String? nativeLibraryDir;
 
   /// Only consulted when a model directory above is null. Injectable so a
   /// test never touches `path_provider`.
   final ModelStore? _modelStore;
 
-  final WhisperWorkerClient Function() _workerClientFactory;
+  final OfflineWorkerClient Function() _workerClientFactory;
 
-  /// Bytes of PCM16 fed to the worker per [WhisperWorkerClient.feed] call.
+  /// Bytes of PCM16 fed to the worker per [OfflineWorkerClient.feed] call.
   /// Defaults to 32000 bytes: one second of 16 kHz mono PCM16.
   final int chunkBytes;
 
   /// Wall-clock origin for the synthetic `at` each chunk is fed with. The
   /// worker derives every segment's wall-clock timestamps from the `at` of
-  /// the first chunk plus the sample index reached since ([whisper_worker.dart]),
+  /// the first chunk plus the sample index reached since ([offline_worker.dart]),
   /// so a file transcode — which has no live capture clock — needs a
   /// stand-in origin. Defaults to [DateTime.now] at the start of
   /// [transcribe]; a caller that knows when the recording actually started
@@ -119,15 +126,14 @@ class OfflineFileTranscriber implements FileTranscriber {
     // ModelNotInstalledException's message already names the screen that
     // fixes it, so it is left to propagate verbatim rather than wrapped.
     final store = _modelStore ?? ModelStore();
-    modelDir = _modelDir ??
-        await store.requireInstalledDir(ModelCatalog.whisper(modelSize));
+    modelDir = _modelDir ?? await store.requireInstalledDir(model);
     vadModelPath = _vadModelPath ??
         '${await store.requireInstalledDir(ModelCatalog.sileroVad)}/'
             '${ModelCatalog.sileroVadFileName}';
 
-    final config = WhisperWorkerConfig(
+    final config = OfflineWorkerConfig(
+      model: model,
       modelDir: modelDir,
-      modelSize: ModelCatalog.whisperSize(modelSize),
       // The VAD loads the sherpa-onnx library itself, before the recognizer
       // does, so the desktop test's library directory has to reach it too --
       // otherwise `initBindings` inside the worker falls back to the bare
@@ -147,10 +153,11 @@ class OfflineFileTranscriber implements FileTranscriber {
     final errors = <String>[];
 
     final subscription = client.events.listen((event) {
-      if (event is WhisperSegmentEvent) {
+      if (event is OfflineSegmentEvent) {
         segments.add(TranscriptSegment(
           text: event.text,
-          // Whisper has no diarization, same assumption whisper_batch.dart
+          // The offline recognizers have no diarization, same assumption
+          // offline_batch.dart
           // makes for the streaming path.
           speakerId: 0,
           startTime: event.startTime,
@@ -207,7 +214,7 @@ class OfflineFileTranscriber implements FileTranscriber {
         try {
           await client.stop();
         } catch (e) {
-          debugPrint('Failed to stop the Whisper worker after an error: $e');
+          debugPrint('Failed to stop the offline worker after an error: $e');
         }
       }
       await subscription.cancel();
@@ -222,7 +229,7 @@ class OfflineFileTranscriber implements FileTranscriber {
       // partial import beats none -- but it must not pass unremarked, or a
       // truncated recording gets finalized as a complete conversation.
       debugPrint(
-        'Whisper worker reported ${errors.length} error(s) while transcribing '
+        'Offline worker reported ${errors.length} error(s) while transcribing '
         '${wav.path}; the transcript may be incomplete: ${errors.join('; ')}',
       );
     }

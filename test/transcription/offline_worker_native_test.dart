@@ -9,7 +9,8 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libreomi/transcription/isolate_channel.dart';
 import 'package:libreomi/transcription/vad.dart';
-import 'package:libreomi/transcription/whisper_worker.dart';
+import 'package:libreomi/transcription/model_catalog.dart';
+import 'package:libreomi/transcription/offline_worker.dart';
 
 /// The acceptance criterion for LO-42 is "no mid-word cuts on a 2-minute
 /// test", which only a real Silero VAD driving a real Whisper decode can
@@ -151,15 +152,15 @@ void main() {
         reason: 'the acceptance criterion is a two-minute test');
 
     final channel = await IsolateChannel.spawn(
-      whisperWorkerMain,
-      debugName: 'whisper-native-test',
+      offlineWorkerMain,
+      debugName: 'offline-native-test',
     );
     final events = <Object?>[];
     final sub = channel.events.listen(events.add);
 
-    await channel.request(WhisperInitCommand(WhisperWorkerConfig(
+    await channel.request(OfflineInitCommand(OfflineWorkerConfig(
+      model: ModelCatalog.whisperTiny,
       modelDir: whisperDir,
-      modelSize: 'tiny',
       vad: VadConfig(modelPath: vadModel, nativeLibraryDir: nativeDir),
       nativeLibraryDir: nativeDir,
     )));
@@ -173,7 +174,7 @@ void main() {
     while (offset < stream.pcm16.length) {
       final end = (offset + chunkBytes).clamp(0, stream.pcm16.length);
       final chunk = stream.pcm16.sublist(offset, end);
-      channel.notify(WhisperFeedCommand(
+      channel.notify(OfflineFeedCommand(
         TransferableTypedData.fromList(<Uint8List>[chunk]),
         at,
       ));
@@ -187,14 +188,14 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 2));
     }
 
-    await channel.request(const WhisperStopCommand());
+    await channel.request(const OfflineStopCommand());
     await channel.close();
     await sub.cancel();
 
     final errors = events.whereType<IsolateWorkerError>().toList();
     expect(errors, isEmpty, reason: 'unexpected worker errors: $errors');
 
-    final segments = events.whereType<WhisperSegmentEvent>().toList();
+    final segments = events.whereType<OfflineSegmentEvent>().toList();
     // ignore: avoid_print
     print('blocks=${stream.blocks.length} segments=${segments.length} '
         'duration=${stream.durationSeconds.toStringAsFixed(1)}s');

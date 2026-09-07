@@ -1,18 +1,24 @@
-/// The sherpa-onnx offline (Whisper) recognizer, and the only file allowed to
-/// import it for batch decoding (LO-42).
+/// The sherpa-onnx offline recognizers — Whisper and SenseVoice — and the
+/// only file allowed to import the plugin for batch decoding (LO-42, LO-71).
 ///
-/// This is the only Whisper decode path. Everything that touches the native
+/// This is the only offline decode path. Everything that touches the native
 /// recognizer runs in a worker isolate, same as the streaming path. The
 /// layering is:
 ///
-/// * [WhisperRecognizerApi] — the one native call an utterance decode needs,
-///   behind an interface so [WhisperWorkerCore] is testable without a model.
-/// * [WhisperWorkerCore] — feeds PCM16 to a [VadApi], and decodes whatever
+/// * [OfflineRecognizerApi] — the one native call an utterance decode needs,
+///   behind an interface so [OfflineWorkerCore] is testable without a model.
+/// * [OfflineWorkerCore] — feeds PCM16 to a [VadApi], and decodes whatever
 ///   utterance the detector cuts out. Pure Dart, no isolate, no plugin.
-/// * [whisperWorkerMain] — the isolate entry point wiring the core to an
+/// * [offlineWorkerMain] — the isolate entry point wiring the core to an
 ///   [IsolateWorker].
-/// * [WhisperWorkerClient] — the main-isolate handle the transcriber talks
+/// * [OfflineWorkerClient] — the main-isolate handle the transcriber talks
 ///   to.
+///
+/// Which recognizer gets built is a property of the [ModelSpec] the caller
+/// hands in, resolved by [buildOfflineRecognizerConfig]. Everything below
+/// that line — VAD segmentation, timestamps, the isolate protocol — is
+/// identical for every offline model, which is why LO-71 added SenseVoice by
+/// widening one factory rather than by growing a second worker.
 ///
 /// What decided when to decode used to be a fixed 3-second timer (see the
 /// old `services/whisper_service.dart`), which cuts audio mid-word whenever
@@ -28,15 +34,16 @@ import 'dart:typed_data';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
 import 'isolate_channel.dart';
+import 'model_catalog.dart';
 import 'sherpa_worker.dart' show pcm16ToFloat32;
 import 'vad.dart';
 
 /// How to build the recognizer. Sent to the worker as-is, so every field must
 /// be sendable across an isolate boundary.
-class WhisperWorkerConfig {
-  const WhisperWorkerConfig({
+class OfflineWorkerConfig {
+  const OfflineWorkerConfig({
+    required this.model,
     required this.modelDir,
-    required this.modelSize,
     required this.vad,
     this.numThreads = 2,
     this.sampleRate = 16000,
@@ -45,17 +52,20 @@ class WhisperWorkerConfig {
     this.task = '',
   });
 
+  /// Which model to load, and — through [ModelSpec.requiredFiles] — what its
+  /// files are called.
+  ///
+  /// The spec travels rather than a size string or an id because file names
+  /// then have exactly one home, `model_catalog.dart`. Callers must reduce a
+  /// raw settings value through [ModelCatalog.offlineModel] first, so a
+  /// stale preference cannot name a model that is not installable.
+  final ModelSpec model;
+
   /// Directory holding the model files. Supplied by the caller — model
   /// download and layout belong to `model_store.dart` (LO-40), not here.
   final String modelDir;
 
-  /// `'tiny'` or `'base'`. Callers must reduce a raw settings string through
-  /// [ModelCatalog.whisperSize] first: the size is a file name prefix, so a
-  /// value the catalog would not recognize resolves to files that are not on
-  /// disk.
-  final String modelSize;
-
-  /// Detector this worker segments speech with, before any Whisper decode.
+  /// Detector this worker segments speech with, before any decode.
   final VadConfig vad;
 
   final int numThreads;
@@ -69,27 +79,98 @@ class WhisperWorkerConfig {
   /// desktop integration test, which runs outside a Flutter app bundle.
   final String? nativeLibraryDir;
 
-  /// BCP-47-ish language code forwarded to
-  /// `sherpa.OfflineWhisperModelConfig.language` (e.g. `'en'`, `'ko'`).
-  /// The Whisper tiny/base models this catalog installs are the
-  /// multilingual variants, not the `.en`-suffixed English-only ones, so a
-  /// language is meaningful here. The default `''` means Whisper
-  /// auto-detects the language from the audio, which is today's behaviour.
+  /// BCP-47-ish language code forwarded to the recognizer (e.g. `'en'`,
+  /// `'ko'`).
+  ///
+  /// Both offline model families take one, and both read `''` as "detect the
+  /// language from the audio". SenseVoice spells that `'auto'` instead, so
+  /// [buildOfflineRecognizerConfig] passes it through
+  /// [ModelCatalog.senseVoiceLanguage] rather than verbatim — a code
+  /// SenseVoice was not trained on would otherwise decode *into* that
+  /// language rather than fail.
   final String language;
 
   /// Forwarded to `sherpa.OfflineWhisperModelConfig.task`. `''` (the
   /// default) and `'transcribe'` behave the same; `'translate'` would ask
   /// Whisper to translate into English instead, which nothing here does.
+  /// SenseVoice has no such option and ignores this.
   final String task;
 
-  String get encoderPath => '$modelDir/$modelSize-encoder.onnx';
-  String get decoderPath => '$modelDir/$modelSize-decoder.onnx';
-  String get tokensPath => '$modelDir/$modelSize-tokens.txt';
+  /// Absolute paths of every file the recognizer opens, in
+  /// [ModelSpec.requiredFiles] order. Exactly what
+  /// [SherpaOfflineRecognizer.create] checks for before loading anything.
+  List<String> get modelPaths =>
+      [for (final name in model.requiredFiles) '$modelDir/$name'];
+
+  /// The one file in [modelPaths] whose name ends with [suffix].
+  ///
+  /// Throws a [StateError] naming the model when the catalog entry has no
+  /// such file, which is a catalog bug rather than a missing download — the
+  /// catalog test pins the file lists precisely so this cannot reach a user.
+  String modelPathEndingWith(String suffix) {
+    final matches =
+        modelPaths.where((path) => path.endsWith(suffix)).toList();
+    if (matches.length != 1) {
+      throw StateError(
+        'model ${model.id} declares ${matches.length} files ending in '
+        '"$suffix"; exactly one is required',
+      );
+    }
+    return matches.single;
+  }
+}
+
+/// The sherpa-onnx recognizer configuration [config] describes.
+///
+/// Pure: it builds plain Dart config objects and loads nothing, so the
+/// Whisper-vs-SenseVoice mapping is unit-testable without a model on disk or
+/// the native library present.
+sherpa.OfflineRecognizerConfig buildOfflineRecognizerConfig(
+    OfflineWorkerConfig config) {
+  final tokens = config.modelPathEndingWith('tokens.txt');
+  switch (config.model.kind) {
+    case ModelKind.whisper:
+      return sherpa.OfflineRecognizerConfig(
+        model: sherpa.OfflineModelConfig(
+          whisper: sherpa.OfflineWhisperModelConfig(
+            encoder: config.modelPathEndingWith('encoder.onnx'),
+            decoder: config.modelPathEndingWith('decoder.onnx'),
+            language: config.language,
+            task: config.task,
+          ),
+          tokens: tokens,
+          numThreads: config.numThreads,
+          debug: false,
+        ),
+      );
+    case ModelKind.senseVoice:
+      return sherpa.OfflineRecognizerConfig(
+        model: sherpa.OfflineModelConfig(
+          senseVoice: sherpa.OfflineSenseVoiceModelConfig(
+            model: config.modelPathEndingWith('.onnx'),
+            language: ModelCatalog.senseVoiceLanguage(config.language),
+            // Numbers, dates and times come back written out as words
+            // without this ("twenty twenty six"), which reads badly in a
+            // transcript the intelligence layer then summarizes.
+            useInverseTextNormalization: true,
+          ),
+          tokens: tokens,
+          numThreads: config.numThreads,
+          debug: false,
+        ),
+      );
+    case ModelKind.streamingZipformer:
+    case ModelKind.vad:
+      throw ArgumentError(
+        '${config.model.id} is a ${config.model.kind} model and cannot be '
+        'decoded by the offline worker',
+      );
+  }
 }
 
 /// The slice of sherpa-onnx's offline recognizer an utterance decode needs.
-/// Implemented for real by [WhisperOnnxRecognizer] and faked in tests.
-abstract class WhisperRecognizerApi {
+/// Implemented for real by [SherpaOfflineRecognizer] and faked in tests.
+abstract class OfflineRecognizerApi {
   /// Decodes one whole utterance and returns its text.
   String recognize(Float32List samples, int sampleRate);
 
@@ -97,8 +178,8 @@ abstract class WhisperRecognizerApi {
 }
 
 /// Builds a recognizer for [config]. Swapped out in tests.
-typedef WhisperRecognizerFactory = WhisperRecognizerApi Function(
-    WhisperWorkerConfig config);
+typedef OfflineRecognizerFactory = OfflineRecognizerApi Function(
+    OfflineWorkerConfig config);
 
 // ---------------------------------------------------------------------------
 // Worker protocol
@@ -106,16 +187,16 @@ typedef WhisperRecognizerFactory = WhisperRecognizerApi Function(
 
 /// Builds the VAD and the recognizer. Answered once both are loaded, or with
 /// an error if either could not be.
-class WhisperInitCommand {
-  const WhisperInitCommand(this.config);
-  final WhisperWorkerConfig config;
+class OfflineInitCommand {
+  const OfflineInitCommand(this.config);
+  final OfflineWorkerConfig config;
 }
 
 /// One chunk of PCM16 audio. Sent as a notification — the main isolate never
 /// waits for a decode. The bytes travel as [TransferableTypedData] so they
 /// are moved rather than copied.
-class WhisperFeedCommand {
-  const WhisperFeedCommand(this.pcm16, this.at);
+class OfflineFeedCommand {
+  const OfflineFeedCommand(this.pcm16, this.at);
 
   final TransferableTypedData pcm16;
 
@@ -125,18 +206,18 @@ class WhisperFeedCommand {
 
 /// Flushes the detector's tail, emits whatever utterance was still in
 /// progress, and keeps the worker running.
-class WhisperFlushCommand {
-  const WhisperFlushCommand();
+class OfflineFlushCommand {
+  const OfflineFlushCommand();
 }
 
 /// Flushes the tail, emits it, and frees the VAD and the recognizer.
-class WhisperStopCommand {
-  const WhisperStopCommand();
+class OfflineStopCommand {
+  const OfflineStopCommand();
 }
 
 /// One decoded utterance, on its way back to the main isolate.
-class WhisperSegmentEvent {
-  const WhisperSegmentEvent({
+class OfflineSegmentEvent {
+  const OfflineSegmentEvent({
     required this.text,
     required this.startTime,
     required this.endTime,
@@ -164,25 +245,25 @@ class WhisperSegmentEvent {
 ///
 /// Audio is fed to a [VadApi], which cuts it into whole utterances bounded by
 /// silence; each completed utterance is popped off the detector's queue and
-/// decoded as one Whisper call. There is deliberately no timer anywhere in
+/// decoded as one recognizer call. There is deliberately no timer anywhere in
 /// this class: a fixed tick would cut mid-word, a silence boundary does not.
-class WhisperWorkerCore {
-  WhisperWorkerCore({
+class OfflineWorkerCore {
+  OfflineWorkerCore({
     required this.emit,
     VadFactory? vadFactory,
-    WhisperRecognizerFactory? recognizerFactory,
+    OfflineRecognizerFactory? recognizerFactory,
   })  : _vadFactory = vadFactory ?? SileroVad.create,
-        _recognizerFactory = recognizerFactory ?? WhisperOnnxRecognizer.create;
+        _recognizerFactory = recognizerFactory ?? SherpaOfflineRecognizer.create;
 
   /// Where finalized segments go. In the worker this is `IsolateWorker.emit`.
   final void Function(Object? event) emit;
 
   final VadFactory _vadFactory;
-  final WhisperRecognizerFactory _recognizerFactory;
+  final OfflineRecognizerFactory _recognizerFactory;
 
   VadApi? _vad;
-  WhisperRecognizerApi? _recognizer;
-  WhisperWorkerConfig? _config;
+  OfflineRecognizerApi? _recognizer;
+  OfflineWorkerConfig? _config;
 
   /// Anchors [VadTimeline]'s sample-zero to the wall clock of the very first
   /// chunk fed this session. Set once and never touched again: re-anchoring
@@ -194,26 +275,26 @@ class WhisperWorkerCore {
 
   /// Handles one command. Suitable as an [IsolateRequestHandler].
   Object? handle(Object? command) {
-    if (command is WhisperInitCommand) {
+    if (command is OfflineInitCommand) {
       _init(command.config);
       return null;
     }
-    if (command is WhisperFeedCommand) {
+    if (command is OfflineFeedCommand) {
       _feed(command.pcm16.materialize().asUint8List(), command.at);
       return null;
     }
-    if (command is WhisperFlushCommand) {
+    if (command is OfflineFlushCommand) {
       _flush();
       return null;
     }
-    if (command is WhisperStopCommand) {
+    if (command is OfflineStopCommand) {
       _stop();
       return null;
     }
-    throw ArgumentError('unknown whisper worker command: $command');
+    throw ArgumentError('unknown offline worker command: $command');
   }
 
-  void _init(WhisperWorkerConfig config) {
+  void _init(OfflineWorkerConfig config) {
     if (_recognizer != null) return;
     // Two sample rates that have to agree: the detector cuts segments by
     // sample index and [VadTimeline] turns those indices back into seconds
@@ -221,7 +302,7 @@ class WhisperWorkerCore {
     // timestamp rather than fail.
     if (config.sampleRate != config.vad.sampleRate) {
       throw ArgumentError(
-        'whisper worker sample rate ${config.sampleRate} does not match the '
+        'offline worker sample rate ${config.sampleRate} does not match the '
         'VAD sample rate ${config.vad.sampleRate}',
       );
     }
@@ -234,7 +315,7 @@ class WhisperWorkerCore {
     final vad = _vad;
     final config = _config;
     if (vad == null || config == null) {
-      throw StateError('whisper worker fed audio before init');
+      throw StateError('offline worker fed audio before init');
     }
 
     final samples = pcm16ToFloat32(pcm16);
@@ -265,7 +346,7 @@ class WhisperWorkerCore {
       if (text.isEmpty) continue;
 
       final times = timeline.times(segment);
-      emit(WhisperSegmentEvent(
+      emit(OfflineSegmentEvent(
         text: text,
         startTime: times.startTime,
         endTime: times.endTime,
@@ -298,7 +379,7 @@ class WhisperWorkerCore {
   }
 
   /// Frees the VAD and the recognizer without emitting anything. Called when
-  /// the isolate is torn down without a [WhisperStopCommand].
+  /// the isolate is torn down without a [OfflineStopCommand].
   void disposeQuietly() {
     _vad?.dispose();
     _recognizer?.dispose();
@@ -311,10 +392,10 @@ class WhisperWorkerCore {
 // Real recognizer
 // ---------------------------------------------------------------------------
 
-/// [WhisperRecognizerApi] on top of the real sherpa-onnx offline bindings.
+/// [OfflineRecognizerApi] on top of the real sherpa-onnx offline bindings.
 /// Only ever constructed inside the worker isolate.
-class WhisperOnnxRecognizer implements WhisperRecognizerApi {
-  WhisperOnnxRecognizer._(this._recognizer);
+class SherpaOfflineRecognizer implements OfflineRecognizerApi {
+  SherpaOfflineRecognizer._(this._recognizer);
 
   final sherpa.OfflineRecognizer _recognizer;
   bool _disposed = false;
@@ -322,39 +403,27 @@ class WhisperOnnxRecognizer implements WhisperRecognizerApi {
   /// Loads the model in [config]. Throws a [StateError] naming the missing
   /// file when the model is not on disk — downloading it is `model_store`'s
   /// job (LO-40), not the worker's.
-  static WhisperRecognizerApi create(WhisperWorkerConfig config) {
-    for (final path in <String>[
-      config.encoderPath,
-      config.decoderPath,
-      config.tokensPath,
-    ]) {
+  static OfflineRecognizerApi create(OfflineWorkerConfig config) {
+    for (final path in config.modelPaths) {
       if (!File(path).existsSync()) {
         throw StateError(
-          'Whisper model file missing: $path. Install the Whisper model from '
-          'the Models screen before local transcription can start.',
+          '${config.model.displayName} model file missing: $path. Install '
+          'the model from the Models screen before local transcription can '
+          'start.',
         );
       }
     }
 
+    // Built before the bindings are touched: an unsupported model kind is a
+    // programming error, and finding out about it without having loaded a
+    // native library first keeps the failure clean.
+    final recognizerConfig = buildOfflineRecognizerConfig(config);
+
     // Bindings are per-isolate statics, so this runs in the worker.
     sherpa.initBindings(config.nativeLibraryDir);
 
-    final recognizer = sherpa.OfflineRecognizer(
-      sherpa.OfflineRecognizerConfig(
-        model: sherpa.OfflineModelConfig(
-          whisper: sherpa.OfflineWhisperModelConfig(
-            encoder: config.encoderPath,
-            decoder: config.decoderPath,
-            language: config.language,
-            task: config.task,
-          ),
-          tokens: config.tokensPath,
-          numThreads: config.numThreads,
-          debug: false,
-        ),
-      ),
-    );
-    return WhisperOnnxRecognizer._(recognizer);
+    final recognizer = sherpa.OfflineRecognizer(recognizerConfig);
+    return SherpaOfflineRecognizer._(recognizer);
   }
 
   @override
@@ -382,12 +451,12 @@ class WhisperOnnxRecognizer implements WhisperRecognizerApi {
 // ---------------------------------------------------------------------------
 
 /// Worker isolate entry point. Top-level, as [Isolate.spawn] requires.
-Future<void> whisperWorkerMain(IsolateBootstrap bootstrap) {
-  WhisperWorkerCore? core;
+Future<void> offlineWorkerMain(IsolateBootstrap bootstrap) {
+  OfflineWorkerCore? core;
   return IsolateWorker.serve(
     bootstrap,
     (worker) {
-      core = WhisperWorkerCore(emit: worker.emit);
+      core = OfflineWorkerCore(emit: worker.emit);
       return core!.handle;
     },
     onShutdown: () => core?.disposeQuietly(),
@@ -396,12 +465,12 @@ Future<void> whisperWorkerMain(IsolateBootstrap bootstrap) {
 
 /// The main-isolate handle to a running worker. An interface so callers can
 /// be tested without spawning an isolate.
-abstract class WhisperWorkerClient {
+abstract class OfflineWorkerClient {
   /// Starts the worker and loads the VAD and the model. Throws if either
   /// cannot be loaded.
-  Future<void> start(WhisperWorkerConfig config);
+  Future<void> start(OfflineWorkerConfig config);
 
-  /// [WhisperSegmentEvent]s, plus [IsolateWorkerError]s for failures that
+  /// [OfflineSegmentEvent]s, plus [IsolateWorkerError]s for failures that
   /// happened outside a request. Stream errors mean the worker died.
   Stream<Object?> get events;
 
@@ -417,13 +486,13 @@ abstract class WhisperWorkerClient {
   Future<void> stop();
 }
 
-/// [WhisperWorkerClient] backed by a real isolate.
+/// [OfflineWorkerClient] backed by a real isolate.
 ///
 /// [events] is a controller of this object's own rather than the channel's,
 /// so a caller can subscribe before [start] has spawned anything. Forwarding
 /// is synchronous, which keeps a final segment ahead of the answer to the
-/// [WhisperStopCommand] that produced it.
-class IsolateWhisperWorkerClient implements WhisperWorkerClient {
+/// [OfflineStopCommand] that produced it.
+class IsolateOfflineWorkerClient implements OfflineWorkerClient {
   final StreamController<Object?> _events =
       StreamController<Object?>.broadcast(sync: true);
 
@@ -434,10 +503,10 @@ class IsolateWhisperWorkerClient implements WhisperWorkerClient {
   Stream<Object?> get events => _events.stream;
 
   @override
-  Future<void> start(WhisperWorkerConfig config) async {
+  Future<void> start(OfflineWorkerConfig config) async {
     final channel = await IsolateChannel.spawn(
-      whisperWorkerMain,
-      debugName: 'whisper-worker',
+      offlineWorkerMain,
+      debugName: 'offline-worker',
     );
     _channel = channel;
     _channelEvents = channel.events.listen(
@@ -449,7 +518,7 @@ class IsolateWhisperWorkerClient implements WhisperWorkerClient {
       },
     );
     try {
-      await channel.request(WhisperInitCommand(config));
+      await channel.request(OfflineInitCommand(config));
     } catch (_) {
       await _shutdown(channel);
       rethrow;
@@ -467,7 +536,7 @@ class IsolateWhisperWorkerClient implements WhisperWorkerClient {
     // before it matters, so a bound is deliberately left to whoever first
     // measures a need for one.
     _channel?.notify(
-      WhisperFeedCommand(
+      OfflineFeedCommand(
           TransferableTypedData.fromList(<Uint8List>[pcm16]), at),
     );
   }
@@ -477,7 +546,7 @@ class IsolateWhisperWorkerClient implements WhisperWorkerClient {
     final channel = _channel;
     if (channel == null) return;
     try {
-      await channel.request(const WhisperFlushCommand());
+      await channel.request(const OfflineFlushCommand());
     } catch (_) {
       // A worker that already died has nothing left to flush.
     }
@@ -493,7 +562,7 @@ class IsolateWhisperWorkerClient implements WhisperWorkerClient {
       return;
     }
     try {
-      await channel.request(const WhisperStopCommand());
+      await channel.request(const OfflineStopCommand());
     } catch (_) {
       // A worker that already died has nothing left to flush; the shutdown
       // below is still the right cleanup.
