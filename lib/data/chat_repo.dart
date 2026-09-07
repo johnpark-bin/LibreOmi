@@ -1,6 +1,6 @@
 /// Instance repository for the `chat_messages` table (LO-35).
 ///
-/// New persistence: `DatabaseService` never had chat statics, so this is not
+/// New persistence: the pre-LO-35 monolith had no chat statics, so this is not
 /// a straight port, but it follows the same shape as the other repos in this
 /// directory.
 library;

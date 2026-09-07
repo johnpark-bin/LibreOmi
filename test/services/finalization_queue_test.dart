@@ -4,8 +4,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:libreomi/data/db.dart';
 import 'package:libreomi/intelligence/llm_client.dart';
-import 'package:libreomi/services/database_service.dart';
 import 'package:libreomi/services/finalization_queue.dart';
 
 /// A fake [LlmClient] whose `summarize` behavior is controlled per test.
@@ -36,7 +36,7 @@ void main() {
       inMemoryDatabasePath,
       options: OpenDatabaseOptions(singleInstance: false),
     );
-    await DatabaseService.createPendingFinalizationsTable(db);
+    await AppDatabase.createPendingFinalizationsTable(db);
     return db;
   }
 

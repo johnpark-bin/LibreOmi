@@ -6,7 +6,6 @@
 /// upgraded install cannot drift apart.
 library;
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -32,14 +31,6 @@ class AppDatabase {
     final opened = await _open();
     _database = opened;
     return opened;
-  }
-
-  /// Replaces the process-wide database, so a test can point the
-  /// `DatabaseService` facade at an in-memory `sqflite_common_ffi` database
-  /// without reaching `getDatabasesPath()`. Pass null to clear it.
-  @visibleForTesting
-  static void overrideForTests(Database? db) {
-    _database = db;
   }
 
   static Future<Database> _open() async {

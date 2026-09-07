@@ -1,6 +1,6 @@
 /// Instance repository for the `memories` table (LO-35).
 ///
-/// Reproduces `DatabaseService`'s memory statics exactly, against an
+/// Reproduces the pre-LO-35 monolith's memory statics exactly, against an
 /// already-open [Database] instead of the process-wide singleton.
 library;
 

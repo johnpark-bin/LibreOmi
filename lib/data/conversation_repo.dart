@@ -1,9 +1,8 @@
 /// Instance repository for the `conversations` table (LO-35).
 ///
-/// Reproduces `DatabaseService`'s conversation statics exactly, against an
-/// already-open [Database] instead of the process-wide singleton, so the
-/// facade in `services/database_service.dart` can later delegate to this
-/// without changing behaviour.
+/// Reproduces the pre-LO-35 monolith's conversation statics exactly, against
+/// an already-open [Database] instead of the process-wide singleton, so the
+/// move off the old static API did not change behaviour.
 library;
 
 import 'dart:convert';

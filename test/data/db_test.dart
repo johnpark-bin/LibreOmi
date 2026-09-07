@@ -132,6 +132,36 @@ void main() {
       expect(AppDatabase.schemaVersion, 5);
     });
 
+    test('createPendingFinalizationsTable creates the queue table on its own',
+        () async {
+      // `FinalizationQueue` and its tests build the queue table without going
+      // through `createSchema`, so the standalone entry point has to work on an
+      // otherwise empty database — and stay replayable, because an upgrade
+      // interrupted by a crash asks for the v4 step again on the next launch.
+      final db = await databaseFactory.openDatabase(
+        inMemoryDatabasePath,
+        options: OpenDatabaseOptions(singleInstance: false),
+      );
+      addTearDown(db.close);
+
+      await AppDatabase.createPendingFinalizationsTable(db);
+      await AppDatabase.createPendingFinalizationsTable(db);
+
+      expect(await _tableNames(db), contains('pending_finalizations'));
+      expect(
+        (await _columns(db, 'pending_finalizations')).keys,
+        containsAll(<String>[
+          'id',
+          'conversation_id',
+          'transcript',
+          'attempts',
+          'next_attempt_at',
+          'last_error',
+          'created_at',
+        ]),
+      );
+    });
+
     test('a v4 database gains tasks.notification_id', () async {
       final db = await _openV4();
       addTearDown(db.close);
