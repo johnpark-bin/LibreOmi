@@ -6,10 +6,18 @@ import 'package:libreomi/platform/permissions.dart';
 /// returns a scripted outcome map, so tests can assert both "what was asked
 /// for" and "what came back" without touching any plugin channel.
 class FakePermissionGateway implements PermissionGateway {
-  FakePermissionGateway({this.sdkInt, this.scriptedOutcomes = const {}});
+  FakePermissionGateway({
+    this.sdkInt,
+    this.scriptedOutcomes = const {},
+    this.scriptedStatuses = const {},
+  });
 
   final int? sdkInt;
   final Map<AppPermission, PermissionOutcome> scriptedOutcomes;
+
+  /// What [statuses] reports, independently of [scriptedOutcomes], so a test
+  /// can tell "already granted" apart from "granted by this request".
+  final Map<AppPermission, PermissionOutcome> scriptedStatuses;
 
   final List<List<AppPermission>> requestedBatches = <List<AppPermission>>[];
   bool settingsOpened = false;
@@ -25,6 +33,16 @@ class FakePermissionGateway implements PermissionGateway {
     return <AppPermission, PermissionOutcome>{
       for (final p in permissions)
         p: scriptedOutcomes[p] ?? PermissionOutcome.granted,
+    };
+  }
+
+  @override
+  Future<Map<AppPermission, PermissionOutcome>> statuses(
+    List<AppPermission> permissions,
+  ) async {
+    return <AppPermission, PermissionOutcome>{
+      for (final p in permissions)
+        p: scriptedStatuses[p] ?? PermissionOutcome.denied,
     };
   }
 
@@ -177,6 +195,59 @@ void main() {
       final outcome = await permissions.ensureBleScan();
 
       expect(outcome, PermissionOutcome.granted);
+    });
+  });
+
+  group('AppPermissions.currentStatuses', () {
+    test('reports the platform status of each permission asked about',
+        () async {
+      final gateway = FakePermissionGateway(
+        sdkInt: 33,
+        scriptedStatuses: {
+          AppPermission.notification: PermissionOutcome.granted,
+          AppPermission.microphone: PermissionOutcome.permanentlyDenied,
+        },
+      );
+      final permissions = AppPermissions(gateway);
+
+      final statuses = await permissions.currentStatuses(<AppPermission>[
+        AppPermission.notification,
+        AppPermission.microphone,
+        AppPermission.bluetoothScan,
+      ]);
+
+      expect(statuses[AppPermission.notification], PermissionOutcome.granted);
+      expect(
+        statuses[AppPermission.microphone],
+        PermissionOutcome.permanentlyDenied,
+      );
+      // Nothing scripted for it: the fake reports denied, and an entry the
+      // gateway omits entirely counts as denied too.
+      expect(statuses[AppPermission.bluetoothScan], PermissionOutcome.denied);
+    });
+
+    test('requests nothing', () async {
+      final gateway = FakePermissionGateway(sdkInt: 33);
+      final permissions = AppPermissions(gateway);
+
+      await permissions.currentStatuses(<AppPermission>[
+        AppPermission.microphone,
+      ]);
+
+      expect(gateway.requestedBatches, isEmpty);
+    });
+
+    test('off Android every permission reads as granted', () async {
+      final gateway = FakePermissionGateway();
+      final permissions = AppPermissions(gateway);
+
+      final statuses = await permissions.currentStatuses(<AppPermission>[
+        AppPermission.microphone,
+        AppPermission.notification,
+      ]);
+
+      expect(statuses.values, everyElement(PermissionOutcome.granted));
+      expect(gateway.requestedBatches, isEmpty);
     });
   });
 

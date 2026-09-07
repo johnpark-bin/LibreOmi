@@ -21,6 +21,7 @@ import '../platform/battery_optimization_gateway.dart';
 import '../platform/exact_alarm.dart';
 import '../platform/exact_alarm_gateway.dart';
 import 'battery_guidance_page.dart';
+import 'permissions_rationale_page.dart';
 import 'device_settings_page.dart';
 import 'models_page.dart';
 import 'stats_page.dart';
@@ -1014,6 +1015,48 @@ class _SettingsPageState extends State<SettingsPage> {
                   activeColor: const Color(0xFF0984e3),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 32),
+
+          // Privacy section (LO-64)
+          _buildSectionHeader('Privacy'),
+          Card(
+            child: ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6C5CE7).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.privacy_tip_outlined,
+                  color: Color(0xFF6C5CE7),
+                ),
+              ),
+              title: const Text(
+                'Permissions & privacy',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                'What is collected, where it goes, and each permission\'s '
+                'status',
+                style: TextStyle(
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  fontSize: 13,
+                ),
+              ),
+              trailing: Icon(
+                Icons.arrow_forward_ios,
+                size: 16,
+                color: theme.colorScheme.onSurface.withOpacity(0.3),
+              ),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const PermissionsRationalePage(),
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 32),

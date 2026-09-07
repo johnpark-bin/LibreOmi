@@ -11,6 +11,7 @@ import '../controllers/device_controller.dart';
 import '../controllers/session_controller.dart';
 import '../services/settings_service.dart';
 import 'battery_guidance_page.dart';
+import 'permissions_rationale_page.dart';
 import 'settings_page.dart';
 import 'conversations_page.dart';
 import 'memories_page.dart';
@@ -122,6 +123,19 @@ class _DeviceTabState extends State<DeviceTab> {
             title: const Text('LibreOmi'),
             backgroundColor: Colors.transparent,
             actions: [
+              // The way back into the first-run disclosure (LO-64), which is
+              // otherwise shown only once. In the app bar rather than in one
+              // of the two bodies below, so it stays reachable while a device
+              // is connected or a capture is running.
+              IconButton(
+                icon: const Icon(Icons.privacy_tip_outlined),
+                tooltip: 'Permissions & privacy',
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const PermissionsRationalePage(),
+                  ),
+                ),
+              ),
               if (deviceController.batteryLevel != null)
                 Container(
                   margin: const EdgeInsets.only(right: 16),

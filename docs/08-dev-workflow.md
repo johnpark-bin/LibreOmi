@@ -169,4 +169,64 @@ and `LIBREOMI_KEY_PASSWORD`.
    Publish it.
 7. Play internal testing takes `app-release.aab` and is out of scope for this repository's
    automation; upload it by hand via the Play Console
-   (<https://support.google.com/googleplay/android-developer/answer/9859152>).
+   (<https://support.google.com/googleplay/android-developer/answer/9859152>). Before that upload,
+   re-read §8 and paste the current in-app disclosure text into the Play Console's sensitive
+   permission declarations — Play compares what the form claims against what the app shows.
+
+## 8. Play sensitive permissions and prominent disclosure (LO-64)
+
+Play requires that an app which uses microphone, location or all-the-time background access
+tells the user **inside the app, before the data is used**, what is collected and why, in a
+screen the user cannot miss. LibreOmi does that with `lib/pages/permissions_rationale_page.dart`,
+shown once on first launch (`SettingsService.rationaleShown`) and reachable afterwards from the
+Live tab. The screen only *displays* permission state; each permission is still requested at the
+point of use, which is what `docs/04-android-platform-notes.md` §3 requires.
+
+**Keep this section and that page in sync.** The page is the disclosure; the text below is the
+Play Console paraphrase of it. If one changes, change the other in the same PR.
+
+### 8.1 Declaration draft (English, paste into the Play Console)
+
+> LibreOmi records audio from a connected Omi wearable or from the phone's microphone, and only
+> while the user has started a capture. The audio is transcribed either entirely on the device or,
+> if the user enters their own Deepgram API key, by sending it to Deepgram. Conversation text is
+> sent to an LLM endpoint only when the user supplies a key for one. LibreOmi has no server and no
+> account: with no keys entered, no capture is sent to any service. Transcripts, conversations,
+> memories, tasks and chat history are stored in the app's private SQLite database, and recordings
+> synced from the wearable's SD card are stored as audio files in the app's private support
+> directory. API keys are stored encrypted under a key held in the Android keystore. Android's
+> automatic backup is left on (`allowBackup` default), so the database and the synced recordings
+> are part of the user's Google account backup; the API keys and the downloaded speech models are
+> excluded from it (`res/xml/backup_rules.xml`, `res/xml/data_extraction_rules.xml`). The user can
+> export the four content tables as JSON or remove everything by clearing the app's data.
+>
+> Permissions and their purpose:
+>
+> - `BLUETOOTH_SCAN` / `BLUETOOTH_CONNECT` — discover and connect to the user's Omi wearable.
+>   The scan is filtered to Omi devices and is never used to derive location; the manifest
+>   carries `android:usesPermissionFlags="neverForLocation"`.
+> - `ACCESS_FINE_LOCATION` (Android 11 and below only, `maxSdkVersion="30"`) — required by those
+>   OS versions for any BLE scan. Location is never read.
+> - `RECORD_AUDIO` — capture from the phone microphone when the user picks it as the source.
+> - `POST_NOTIFICATIONS` — the ongoing capture notification and conversation-saved alerts.
+> - `FOREGROUND_SERVICE` (`microphone` / `connectedDevice` types) — keep capture and transcription
+>   running while the screen is off. No data is collected that is not already covered above.
+> - `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` — optional; OEM battery managers otherwise stop the
+>   capture service.
+> - `SCHEDULE_EXACT_ALARM` — optional, and only used when the user turns on exact task reminders.
+>   A reminder is delivered inexactly when the permission is absent; no additional data is
+>   collected either way.
+
+### 8.2 Before submitting
+
+- Verify each bullet against `android/app/src/main/AndroidManifest.xml`; the manifest is the
+  authority, this list is a copy.
+- Every permission in the manifest is listed above and has a row on the rationale screen. When a
+  future issue adds one, add it to both in the same PR — a declaration that is narrower than the
+  manifest is what Play rejects.
+- Fill the Data safety form from the same facts: audio and "other user-generated content" are
+  collected, are not shared with third parties except the transcription/LLM endpoint the user
+  configures themselves, and are not used for advertising or analytics.
+- The backup claim is only as true as the two XML rule files. If a future issue adds a data
+  directory (the way LO-50 added `<app support>/sdcard/`), decide whether it is excluded and
+  update this section, the rationale screen and `docs/04-android-platform-notes.md` §9 together.

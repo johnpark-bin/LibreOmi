@@ -48,6 +48,17 @@ class PluginPermissionGateway implements PermissionGateway {
   }
 
   @override
+  Future<Map<AppPermission, PermissionOutcome>> statuses(
+    List<AppPermission> permissions,
+  ) async {
+    final entries = <AppPermission, PermissionOutcome>{};
+    for (final permission in permissions) {
+      entries[permission] = _toOutcome(await _toPlugin(permission).status);
+    }
+    return entries;
+  }
+
+  @override
   Future<bool> openSettings() => ph.openAppSettings();
 
   ph.Permission _toPlugin(AppPermission permission) {
