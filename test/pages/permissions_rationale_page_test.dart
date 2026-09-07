@@ -4,7 +4,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:libreomi/pages/permissions_rationale_page.dart';
 import 'package:libreomi/platform/battery_optimization.dart';
-import 'package:libreomi/platform/permission_gateway.dart';
 import 'package:libreomi/platform/permissions.dart';
 import 'package:libreomi/services/secret_store.dart';
 import 'package:libreomi/services/settings_service.dart';
@@ -18,10 +17,10 @@ class _FakePermissionGateway implements PermissionGateway {
     this.sdkInt,
     Map<AppPermission, PermissionOutcome>? statuses,
     this.failing = false,
-  }) : statuses = statuses ?? <AppPermission, PermissionOutcome>{};
+  }) : scriptedStatuses = statuses ?? <AppPermission, PermissionOutcome>{};
 
   final int? sdkInt;
-  final Map<AppPermission, PermissionOutcome> statuses;
+  final Map<AppPermission, PermissionOutcome> scriptedStatuses;
   final bool failing;
 
   final List<List<AppPermission>> requestCalls = <List<AppPermission>>[];
@@ -41,7 +40,7 @@ class _FakePermissionGateway implements PermissionGateway {
   ) async {
     requestCalls.add(permissions);
     return <AppPermission, PermissionOutcome>{
-      for (final p in permissions) p: statuses[p] ?? PermissionOutcome.denied,
+      for (final p in permissions) p: scriptedStatuses[p] ?? PermissionOutcome.denied,
     };
   }
 
@@ -54,7 +53,7 @@ class _FakePermissionGateway implements PermissionGateway {
     }
     return <AppPermission, PermissionOutcome>{
       for (final p in permissions)
-        if (statuses.containsKey(p)) p: statuses[p]!,
+        if (scriptedStatuses.containsKey(p)) p: scriptedStatuses[p]!,
     };
   }
 
@@ -96,9 +95,25 @@ void main() {
     bool isFirstRun = false,
     VoidCallback? onContinue,
   }) async {
+    // The rationale list is longer than the default 800x600 test surface's
+    // cache extent (five permission cards plus four prose sections), and
+    // `ListView`'s sliver only builds elements within the viewport plus a
+    // small cache — anything further down is never mounted at all. A taller
+    // surface keeps every row reachable without a scroll in every test
+    // below (same fix as `settings_page_test.dart`).
+    tester.view.physicalSize = const Size(1080, 3400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     await tester.pumpWidget(
       MaterialApp(
         home: PermissionsRationalePage(
+          // A fresh key per pump forces a new State (and thus a fresh
+          // `initState` load) even when a test pumps the page more than
+          // once with different scripted gateways — Flutter would otherwise
+          // reuse the existing State and never re-run the load.
+          key: UniqueKey(),
           isFirstRun: isFirstRun,
           permissionsOverride: AppPermissions(permissionGateway),
           batteryOptimizationOverride: BatteryOptimization(
