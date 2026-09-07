@@ -412,4 +412,13 @@ class SettingsService {
       prefs.getBool('exact_task_reminders') ?? false;
   static set exactTaskReminders(bool value) =>
       prefs.setBool('exact_task_reminders', value);
+
+  /// Whether the permissions & privacy screen has already been shown once
+  /// (LO-64). `main.dart` routes first launch to that screen while this is
+  /// false; the screen sets it on Continue, and stays reachable from the
+  /// Live tab's app bar afterwards.
+  static bool get rationaleShown =>
+      prefs.getBool('permissions_rationale_shown') ?? false;
+  static set rationaleShown(bool value) =>
+      prefs.setBool('permissions_rationale_shown', value);
 }

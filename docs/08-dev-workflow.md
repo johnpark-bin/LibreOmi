@@ -169,4 +169,53 @@ and `LIBREOMI_KEY_PASSWORD`.
    Publish it.
 7. Play internal testing takes `app-release.aab` and is out of scope for this repository's
    automation; upload it by hand via the Play Console
-   (<https://support.google.com/googleplay/android-developer/answer/9859152>).
+   (<https://support.google.com/googleplay/android-developer/answer/9859152>). Before that upload,
+   re-read §8 and paste the current in-app disclosure text into the Play Console's sensitive
+   permission declarations — Play compares what the form claims against what the app shows.
+
+## 8. Play sensitive permissions and prominent disclosure (LO-64)
+
+Play requires that an app which uses microphone, location or all-the-time background access
+tells the user **inside the app, before the data is used**, what is collected and why, in a
+screen the user cannot miss. LibreOmi does that with `lib/pages/permissions_rationale_page.dart`,
+shown once on first launch (`SettingsService.rationaleShown`) and reachable afterwards from the
+Live tab. The screen only *displays* permission state; each permission is still requested at the
+point of use, which is what `docs/04-android-platform-notes.md` §3 requires.
+
+**Keep this section and that page in sync.** The page is the disclosure; the text below is the
+Play Console paraphrase of it. If one changes, change the other in the same PR.
+
+### 8.1 Declaration draft (English, paste into the Play Console)
+
+> LibreOmi records audio from a connected Omi wearable or from the phone's microphone, and only
+> while the user has started a capture. The audio is transcribed either entirely on the device or,
+> if the user enters their own Deepgram API key, by sending it to Deepgram. Conversation text is
+> sent to an LLM endpoint only when the user supplies a key for one. LibreOmi has no server and no
+> account: with no keys entered, no data leaves the device. Transcripts, conversations, memories
+> and tasks are stored in the app's private SQLite database; API keys are stored in the Android
+> keystore. The user can export everything as JSON or remove it by clearing the app's data.
+>
+> Permissions and their purpose:
+>
+> - `BLUETOOTH_SCAN` / `BLUETOOTH_CONNECT` — discover and connect to the user's Omi wearable.
+>   The scan is filtered to Omi devices and is never used to derive location; the manifest
+>   carries `android:usesPermissionFlags="neverForLocation"`.
+> - `ACCESS_FINE_LOCATION` (Android 11 and below only, `maxSdkVersion="30"`) — required by those
+>   OS versions for any BLE scan. Location is never read.
+> - `RECORD_AUDIO` — capture from the phone microphone when the user picks it as the source.
+> - `POST_NOTIFICATIONS` — the ongoing capture notification and conversation-saved alerts.
+> - `FOREGROUND_SERVICE` (`microphone` / `connectedDevice` types) — keep capture and transcription
+>   running while the screen is off. No data is collected that is not already covered above.
+> - `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` — optional; OEM battery managers otherwise stop the
+>   capture service.
+
+### 8.2 Before submitting
+
+- Verify each bullet against `android/app/src/main/AndroidManifest.xml`; the manifest is the
+  authority, this list is a copy.
+- The exact-alarm opt-in (`SCHEDULE_EXACT_ALARM`, in flight in a separate branch) is deliberately
+  **not** listed here or on the rationale screen: it is not in the manifest yet. Add a row to both
+  when that branch merges.
+- Fill the Data safety form from the same facts: audio and "other user-generated content" are
+  collected, are not shared with third parties except the transcription/LLM endpoint the user
+  configures themselves, and are not used for advertising or analytics.
