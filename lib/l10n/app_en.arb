@@ -1,0 +1,38 @@
+{
+  "@@locale": "en",
+
+  "overlay_listening_title": "Listening...",
+  "@overlay_listening_title": {
+    "description": "Full-screen overlay shown while a hold-to-ask question is being recorded"
+  },
+  "overlay_listening_hint": "Click again to finish",
+  "@overlay_listening_hint": {
+    "description": "Instruction under the listening overlay: press the wearable button again to stop"
+  },
+
+  "settings_title": "Settings",
+  "@settings_title": {
+    "description": "App bar title of the settings page"
+  },
+
+  "settings_language_header": "Language",
+  "@settings_language_header": {
+    "description": "Section header for the app display-language picker"
+  },
+  "settings_language_system": "Follow system",
+  "@settings_language_system": {
+    "description": "Language option that follows the phone's language setting"
+  },
+  "settings_language_systemSubtitle": "Use the phone's language when it is supported",
+  "@settings_language_systemSubtitle": {
+    "description": "Subtitle of the follow-system language option"
+  },
+  "settings_language_english": "English",
+  "@settings_language_english": {
+    "description": "Language option: English. Written in English in every locale."
+  },
+  "settings_language_korean": "한국어",
+  "@settings_language_korean": {
+    "description": "Language option: Korean. Written in Korean in every locale."
+  }
+}

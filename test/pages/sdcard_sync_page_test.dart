@@ -24,6 +24,8 @@ import 'package:libreomi/services/sdcard_sync_service.dart';
 
 import 'controller_harness.dart';
 
+import '../support/localized_app.dart';
+
 /// [OmiStorage] double that is never actually called: [_StuckSyncService]
 /// overrides every method that would touch it.
 class _UnusedOmiStorage implements OmiStorage {
@@ -157,7 +159,7 @@ void main() {
       controllers.wrap(
         ChangeNotifierProvider<SdCardController>.value(
           value: controller,
-          child: const MaterialApp(home: SdCardSyncPage()),
+          child: const LocalizedApp(home: SdCardSyncPage()),
         ),
       ),
     );

@@ -9,6 +9,8 @@ import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../data/export_import.dart';
+import '../l10n/l10n.dart';
+import '../l10n/locale_controller.dart';
 import '../controllers/device_controller.dart';
 import '../controllers/library_controller.dart';
 import '../device/omi_device.dart';
@@ -248,10 +250,11 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+    final l10n = L10n.of(context);
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Settings'),
+        title: Text(l10n.settings_title),
       ),
       body: ListView(
         padding: const EdgeInsets.all(20),
@@ -1019,6 +1022,46 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           const SizedBox(height: 32),
 
+          // Display language (LO-62). Default is "follow system"; the manual
+          // choice takes effect on the next frame, without a restart.
+          _buildSectionHeader(l10n.settings_language_header),
+          Card(
+            child: Consumer<LocaleController>(
+              builder: (context, locale, _) {
+                final selected = locale.appLocale?.languageCode ?? _systemLanguage;
+                return Column(
+                  children: [
+                    _buildRadioTile(
+                      title: l10n.settings_language_system,
+                      subtitle: l10n.settings_language_systemSubtitle,
+                      value: _systemLanguage,
+                      groupValue: selected,
+                      icon: Icons.smartphone,
+                      onChanged: (_) => locale.appLocale = null,
+                    ),
+                    _buildRadioTile(
+                      title: l10n.settings_language_english,
+                      subtitle: 'English',
+                      value: 'en',
+                      groupValue: selected,
+                      icon: Icons.translate,
+                      onChanged: (_) => locale.appLocale = const Locale('en'),
+                    ),
+                    _buildRadioTile(
+                      title: l10n.settings_language_korean,
+                      subtitle: '한국어',
+                      value: 'ko',
+                      groupValue: selected,
+                      icon: Icons.translate,
+                      onChanged: (_) => locale.appLocale = const Locale('ko'),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 32),
+
           // Privacy section (LO-64)
           _buildSectionHeader('Privacy'),
           Card(
@@ -1112,6 +1155,10 @@ class _SettingsPageState extends State<SettingsPage> {
       null => 'Not applicable on this platform',
     };
   }
+
+  /// Sentinel for the radio group: not a language tag, so it can never
+  /// collide with `en` or `ko`.
+  static const String _systemLanguage = 'system';
 
   Widget _buildSectionHeader(String title) {
     return Padding(

@@ -11,6 +11,8 @@ import 'package:libreomi/pages/models_page.dart';
 import 'package:libreomi/transcription/model_catalog.dart';
 import 'package:libreomi/transcription/model_store.dart';
 
+import '../support/localized_app.dart';
+
 /// Serves a fixed body in chunks. Trimmed copy of the fake in
 /// `test/transcription/model_store_test.dart`, kept local so this test file
 /// does not reach into another test file's internals.
@@ -127,7 +129,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(MaterialApp(home: ModelsPage(store: store)));
+    await tester.pumpWidget(LocalizedApp(home: ModelsPage(store: store)));
     await tester.pumpAndSettle();
   }
 

@@ -1,0 +1,9 @@
+# gen-l10n configuration (LO-62). `app_en.arb` is the template: every key and
+# every placeholder is declared there, and `app_ko.arb` only translates them.
+arb-dir: lib/l10n
+template-arb-file: app_en.arb
+output-localization-file: app_localizations.dart
+output-class: AppLocalizations
+# The getters are non-nullable so a page can call `l10n.someKey` without a
+# `!`; a missing Korean key falls back to the English template at build time.
+nullable-getter: false

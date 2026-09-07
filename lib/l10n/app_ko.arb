@@ -1,0 +1,14 @@
+{
+  "@@locale": "ko",
+
+  "overlay_listening_title": "듣는 중...",
+  "overlay_listening_hint": "다시 누르면 종료됩니다",
+
+  "settings_title": "설정",
+
+  "settings_language_header": "언어",
+  "settings_language_system": "시스템 설정 따르기",
+  "settings_language_systemSubtitle": "지원되는 언어면 휴대폰 언어를 사용합니다",
+  "settings_language_english": "English",
+  "settings_language_korean": "한국어"
+}

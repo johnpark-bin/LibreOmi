@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'services/settings_service.dart';
 import 'services/notification_service.dart'; // Added
@@ -11,6 +12,8 @@ import 'controllers/library_controller.dart';
 import 'controllers/sdcard_controller.dart';
 import 'controllers/session_controller.dart';
 import 'device/device_manager.dart';
+import 'l10n/l10n.dart';
+import 'l10n/locale_controller.dart';
 import 'pages/home_page.dart';
 import 'pages/permissions_rationale_page.dart';
 import 'transcription/model_store.dart';
@@ -84,6 +87,7 @@ class LibreOmiApp extends StatefulWidget {
 
 class _LibreOmiAppState extends State<LibreOmiApp> {
   late bool _showRationale;
+  late final LocaleController _locale;
   late final DeviceManager _deviceManager;
   late final LibraryController _library;
   late final ChatController _chat;
@@ -96,6 +100,7 @@ class _LibreOmiAppState extends State<LibreOmiApp> {
     super.initState();
 
     _showRationale = widget.showRationale;
+    _locale = LocaleController();
     _deviceManager = createDeviceManager();
     _library = LibraryController();
     _chat = ChatController(library: _library);
@@ -180,6 +185,7 @@ class _LibreOmiAppState extends State<LibreOmiApp> {
     _device.dispose();
     _chat.dispose();
     _library.dispose();
+    _locale.dispose();
     super.dispose();
   }
 
@@ -192,125 +198,152 @@ class _LibreOmiAppState extends State<LibreOmiApp> {
         ChangeNotifierProvider<SessionController>.value(value: _session),
         ChangeNotifierProvider<DeviceController>.value(value: _device),
         ChangeNotifierProvider<SdCardController>.value(value: _sdCard),
+        ChangeNotifierProvider<LocaleController>.value(value: _locale),
       ],
-      child: MaterialApp(
-        title: 'LibreOmi',
-        debugShowCheckedModeBanner: false,
-        themeMode: ThemeMode.dark,
-        darkTheme: ThemeData.dark().copyWith(
-          scaffoldBackgroundColor: const Color(
-            0xFF0A0A0A,
-          ), // Deep premium black
-          primaryColor: const Color(0xFF6C5CE7), // Vivid violet
-          colorScheme: const ColorScheme.dark(
-            primary: Color(0xFF6C5CE7),
-            secondary: Color(0xFFA29BFE), // Soft purple
-            surface: Color(0xFF1E1E1E), // Slightly lighter card bg
-            background: Color(0xFF0A0A0A),
-            onSurface: Colors.white,
+      child: Consumer<LocaleController>(
+        builder: (context, locale, _) => _buildApp(locale),
+      ),
+    );
+  }
+
+  Widget _buildApp(LocaleController locale) {
+    return MaterialApp(
+      // Not localised: the product name is the same in every language.
+      title: 'LibreOmi',
+      debugShowCheckedModeBanner: false,
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: AppLocalizations.supportedLocales,
+      // `null` means follow the system language, which is what
+      // `LocaleController` stores for the default setting.
+      locale: locale.appLocale,
+      // Flutter hands this the `locale` above when it is set and the device
+      // locale otherwise, so it is the one place that sees the locale the
+      // UI actually renders in. Recording it lets `L10n.current` answer for
+      // the notification and controller strings that have no context.
+      localeResolutionCallback: (candidate, supported) {
+        final resolved = L10n.resolve(candidate);
+        L10n.locale = resolved;
+        return resolved;
+      },
+      themeMode: ThemeMode.dark,
+      darkTheme: ThemeData.dark().copyWith(
+        scaffoldBackgroundColor: const Color(
+          0xFF0A0A0A,
+        ), // Deep premium black
+        primaryColor: const Color(0xFF6C5CE7), // Vivid violet
+        colorScheme: const ColorScheme.dark(
+          primary: Color(0xFF6C5CE7),
+          secondary: Color(0xFFA29BFE), // Soft purple
+          surface: Color(0xFF1E1E1E), // Slightly lighter card bg
+          background: Color(0xFF0A0A0A),
+          onSurface: Colors.white,
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          centerTitle: true,
+          titleTextStyle: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.5,
+            color: Colors.white,
           ),
-          appBarTheme: const AppBarTheme(
-            backgroundColor: Colors.transparent,
+        ),
+        cardTheme: CardThemeData(
+          color: const Color(0xFF1E1E1E),
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: Colors.white.withOpacity(0.05)),
+          ),
+          margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF6C5CE7),
+            foregroundColor: Colors.white,
             elevation: 0,
-            centerTitle: true,
-            titleTextStyle: TextStyle(
-              fontSize: 20,
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            textStyle: const TextStyle(
+              fontSize: 16,
               fontWeight: FontWeight.w600,
               letterSpacing: -0.5,
-              color: Colors.white,
             ),
           ),
-          cardTheme: CardThemeData(
-            color: const Color(0xFF1E1E1E),
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: Colors.white.withOpacity(0.05)),
-            ),
-            margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
-          ),
-          elevatedButtonTheme: ElevatedButtonThemeData(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF6C5CE7),
-              foregroundColor: Colors.white,
-              elevation: 0,
-              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              textStyle: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.5,
-              ),
-            ),
-          ),
-          textButtonTheme: TextButtonThemeData(
-            style: TextButton.styleFrom(
-              foregroundColor: const Color(0xFFA29BFE),
-              textStyle: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-          inputDecorationTheme: InputDecorationTheme(
-            filled: true,
-            fillColor: const Color(0xFF1E1E1E),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.white.withOpacity(0.05)),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFF6C5CE7)),
-            ),
-            contentPadding: const EdgeInsets.all(16),
-            hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
-          ),
-          snackBarTheme: SnackBarThemeData(
-            backgroundColor: const Color(0xFF2D2D2D),
-            contentTextStyle: const TextStyle(color: Colors.white),
-            actionTextColor: const Color(0xFFA29BFE),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          dropdownMenuTheme: DropdownMenuThemeData(
-            menuStyle: MenuStyle(
-              backgroundColor: WidgetStatePropertyAll(const Color(0xFF2D2D2D)),
-              shape: WidgetStatePropertyAll(
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-          ),
-          popupMenuTheme: const PopupMenuThemeData(color: Color(0xFF2D2D2D)),
-          useMaterial3: true,
         ),
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-          useMaterial3: true,
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xFFA29BFE),
+            textStyle: const TextStyle(fontWeight: FontWeight.w600),
+          ),
         ),
-        home: _showRationale
-            ? PermissionsRationalePage(
-                isFirstRun: true,
-                onContinue: () {
-                  setState(() => _showRationale = false);
-                  // Deferred to here rather than to the first frame so the
-                  // notification dialog lands after the disclosure the user
-                  // just read.
-                  unawaited(requestLaunchPermissions());
-                },
-              )
-            : const HomePage(),
-        builder: (context, child) {
-          return Stack(
-            children: [if (child != null) child, const ListeningOverlay()],
-          );
-        },
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: const Color(0xFF1E1E1E),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.white.withOpacity(0.05)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFF6C5CE7)),
+          ),
+          contentPadding: const EdgeInsets.all(16),
+          hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
+        ),
+        snackBarTheme: SnackBarThemeData(
+          backgroundColor: const Color(0xFF2D2D2D),
+          contentTextStyle: const TextStyle(color: Colors.white),
+          actionTextColor: const Color(0xFFA29BFE),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        dropdownMenuTheme: DropdownMenuThemeData(
+          menuStyle: MenuStyle(
+            backgroundColor: WidgetStatePropertyAll(const Color(0xFF2D2D2D)),
+            shape: WidgetStatePropertyAll(
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ),
+        popupMenuTheme: const PopupMenuThemeData(color: Color(0xFF2D2D2D)),
+        useMaterial3: true,
       ),
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        useMaterial3: true,
+      ),
+      home: _showRationale
+          ? PermissionsRationalePage(
+              isFirstRun: true,
+              onContinue: () {
+                setState(() => _showRationale = false);
+                // Deferred to here rather than to the first frame so the
+                // notification dialog lands after the disclosure the user
+                // just read.
+                unawaited(requestLaunchPermissions());
+              },
+            )
+          : const HomePage(),
+      builder: (context, child) {
+        return Stack(
+          children: [if (child != null) child, const ListeningOverlay()],
+        );
+      },
     );
   }
 }
@@ -346,9 +379,9 @@ class ListeningOverlay extends StatelessWidget {
                   child: const Icon(Icons.mic, color: Colors.white, size: 48),
                 ),
                 const SizedBox(height: 24),
-                const Text(
-                  'Listening...',
-                  style: TextStyle(
+                Text(
+                  L10n.of(context).overlay_listening_title,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
@@ -357,7 +390,7 @@ class ListeningOverlay extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Click again to finish',
+                  L10n.of(context).overlay_listening_hint,
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.7),
                     fontSize: 16,

@@ -135,6 +135,21 @@ class SettingsService {
   static String get language => prefs.getString('language') ?? 'en';
   static set language(String value) => prefs.setString('language', value);
 
+  /// Language tag of the UI language the user picked manually, or `null` to
+  /// follow the system language (the default, LO-62).
+  ///
+  /// Deliberately separate from [language], which is the Deepgram
+  /// transcription language and answers a different question: a user can
+  /// read a Korean UI while dictating English.
+  static String? get appLocaleTag => prefs.getString('app_locale');
+  static set appLocaleTag(String? value) {
+    if (value == null) {
+      prefs.remove('app_locale');
+    } else {
+      prefs.setString('app_locale', value);
+    }
+  }
+
   static String get openaiModel => prefs.getString('openai_model') ?? 'gpt-4.1-mini';
   static set openaiModel(String value) => prefs.setString('openai_model', value);
 

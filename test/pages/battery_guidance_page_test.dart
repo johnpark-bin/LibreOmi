@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:libreomi/pages/battery_guidance_page.dart';
 import 'package:libreomi/platform/battery_optimization.dart';
 
+import '../support/localized_app.dart';
+
 /// Scripts `Build.MANUFACTURER` so the page's real async resolve path runs
 /// without a plugin channel. [failing] makes the lookup throw, which is the
 /// case that used to leave the page spinning forever.
@@ -46,7 +48,7 @@ void main() {
     bool failing = false,
   }) async {
     await tester.pumpWidget(
-      MaterialApp(
+      LocalizedApp(
         home: BatteryGuidancePage(
           batteryOptimizationOverride: BatteryOptimization(
             _FakeGateway(
@@ -115,7 +117,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      MaterialApp(
+      LocalizedApp(
         home: BatteryGuidancePage(
           batteryOptimizationOverride: BatteryOptimization(
             _FakeGateway(manufacturerName: 'samsung'),
