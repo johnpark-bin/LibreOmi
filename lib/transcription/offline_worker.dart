@@ -127,7 +127,6 @@ class OfflineWorkerConfig {
 /// the native library present.
 sherpa.OfflineRecognizerConfig buildOfflineRecognizerConfig(
     OfflineWorkerConfig config) {
-  final tokens = config.modelPathEndingWith('tokens.txt');
   switch (config.model.kind) {
     case ModelKind.whisper:
       return sherpa.OfflineRecognizerConfig(
@@ -138,7 +137,7 @@ sherpa.OfflineRecognizerConfig buildOfflineRecognizerConfig(
             language: config.language,
             task: config.task,
           ),
-          tokens: tokens,
+          tokens: config.modelPathEndingWith('tokens.txt'),
           numThreads: config.numThreads,
           debug: false,
         ),
@@ -154,7 +153,7 @@ sherpa.OfflineRecognizerConfig buildOfflineRecognizerConfig(
             // transcript the intelligence layer then summarizes.
             useInverseTextNormalization: true,
           ),
-          tokens: tokens,
+          tokens: config.modelPathEndingWith('tokens.txt'),
           numThreads: config.numThreads,
           debug: false,
         ),

@@ -100,7 +100,7 @@ void main() {
     late _FakeRecognizer fakeRecognizer;
     late OfflineWorkerCore core;
 
-    void init({int sampleRate = 16000}) {
+    void init({int sampleRate = 16000, ModelSpec? model}) {
       core = OfflineWorkerCore(
         emit: events.add,
         vadFactory: (config) {
@@ -113,7 +113,7 @@ void main() {
         },
       );
       core.handle(OfflineInitCommand(OfflineWorkerConfig(
-        model: ModelCatalog.whisperTiny,
+        model: model ?? ModelCatalog.whisperTiny,
         modelDir: '/nonexistent',
         vad: const VadConfig(modelPath: '/nonexistent'),
         sampleRate: sampleRate,
@@ -168,6 +168,34 @@ void main() {
       expect(event.endTime, 1.5);
       expect(event.startAt, t0.add(const Duration(seconds: 1)));
       expect(event.endAt, t0.add(const Duration(milliseconds: 1500)));
+    });
+
+    test('a SenseVoice model produces exactly the same segment events as a '
+        'Whisper one (LO-71)', () {
+      // The point of generalizing the worker rather than writing a second
+      // one: everything above buildOfflineRecognizerConfig — segmentation,
+      // the timeline anchor, the event shape — must not notice which model
+      // is loaded. Decoded twice with the same script and compared.
+      OfflineSegmentEvent runWith(ModelSpec model) {
+        events = <Object?>[];
+        init(model: model);
+        final t0 = DateTime(2024, 1, 1);
+        core.handle(_feedCommand(1600, t0));
+        fakeVad.onNextAccept
+            .add(_segment(startSample: 16000, sampleCount: 8000));
+        fakeRecognizer.nextText = '안녕하세요 hello';
+        core.handle(_feedCommand(1600, t0.add(const Duration(hours: 5))));
+        return events.single as OfflineSegmentEvent;
+      }
+
+      final whisper = runWith(ModelCatalog.whisperTiny);
+      final senseVoice = runWith(ModelCatalog.senseVoice);
+
+      expect(senseVoice.text, whisper.text);
+      expect(senseVoice.startTime, whisper.startTime);
+      expect(senseVoice.endTime, whisper.endTime);
+      expect(senseVoice.startAt, whisper.startAt);
+      expect(senseVoice.endAt, whisper.endAt);
     });
 
     test('several queued segments drain in order', () {
@@ -287,6 +315,110 @@ void main() {
         DateTime(2024),
       ));
       expect(events, isEmpty);
+    });
+  });
+
+  group('buildOfflineRecognizerConfig', () {
+    // Pure config mapping: no model on disk, no native library, no isolate.
+    // This is the one place that knows a Whisper from a SenseVoice, so it is
+    // also the one place where getting it wrong is silent — a recognizer
+    // built with every model field empty loads and then decodes nothing.
+    OfflineWorkerConfig configFor(
+      ModelSpec model, {
+      String language = 'en',
+      String task = 'transcribe',
+      int numThreads = 3,
+    }) =>
+        OfflineWorkerConfig(
+          model: model,
+          modelDir: '/models/dir',
+          vad: const VadConfig(modelPath: '/models/vad/silero_vad.onnx'),
+          language: language,
+          task: task,
+          numThreads: numThreads,
+        );
+
+    test('a Whisper spec fills the whisper config and leaves SenseVoice empty',
+        () {
+      final config = buildOfflineRecognizerConfig(
+          configFor(ModelCatalog.whisperTiny, language: 'ko'));
+
+      expect(config.model.whisper.encoder, '/models/dir/tiny-encoder.onnx');
+      expect(config.model.whisper.decoder, '/models/dir/tiny-decoder.onnx');
+      expect(config.model.whisper.language, 'ko');
+      expect(config.model.whisper.task, 'transcribe');
+      expect(config.model.tokens, '/models/dir/tiny-tokens.txt');
+      expect(config.model.numThreads, 3);
+      expect(config.model.senseVoice.model, isEmpty);
+    });
+
+    test('the Whisper base spec resolves its own file names', () {
+      // The file names come from ModelSpec.requiredFiles, so a second
+      // Whisper entry needs no code change to load.
+      final config =
+          buildOfflineRecognizerConfig(configFor(ModelCatalog.whisperBase));
+      expect(config.model.whisper.encoder, '/models/dir/base-encoder.onnx');
+      expect(config.model.tokens, '/models/dir/base-tokens.txt');
+    });
+
+    test('a SenseVoice spec fills the SenseVoice config and leaves Whisper '
+        'empty', () {
+      final config = buildOfflineRecognizerConfig(
+          configFor(ModelCatalog.senseVoice, language: 'ko'));
+
+      expect(config.model.senseVoice.model, '/models/dir/model.int8.onnx');
+      expect(config.model.senseVoice.language, 'ko');
+      expect(config.model.senseVoice.useInverseTextNormalization, isTrue);
+      expect(config.model.tokens, '/models/dir/tokens.txt');
+      expect(config.model.numThreads, 3);
+      expect(config.model.whisper.encoder, isEmpty);
+      expect(config.model.whisper.decoder, isEmpty);
+    });
+
+    test('a language SenseVoice was not trained on becomes auto-detection',
+        () {
+      final config = buildOfflineRecognizerConfig(
+          configFor(ModelCatalog.senseVoice, language: 'de'));
+      expect(config.model.senseVoice.language, 'auto');
+    });
+
+    test('a model the offline path cannot decode is rejected', () {
+      // A streaming transducer has no offline recognizer at all, so this has
+      // to fail loudly rather than build a config with nothing in it.
+      expect(
+        () => buildOfflineRecognizerConfig(
+            configFor(ModelCatalog.streamingZipformerKo)),
+        throwsA(isA<ArgumentError>()),
+      );
+      expect(
+        () => buildOfflineRecognizerConfig(configFor(ModelCatalog.sileroVad)),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+  });
+
+  group('OfflineWorkerConfig', () {
+    test('modelPaths joins every required file onto the model directory', () {
+      const config = OfflineWorkerConfig(
+        model: ModelCatalog.senseVoice,
+        modelDir: '/models/sense',
+        vad: VadConfig(modelPath: '/vad'),
+      );
+      expect(config.modelPaths, [
+        '/models/sense/model.int8.onnx',
+        '/models/sense/tokens.txt',
+      ]);
+    });
+
+    test('an ambiguous or missing suffix is a StateError naming the model',
+        () {
+      const config = OfflineWorkerConfig(
+        model: ModelCatalog.senseVoice,
+        modelDir: '/models/sense',
+        vad: VadConfig(modelPath: '/vad'),
+      );
+      expect(() => config.modelPathEndingWith('encoder.onnx'),
+          throwsA(isA<StateError>()));
     });
   });
 }
