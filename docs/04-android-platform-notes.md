@@ -109,6 +109,18 @@ warning only and does not fail the toolchain check.
   template's `subprojects { project.evaluationDependsOn(":app") }` block — that block
   evaluates `:app` eagerly, and a later `afterEvaluate` on an already-evaluated project
   throws. `minSdk`/`targetSdk` are untouched; only the compile SDK moves.
+- **`file_picker` needs the Kotlin plugin applied for it (LO-61).** `file_picker 11.0.3`
+  applies `org.jetbrains.kotlin.android` only when the Android Gradle Plugin is older than 9,
+  assuming AGP 9's built-in Kotlin support compiles its `src/main/kotlin` otherwise. This
+  project is on AGP 9.1.0 with the template's `android.builtInKotlin=false`, so under that
+  branch nothing compiles the plugin's Kotlin at all and `:app:compileDebugJavaWithJavac`
+  fails on `GeneratedPluginRegistrant.java` with `cannot find symbol: FilePickerPlugin`.
+  A second `subprojects` hook in `android/build.gradle.kts` applies the Kotlin plugin — and
+  its `jvmTarget = 17`, which lives inside the same skipped branch — to that one module.
+  `flutter build` already warns that six plugins (now including `file_picker`) apply KGP
+  themselves and that a future Flutter will refuse them; that migration is upstream's to make
+  and is not tracked here yet. Drop the hook when `file_picker` is unpinned to a version that
+  supports built-in Kotlin.
 
 ## 3. Permission matrix
 
