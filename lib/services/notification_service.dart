@@ -1,12 +1,20 @@
 import 'package:awesome_notifications/awesome_notifications.dart';
 import 'package:flutter/material.dart';
 
+import '../platform/exact_alarm.dart';
+import '../platform/exact_alarm_gateway.dart' show exactAlarm;
 import 'notification_channels.dart';
+import 'settings_service.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
   NotificationService._internal();
+
+  /// Exact-alarm facade consulted by [scheduleTaskNotification]. Injectable
+  /// so a test can drive the precise/inexact decision without a plugin
+  /// channel; defaults to the app-wide instance.
+  ExactAlarm exactAlarmFacade = exactAlarm;
 
   Future<void> initialize() async {
     await AwesomeNotifications().initialize(
@@ -67,6 +75,18 @@ class NotificationService {
       scheduledDate = now.add(const Duration(seconds: 5));
     }
 
+    // Inexact by default: the reminder may arrive a few minutes late, which
+    // is fine for a due-date nudge, and it needs no permission.
+    // `preciseAlarm: true` needs SCHEDULE_EXACT_ALARM, which Android 14
+    // stopped pre-granting to apps targeting API 33+ (we target 35), so it is
+    // used only when the user turned the opt-in on *and* the permission is
+    // granted right now (LO-50). Re-read here rather than cached, so a
+    // permission revoked between two reminders degrades to inexact instead of
+    // being rejected by the platform.
+    final precise = await exactAlarmFacade.shouldUsePreciseAlarm(
+      optIn: SettingsService.exactTaskReminders,
+    );
+
     await AwesomeNotifications().createNotification(
       content: NotificationContent(
         id: id,
@@ -79,21 +99,19 @@ class NotificationService {
       ),
       schedule: NotificationCalendar.fromDate(
         date: scheduledDate,
-        // Inexact delivery: the reminder may arrive a few minutes late, which
-        // is fine for a due-date nudge. `preciseAlarm: true` needs
-        // SCHEDULE_EXACT_ALARM, which Android 14 stopped pre-granting to apps
-        // targeting API 33+ (we target 35), so it would silently degrade to
-        // this anyway unless the user opts in from system settings. An explicit
-        // opt-in setting is left to a follow-up issue.
-        preciseAlarm: false,
+        preciseAlarm: precise,
         // Maps to AlarmManager.setAndAllowWhileIdle: it fires during Doze
         // rather than being deferred to a maintenance window, but the system
         // rate-limits such alarms to roughly one per app per 9 minutes and the
-        // delivery time is inexact.
+        // delivery time is inexact. Kept on in both modes: it is what carries
+        // the inexact fallback through Doze.
         allowWhileIdle: true,
       ),
     );
-    debugPrint('Scheduled notification for task: $title at $scheduledDate (ID: $id)');
+    debugPrint(
+      'Scheduled notification for task: $title at $scheduledDate '
+      '(ID: $id, preciseAlarm: $precise)',
+    );
   }
 
   Future<void> cancelTaskNotification(int id) async {

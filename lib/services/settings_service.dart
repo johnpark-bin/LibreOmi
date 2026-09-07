@@ -400,4 +400,16 @@ class SettingsService {
     if (llm == null) return null;
     return deepgramCost + llm;
   }
+
+  /// Whether the user opted task reminders into exact alarms (LO-50).
+  ///
+  /// Off by default: reminders stay inexact, so the app works without
+  /// `SCHEDULE_EXACT_ALARM`, which Android 14+ denies by default to apps
+  /// targeting API 33+. Turning it on is not sufficient on its own — the
+  /// permission is re-read at schedule time (see `platform/exact_alarm.dart`),
+  /// so a revoked permission degrades back to an inexact alarm.
+  static bool get exactTaskReminders =>
+      prefs.getBool('exact_task_reminders') ?? false;
+  static set exactTaskReminders(bool value) =>
+      prefs.setBool('exact_task_reminders', value);
 }

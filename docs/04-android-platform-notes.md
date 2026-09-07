@@ -139,7 +139,8 @@ warning only and does not fail the toolchain check.
 | `WAKE_LOCK` | all | no | partial wake lock while listening (`allowWakeLock: true`) |
 | `RECEIVE_BOOT_COMPLETED` | all | no | **merged out**: contributed by `flutter_foreground_task`, unused because boot start is out of scope (see §4) |
 | `INTERNET` | all | no | Deepgram/OpenAI/model download |
-| `SCHEDULE_EXACT_ALARM` | 31–32 granted, ≥ 33 denied by default | intent | exact task reminders. Prefer **inexact** alarms (`preciseAlarm: false`) and only offer exact as an opt-in |
+| `SCHEDULE_EXACT_ALARM` | ≥ 31; granted at install on 31–32, **denied by default on Android 14+ for apps targeting API 33+** (we target 35) | intent | opt-in exact task reminders (LO-50). Default stays **inexact** (`preciseAlarm: false`); the opt-in sends the user to Settings > Alarms & reminders |
+| `USE_EXACT_ALARM` | — | — | **not declared**: Play policy restricts it to alarm-clock and calendar apps, which this is not |
 | `VIBRATE` | all | no | haptic feedback |
 
 Flow (`platform/permissions.dart`): on first launch request notifications; when the
@@ -296,9 +297,22 @@ process that died without stopping it.
   so reminders scheduled before the upgrade stay cancellable after it.
   `lib/services/notification_ids.dart` reads the column and falls back to that derivation for
   a task that has not been through the database.
-- Task reminders are scheduled inexact (`preciseAlarm: false`, `allowWhileIdle: true`) so the
-  app needs neither `SCHEDULE_EXACT_ALARM` nor `USE_FULL_SCREEN_INTENT`. Delivery may lag the
-  due time by minutes; an exact-alarm opt-in is a follow-up.
+- Task reminders are scheduled inexact by default (`preciseAlarm: false`, `allowWhileIdle: true`)
+  so the app works with no alarm permission at all and never needs `USE_FULL_SCREEN_INTENT`.
+  Delivery may lag the due time by minutes.
+- Exact reminders are an opt-in (LO-50), off by default: `SettingsService.exactTaskReminders`,
+  surfaced as the "Exact task reminders" switch in Settings > Notifications. The manifest
+  declares `SCHEDULE_EXACT_ALARM`, which on its own grants nothing on Android 14+ for an app
+  targeting API 33+ — the switch sends the user to the system's *Alarms & reminders* screen
+  through `Permission.scheduleExactAlarm.request()` (`permission_handler` maps it to
+  `ACTION_REQUEST_SCHEDULE_EXACT_ALARM` and resolves from `onActivityResult` with a fresh
+  `canScheduleExactAlarms()` reading, so the status returned is already current).
+  `USE_EXACT_ALARM`, which *is* pre-granted, is deliberately not declared: Play policy limits
+  it to alarm-clock and calendar apps.
+- `scheduleTaskNotification` re-reads the permission at schedule time through
+  `lib/platform/exact_alarm.dart` and only passes `preciseAlarm: true` when the toggle is on
+  *and* the permission is granted, so revoking it from system settings quietly degrades the
+  next reminder to inexact instead of failing. `allowWhileIdle` stays on in both modes.
 
 ## 7. Native libraries and APK size
 
