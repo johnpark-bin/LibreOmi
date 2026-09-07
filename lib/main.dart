@@ -8,6 +8,7 @@ import 'platform/permission_gateway.dart';
 import 'controllers/chat_controller.dart';
 import 'controllers/device_controller.dart';
 import 'controllers/library_controller.dart';
+import 'controllers/sdcard_controller.dart';
 import 'controllers/session_controller.dart';
 import 'device/device_manager.dart';
 import 'pages/home_page.dart';
@@ -56,6 +57,7 @@ class _LibreOmiAppState extends State<LibreOmiApp> {
   late final ChatController _chat;
   late final SessionController _session;
   late final DeviceController _device;
+  late final SdCardController _sdCard;
 
   @override
   void initState() {
@@ -74,6 +76,13 @@ class _LibreOmiAppState extends State<LibreOmiApp> {
     // and depends on the session rather than the other way round, so the
     // audio self-test's "connect to my saved device" is wired here.
     _session.ensureSavedDeviceConnection = _device.scanAndConnectToSavedDevice;
+    _sdCard = SdCardController(
+      syncService: () => _device.sdCardSyncService,
+      hasStorage: () => _device.hasStorageSupport,
+      processFile: _session.processLocalAudioFile,
+      deviceChanges: _device,
+      onConversationImported: _library.reloadAll,
+    );
 
     unawaited(_bootstrap());
   }
@@ -132,8 +141,9 @@ class _LibreOmiAppState extends State<LibreOmiApp> {
   void dispose() {
     // The session's teardown closes the audio transport, which reaches back
     // into the device manager (via `_device.dispose()`), so it must go down
-    // first.
+    // first. `_sdCard` listens to `_device`, so it must go down before it.
     _session.dispose();
+    _sdCard.dispose();
     _device.dispose();
     _chat.dispose();
     _library.dispose();
@@ -148,6 +158,7 @@ class _LibreOmiAppState extends State<LibreOmiApp> {
         ChangeNotifierProvider<ChatController>.value(value: _chat),
         ChangeNotifierProvider<SessionController>.value(value: _session),
         ChangeNotifierProvider<DeviceController>.value(value: _device),
+        ChangeNotifierProvider<SdCardController>.value(value: _sdCard),
       ],
       child: MaterialApp(
         title: 'LibreOmi',

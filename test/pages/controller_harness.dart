@@ -17,13 +17,39 @@ import 'package:provider/provider.dart';
 import 'package:libreomi/controllers/chat_controller.dart';
 import 'package:libreomi/controllers/device_controller.dart';
 import 'package:libreomi/controllers/library_controller.dart';
+import 'package:libreomi/controllers/sdcard_controller.dart';
 import 'package:libreomi/controllers/session_controller.dart';
 import 'package:libreomi/device/device_manager.dart';
 import 'package:libreomi/platform/fake_background_runner.dart';
+import 'package:libreomi/services/sdcard_sync_service.dart' show SyncedAudioFile;
 
 import 'package:sqflite/sqflite.dart';
 import '../device/device_manager_test.dart'
     show FakeOmiDeviceHost, MapSavedDeviceStore;
+
+/// In-memory [SyncedFileStore] double: a page test seeds [files] directly
+/// instead of touching `path_provider`, which the production
+/// `SdCardSyncServiceFileStore` calls into.
+class FakeSyncedFileStore implements SyncedFileStore {
+  final List<SyncedAudioFile> files = [];
+
+  @override
+  Future<List<SyncedAudioFile>> list() async => List.unmodifiable(files);
+
+  @override
+  Future<bool> delete(String filePath) async {
+    final before = files.length;
+    files.removeWhere((file) => file.filePath == filePath);
+    return files.length != before;
+  }
+
+  @override
+  Future<int> deleteAll() async {
+    final removed = files.length;
+    files.clear();
+    return removed;
+  }
+}
 
 /// A [Timer] that never fires and holds nothing, for the auto-reconnect
 /// ladder a page test does not exercise.
@@ -47,6 +73,8 @@ class PageControllers {
     required this.chat,
     required this.session,
     required this.device,
+    required this.sdCard,
+    required this.sdCardFiles,
     required this.deviceManager,
     required this.host,
     required this.backgroundRunner,
@@ -56,6 +84,11 @@ class PageControllers {
   final ChatController chat;
   final SessionController session;
   final DeviceController device;
+  final SdCardController sdCard;
+
+  /// The in-memory synced-file store backing [sdCard], so a page test can
+  /// seed files without touching `path_provider`.
+  final FakeSyncedFileStore sdCardFiles;
   final DeviceManager deviceManager;
   final FakeOmiDeviceHost host;
   final FakeBackgroundRunner backgroundRunner;
@@ -98,12 +131,28 @@ class PageControllers {
       // would then fail on.
       createTimer: (_, __) => _InertTimer(),
     );
+    final sdCardFiles = FakeSyncedFileStore();
+    final sdCardController = SdCardController(
+      syncService: () => deviceController.sdCardSyncService,
+      hasStorage: () => deviceController.hasStorageSupport,
+      // A page test drives `processFile` through the controller's own
+      // fakes, not through a real transcription pipeline; failing loudly
+      // documents that no test should reach this without stubbing it.
+      processFile: (filePath) => throw StateError(
+        'PageControllers.processFile is not stubbed: pass a fake through '
+        'the controller under test if a test needs to process a file.',
+      ),
+      fileStore: sdCardFiles,
+      deviceChanges: deviceController,
+    );
     // Same order as `main.dart`'s `dispose()`: the session goes down first,
     // because `DeviceController.dispose()` chains the device manager's
     // teardown onto `SessionController.teardown`, and that future is only a
-    // real one once `SessionController.dispose()` has run.
+    // real one once `SessionController.dispose()` has run. `sdCardController`
+    // listens to `deviceController`, so it must go down before it.
     addTearDown(() {
       session.dispose();
+      sdCardController.dispose();
       deviceController.dispose();
       chat.dispose();
       library.dispose();
@@ -113,6 +162,8 @@ class PageControllers {
       chat: chat,
       session: session,
       device: deviceController,
+      sdCard: sdCardController,
+      sdCardFiles: sdCardFiles,
       deviceManager: deviceManager,
       host: deviceHost,
       backgroundRunner: backgroundRunner,
@@ -126,6 +177,7 @@ class PageControllers {
           ChangeNotifierProvider<ChatController>.value(value: chat),
           ChangeNotifierProvider<SessionController>.value(value: session),
           ChangeNotifierProvider<DeviceController>.value(value: device),
+          ChangeNotifierProvider<SdCardController>.value(value: sdCard),
         ],
         child: child,
       );
