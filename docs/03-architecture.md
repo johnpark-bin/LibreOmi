@@ -16,7 +16,9 @@ lib/
     library_controller.dart     conversations / memories / tasks lists and their CRUD
     chat_controller.dart        chat history (persisted) and the LLM chat call
     sdcard_controller.dart      SD-card page state: pending WAL, transfer, imports (LO-52)
-  core/                         models, Result/Failure types, logging, clock, ids
+  core/                         Result/Failure types, logging, clock, ids
+    models.dart                 barrel: every importer takes the model set from here
+    models/                     conversation, transcript_segment, memory, task, chat_message
   device/                       Omi device transport
     omi_device.dart             abstract OmiDevice (interface) + DeviceConnectionState
     omi_storage.dart            abstract OmiStorage (SD-card sub-interface)
@@ -96,10 +98,11 @@ Nothing below `session` imports Flutter widgets. `device`, `audio`, `transcripti
 Migration status (LO-30, M3 wave A): `core/` exists with `result.dart`, `clock.dart`,
 `ids.dart` and `log.dart`, and `device/omi_gatt.dart` is the single source of truth for the
 GATT constants and packet parsers. The data models (`Conversation`, `TranscriptSegment`,
-`Memory`, `Task`) are still in `lib/models/conversation.dart` rather than under `core/`:
-moving them touches more than twenty importers and would have collided with the concurrent
-LO-32 work. LO-30 deferred the move to LO-34/LO-35, but neither took it on — see the LO-35
-note below — so it still needs an issue of its own. `lib/services/ble/ble_protocol.dart`, the one-line re-export that kept
+`Memory`, `Task`, `ChatMessage`) stayed in `lib/models/conversation.dart` for the whole of
+M3 and M4: moving them touches 38 importers and would have collided with the concurrent
+LO-32 work. LO-30 deferred the move to LO-34/LO-35 and neither took it on; issue #66 (M6
+wave E) finally made it, and `lib/models/` is gone — see the LO-35 note below.
+`lib/services/ble/ble_protocol.dart`, the one-line re-export that kept
 the pre-LO-30 imports compiling, was deleted in LO-31.
 
 Migration status (LO-33, M3 wave C): `session/` exists and owns the state machine of §4.
@@ -133,8 +136,9 @@ touched; the model catalog's `displayName`s stay English because they are produc
 
 Transitional exception (LO-32, M3 wave A): `audio/`, `transcription/` and
 `intelligence/` were introduced as adapters, so they still import the upstream
-`services/*_service.dart` classes they wrap, and `transcription/` imports
-`models/conversation.dart` for `TranscriptSegment` until the models move. The
+`services/*_service.dart` classes they wrap. (`transcription/` also imported
+`models/conversation.dart` for `TranscriptSegment`; since issue #66 that is an ordinary
+`core/models.dart` import and no longer an exception.) The remaining
 imports disappear as §6's migration moves each service into its module.
 `transcription/sherpa_streaming.dart` is the first one out: LO-41 rewrote it on
 top of `sherpa_worker.dart`, so it no longer imports `services/sherpa_service.dart`,
@@ -160,11 +164,14 @@ Three consequences of that split are worth knowing:
   and `services/notification_ids.dart` need it and neither may depend on the other,
   so it sits in the one layer both are allowed to import.
 - The data models (`Conversation`, `TranscriptSegment`, `Memory`, `Task`,
-  `ChatMessage`) are still in `lib/models/conversation.dart`. LO-30 deferred the move
-  to `core/` to LO-34/LO-35 and LO-35 deferred it again to LO-34, but LO-34's scope was
-  the controller split alone and it did not move them either: the move touches twenty-odd
-  importers and is independent of where the UI reads its state from. It now needs an issue
-  of its own. The repositories import `models/` in the meantime.
+  `ChatMessage`) lived in `lib/models/conversation.dart` until issue #66 (M6 wave E).
+  LO-30 deferred the move to `core/` to LO-34/LO-35, LO-35 deferred it again to LO-34, and
+  LO-34's scope was the controller split alone — the move touches 38 importers and is
+  independent of where the UI reads its state from, so it took a wave of its own. They now
+  sit one class per file under `lib/core/models/`, re-exported from the barrel
+  `lib/core/models.dart`; the repositories and everything else import that barrel. The
+  classes themselves — JSON keys, DB row mappings, `duration` fallback — were moved
+  unchanged, so schema and wire format are untouched.
 
 Migration status (LO-34, M3 wave D): `providers/app_provider.dart` is gone and
 `lib/controllers/` holds the four `ChangeNotifier`s the pages read. The dependency
@@ -186,8 +193,8 @@ and `LibraryController` owns the export
 that the old `DatabaseService.exportAllData` used to serve — that facade is gone as of
 issue #64. LO-61 moved the format itself down into `data/export_import.dart`, which
 now defines both directions (`exportAll` / `importAll`); the controller only delegates
-and reloads its lists afterwards. What LO-34 deliberately did *not* do is move the data models to `core/` —
-see the LO-35 note above.
+and reloads its lists afterwards. What LO-34 deliberately did *not* do is move the data
+models to `core/`; issue #66 did — see the LO-35 note above.
 
 Migration status (LO-31, M3 wave B): `device/` now holds the `OmiDevice` and
 `OmiStorage` interfaces, an `OmiBleDevice`/`OmiBleStorage`/`BleDeviceHost`
@@ -411,7 +418,7 @@ Not in scope for v1: boot receiver, companion-device pairing, native Kotlin serv
 | `services/deepgram_service.dart` | LO-32 wrapped it as `transcription/deepgram_streaming.dart` behind `StreamingTranscriber`. LO-51 added the pre-recorded sibling `transcription/deepgram_prerecorded.dart` (a `FileTranscriber` that uploads a WAV to `POST /v1/listen`), and both now share the word-to-segment grouping in `services/deepgram/deepgram_parser.dart` (`segmentsFromDeepgramWords`). Still to move: the streaming service body, plus fix its usage accounting and make the streaming model configurable. |
 | `services/sherpa_service.dart`, `whisper_service.dart` | **Done (LO-51).** LO-32 wrapped them as `transcription/sherpa_streaming.dart` / `offline_batch.dart`; LO-41 moved the sherpa decode loop into `transcription/sherpa_worker.dart` and LO-42 the whisper one into `transcription/offline_worker.dart` (named `whisper_worker.dart` until LO-71 widened it to SenseVoice), cutting utterances with the Silero VAD in `transcription/vad.dart` instead of the old fixed 3-second timer. That left both services with a single caller each — the file-transcription stubs in `SessionController` — and LO-51 replaced those with `transcription/offline_file_transcriber.dart`, so both files are deleted. |
 | `services/openai_service.dart` | LO-32 wrapped it in `intelligence/openai_client.dart` behind `LlmClient` with typed `ConversationInsights` and retryable/permanent errors. LO-60 made the endpoint configurable: the URL assembly, provider presets and the lenient JSON-object extractor live in the pure `services/llm_endpoint.dart`, the service reads its base URL from a constructor argument (`OpenAiClient.fromApiKey` supplies `SettingsService.llmBaseUrl`), summarize retries once without `response_format` when the server rejects JSON mode, and `testConnection()` probes `GET <base>/models`. The HTTP service body itself still lives in `services/`; moving it into `intelligence/` would also have to move its `controllers/` callers, so it is left for a later refactor. |
-| `services/database_service.dart`, `models/` | **Facade deleted (issue #64).** LO-35 split the SQL into `data/` repos behind an unchanged `DatabaseService` facade; schema v5 adds `tasks.notification_id` (backfilled with the pre-v5 `created_at & 0x7fffffff` derivation) and puts `chat_messages` on the migration path so chat is persisted. `start_at/end_at` on segments live in the transcript JSON, so they needed no table change. LO-34 moved every production caller onto the repositories, leaving the facade with test-only callers, and issue #64 deleted `services/database_service.dart` together with the two test files that only exercised its delegation — what those files actually checked lives in `test/data/` and `test/controllers/library_controller_test.dart`. Schema v6 (issue #65) adds `chat_messages.seq`, the insertion order the chat history is read back in, backfilled from `rowid`: `created_at` has millisecond resolution and `id` is a random UUID, so a question and its answer written in the same millisecond had no defined order. Still to do: move the models to `core/`. |
+| `services/database_service.dart`, `models/` | **Facade deleted (issue #64).** LO-35 split the SQL into `data/` repos behind an unchanged `DatabaseService` facade; schema v5 adds `tasks.notification_id` (backfilled with the pre-v5 `created_at & 0x7fffffff` derivation) and puts `chat_messages` on the migration path so chat is persisted. `start_at/end_at` on segments live in the transcript JSON, so they needed no table change. LO-34 moved every production caller onto the repositories, leaving the facade with test-only callers, and issue #64 deleted `services/database_service.dart` together with the two test files that only exercised its delegation — what those files actually checked lives in `test/data/` and `test/controllers/library_controller_test.dart`. Schema v6 (issue #65) adds `chat_messages.seq`, the insertion order the chat history is read back in, backfilled from `rowid`: `created_at` has millisecond resolution and `id` is a random UUID, so a question and its answer written in the same millisecond had no defined order. Issue #66 moved `lib/models/conversation.dart` to `lib/core/models/` (five files behind the barrel `lib/core/models.dart`, class bodies unchanged) and deleted `lib/models/`, so this row is closed. |
 | `services/settings_service.dart` | Copy → `data/settings_repo.dart`; keys move to secure storage with one-time migration. |
 | `services/notification_service.dart` | Copy → `platform/notifications.dart`; stable numeric IDs now come from the `tasks.notification_id` column (LO-35), read via `services/notification_ids.dart`; Android res added. |
 | `services/sdcard_sync_service.dart` | LO-31 repointed it onto `OmiStorage` (it no longer knows about BLE); LO-50 moved the byte-level transfer loop onto `OmiStorage.packets` + the pure `services/sdcard_transfer.dart`; LO-51 moved post-processing out to `session/sdcard_import.dart` (`.bin` → PCM16 → WAV → `FileTranscriber` → `ConversationFinalizer`). LO-52 put `controllers/sdcard_controller.dart` in front of both halves, so `pages/sdcard_sync_page.dart` no longer calls this service — including its static file helpers — or `SessionController.processLocalAudioFile` directly; the controller reaches the static helpers through its own `SyncedFileStore` seam, which is what makes the page's state machine testable without `path_provider`. That importer reads the `.bin` itself rather than through `SdCardSyncService.readAudioFile`, which concatenates the frame payloads and so destroys the packet boundaries an Opus decoder needs. Still to move: `readAudioFile`'s remaining callers off that lossy read. |
