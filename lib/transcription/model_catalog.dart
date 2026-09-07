@@ -280,17 +280,20 @@ class ModelCatalog {
     return null;
   }
 
-  /// `SettingsService.whisperModelSize` reduced to a size this catalog has,
-  /// so a stale or corrupted preference cannot leave the app with no model.
+  /// A pre-LO-71 `whisper_model_size` preference (`'tiny'` or `'base'`)
+  /// reduced to a size this catalog has.
   ///
-  /// Callers that build file names out of the size — `offline_worker.dart` opens
-  /// `<size>-encoder.onnx` — must go through this rather than the raw
-  /// preference, or they would look for `small-encoder.onnx` inside the tiny
-  /// model's directory.
+  /// Legacy only. Nothing picks a model by size any more —
+  /// `SettingsService.offlineSttModelId` stores a catalog id and
+  /// [offlineModel] resolves it — and no code builds file names out of a
+  /// size either: `offline_worker.dart` reads them off
+  /// [ModelSpec.requiredFiles]. This exists so
+  /// `SettingsService.offlineSttModelId` can promote the old preference to
+  /// an id on first read, and has no other caller.
   static String whisperSize(String size) => size == 'base' ? 'base' : 'tiny';
 
-  /// The Whisper model for `SettingsService.whisperModelSize` (`'tiny'` or
-  /// `'base'`), via [whisperSize].
+  /// The Whisper model a pre-LO-71 `whisper_model_size` preference named,
+  /// via [whisperSize]. Legacy only, same as [whisperSize].
   static ModelSpec whisper(String size) {
     return whisperSize(size) == 'base' ? whisperBase : whisperTiny;
   }

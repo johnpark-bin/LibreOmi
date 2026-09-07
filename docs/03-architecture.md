@@ -292,7 +292,7 @@ flowchart LR
   MIC[PhoneMicSource] --> RS
   OAS -->|AudioChunk opus| RS[RecordingSession]
   RS -->|opus passthrough| DG[DeepgramStreaming]
-  RS -->|OpusDecoder → pcm16| SH[SherpaStreaming / WhisperBatch\nbackground isolate]
+  RS -->|OpusDecoder → pcm16| SH[SherpaStreaming / OfflineBatch\nbackground isolate]
   DG --> SEG[(segments)]
   SH --> SEG
   SEG --> RS

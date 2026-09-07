@@ -87,11 +87,11 @@ void main() {
         expect(ModelCatalog.whisper(''), same(ModelCatalog.whisperTiny));
       });
 
-      test('names the files WhisperService opens', () {
-        // WhisperService builds `<dir>/<size>-encoder.onnx`,
-        // `<size>-decoder.onnx` and `<size>-tokens.txt`; if the catalog
-        // stopped extracting one of those, installs would verify green and
-        // recognition would still fail.
+      test('names the files the offline worker resolves', () {
+        // `OfflineWorkerConfig` picks the encoder, decoder and tokens out of
+        // requiredFiles by suffix, so a Whisper entry has to ship exactly one
+        // of each. If the catalog stopped extracting one, installs would
+        // verify green and recognition would still fail.
         for (final size in ['tiny', 'base']) {
           final spec = ModelCatalog.whisper(size);
           expect(spec.requiredFiles, contains('$size-encoder.onnx'));

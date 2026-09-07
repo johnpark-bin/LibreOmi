@@ -292,6 +292,92 @@ void main() {
     });
   });
 
+  group('SettingsService.offlineSttModelId (LO-71)', () {
+    Future<void> boot([Map<String, Object> values = const {}]) async {
+      SharedPreferences.setMockInitialValues(Map<String, Object>.from(values));
+      await SettingsService.init(secretStore: InMemorySecretStore());
+    }
+
+    test('defaults to Whisper tiny on a fresh install', () async {
+      await boot();
+      expect(SettingsService.offlineSttModelId, ModelCatalog.whisperTiny.id);
+    });
+
+    test('setting to SenseVoice persists under the new key and reads back',
+        () async {
+      await boot();
+
+      SettingsService.offlineSttModelId = ModelCatalog.senseVoice.id;
+
+      expect(SettingsService.offlineSttModelId, ModelCatalog.senseVoice.id);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('offline_stt_model'), ModelCatalog.senseVoice.id);
+    });
+
+    test('an id this build has no offline model for reduces to the default',
+        () async {
+      // Written by a future build, or corrupted. Returned verbatim it would
+      // send the batch mode looking for a directory that cannot exist.
+      await boot(<String, Object>{'offline_stt_model': 'sherpa-onnx-whisper-small'});
+      expect(SettingsService.offlineSttModelId,
+          ModelCatalog.defaultOfflineModel.id);
+
+      // A real catalog entry that this path still cannot decode.
+      await boot(<String, Object>{
+        'offline_stt_model': ModelCatalog.streamingZipformerKo.id,
+      });
+      expect(SettingsService.offlineSttModelId,
+          ModelCatalog.defaultOfflineModel.id);
+    });
+
+    test('is always a real catalog entry', () async {
+      await boot(<String, Object>{'offline_stt_model': 'nonsense'});
+      expect(ModelCatalog.byId(SettingsService.offlineSttModelId), isNotNull);
+    });
+
+    group('legacy whisper_model_size fallback', () {
+      // The one path in LO-71 that an existing install actually walks: the
+      // new key is absent on first launch after the update, so the old size
+      // preference has to carry the user's choice over. Getting this wrong
+      // silently resets everyone who picked Whisper base back to tiny.
+      test("'base' is promoted to the Whisper base catalog id", () async {
+        await boot(<String, Object>{'whisper_model_size': 'base'});
+        expect(SettingsService.offlineSttModelId, ModelCatalog.whisperBase.id);
+      });
+
+      test("'tiny' is promoted to the Whisper tiny catalog id", () async {
+        await boot(<String, Object>{'whisper_model_size': 'tiny'});
+        expect(SettingsService.offlineSttModelId, ModelCatalog.whisperTiny.id);
+      });
+
+      test('a garbage legacy size still lands on a real model', () async {
+        await boot(<String, Object>{'whisper_model_size': 'small'});
+        expect(SettingsService.offlineSttModelId, ModelCatalog.whisperTiny.id);
+      });
+
+      test('the new key wins when both are present', () async {
+        await boot(<String, Object>{
+          'whisper_model_size': 'base',
+          'offline_stt_model': ModelCatalog.senseVoice.id,
+        });
+        expect(SettingsService.offlineSttModelId, ModelCatalog.senseVoice.id);
+      });
+
+      test('writing the new key leaves the legacy one alone and takes effect',
+          () async {
+        await boot(<String, Object>{'whisper_model_size': 'base'});
+
+        SettingsService.offlineSttModelId = ModelCatalog.senseVoice.id;
+
+        expect(SettingsService.offlineSttModelId, ModelCatalog.senseVoice.id);
+        final prefs = await SharedPreferences.getInstance();
+        // Never written again, and never cleaned up either: a user who
+        // downgrades keeps the size their old build understands.
+        expect(prefs.getString('whisper_model_size'), 'base');
+      });
+    });
+  });
+
   group('SettingsService.llmBaseUrl', () {
     test('defaults to the OpenAI base URL', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
