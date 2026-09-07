@@ -390,6 +390,119 @@ void main() {
       expect(memories.single.content, 'legacy memory');
     });
   });
+
+  group('chat message order (LO-65)', () {
+    ChatMessage message(String id, {int createdAt = 1000}) => ChatMessage(
+          id: id,
+          text: id,
+          isUser: true,
+          createdAt: DateTime.fromMillisecondsSinceEpoch(createdAt),
+        );
+
+    Future<List<String>> chatTexts(Database db) async =>
+        (await ChatRepo(db).all()).map((m) => m.text).toList();
+
+    test('the exported chat array is in insertion order', () async {
+      // Every message shares a `created_at`, so ordering the export by the
+      // timestamp would leave the array in an arbitrary order and the file
+      // would carry no record of how the conversation actually ran.
+      final db = await openTestDb();
+      for (final id in ['c', 'a', 'b']) {
+        await ChatRepo(db).save(message(id));
+      }
+
+      final document = await exportAll(db);
+
+      expect(
+        (document['chat_messages'] as List)
+            .map((row) => (row as Map)['id'])
+            .toList(),
+        ['c', 'a', 'b'],
+      );
+    });
+
+    test('a replace import restores the order the file was written in',
+        () async {
+      final source = await openTestDb();
+      for (final id in ['first', 'second', 'third']) {
+        await ChatRepo(source).save(message(id));
+      }
+      final document = await exportAll(source);
+
+      final target = await openTestDb();
+      await importAll(target, document, mode: ImportMode.replace);
+
+      expect(await chatTexts(target), ['first', 'second', 'third']);
+    });
+
+    test('a file written before schema v6 keeps its array order', () async {
+      // What a backup taken by the first release looks like: no `seq` on any
+      // row, tied timestamps, and ids that sort the other way round. The
+      // array positions are the only record of the order left.
+      final db = await openTestDb();
+      final document = <String, dynamic>{
+        'format_version': 1,
+        'chat_messages': [
+          {'id': 'z', 'text': 'Q', 'is_user': 1, 'created_at': 1000},
+          {'id': 'a', 'text': 'A', 'is_user': 0, 'created_at': 1000},
+        ],
+      };
+
+      final report = await importAll(db, document);
+
+      expect(report.skipped, 0);
+      expect(await chatTexts(db), ['Q', 'A']);
+    });
+
+    test('a merge puts the imported history after the stored one', () async {
+      // The seq values in the file start at 1 and would otherwise collide with
+      // the rows already here, leaving the merged transcript interleaved.
+      final db = await openTestDb();
+      await ChatRepo(db).save(message('already here'));
+      final source = await openTestDb();
+      for (final id in ['imported 1', 'imported 2']) {
+        await ChatRepo(source).save(message(id));
+      }
+
+      await importAll(db, await exportAll(source));
+
+      expect(await chatTexts(db), [
+        'already here',
+        'imported 1',
+        'imported 2',
+      ]);
+    });
+
+    test('a partially stamped file still gives every row a distinct seq',
+        () async {
+      // A hand-edited document: one row carries a `seq`, the next does not.
+      // The fallback counter has to step past the value already handed out
+      // instead of reusing it.
+      final db = await openTestDb();
+      final document = <String, dynamic>{
+        'format_version': 1,
+        'chat_messages': [
+          {'id': 'm1', 'text': 'one', 'is_user': 1, 'created_at': 1000},
+          {
+            'id': 'm2',
+            'text': 'two',
+            'is_user': 1,
+            'created_at': 1000,
+            'seq': 7,
+          },
+          {'id': 'm3', 'text': 'three', 'is_user': 1, 'created_at': 1000},
+        ],
+      };
+
+      await importAll(db, document);
+
+      final seqs = (await db.query('chat_messages', orderBy: 'seq ASC'))
+          .map((row) => row['seq'])
+          .toList();
+      expect(seqs.toSet(), hasLength(3));
+      expect(await chatTexts(db), ['one', 'two', 'three']);
+    });
+  });
 }
 
 /// Every row of every exported table, keyed by table and ordered by id, as the

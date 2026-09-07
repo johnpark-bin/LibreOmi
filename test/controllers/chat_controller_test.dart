@@ -139,6 +139,49 @@ void main() {
     ]);
   });
 
+  test('recordAiAnswer leaves both timestamps on the clock', () async {
+    // The pre-LO-65 code nudged the answer a millisecond forward to break the
+    // sort tie, which stored a time the answer never happened at. `seq` does
+    // that job now, so neither message may be moved off `DateTime.now()`.
+    final controller = ChatController(library: library, database: () async => db);
+    final before = DateTime.now();
+
+    await controller.recordAiAnswer(const AiAnswer(question: 'Q', answer: 'A'));
+
+    final after = DateTime.now();
+    for (final message in controller.chatMessages) {
+      expect(
+        message.createdAt.millisecondsSinceEpoch,
+        inInclusiveRange(
+          before.millisecondsSinceEpoch,
+          after.millisecondsSinceEpoch,
+        ),
+      );
+    }
+  });
+
+  test('a question and its answer keep their order when reloaded', () async {
+    // The bug this issue is about: both messages routinely land in the same
+    // millisecond, and the random UUIDs used to decide the order between them.
+    //
+    // The two `DateTime.now()` calls usually tie on their own but are not
+    // guaranteed to, so the tie is forced in the table afterwards rather than
+    // left to the clock -- the test has to reproduce the bug every run.
+    final writer = ChatController(library: library, database: () async => db);
+    await writer.recordAiAnswer(
+      const AiAnswer(question: 'What is on my plate?', answer: 'Nothing yet.'),
+    );
+    await db.update('chat_messages', <String, Object?>{'created_at': 1000});
+
+    final reader = ChatController(library: library, database: () async => db);
+    await reader.load();
+
+    expect(reader.chatMessages.map((m) => m.text), [
+      'What is on my plate?',
+      'Nothing yet.',
+    ]);
+  });
+
   test('clearChat empties the in-memory list and the table', () async {
     final controller = ChatController(library: library, database: () async => db);
     await controller.recordAiAnswer(const AiAnswer(question: 'Q', answer: 'A'));
@@ -150,13 +193,12 @@ void main() {
     expect(await ChatRepo(db).all(), isEmpty);
   });
 
-  test('load() restores a previously written history in chronological order', () async {
-    // Each pair gets a beat of real time so `created_at` orders them the way
-    // they were written -- `ChatRepo.all` breaks same-millisecond ties by
-    // `id`, which is only stable when the timestamps actually differ.
+  test('load() restores a previously written history in the order written', () async {
+    // No delay between the pairs on purpose: since schema v6 the order comes
+    // from `chat_messages.seq`, so four messages written inside one
+    // millisecond have to come back in the order they were appended.
     final writer = ChatController(library: library, database: () async => db);
     await writer.recordAiAnswer(const AiAnswer(question: 'first Q', answer: 'first A'));
-    await Future.delayed(const Duration(milliseconds: 5));
     await writer.recordAiAnswer(const AiAnswer(question: 'second Q', answer: 'second A'));
 
     final reader = ChatController(library: library, database: () async => db);
