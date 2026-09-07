@@ -20,7 +20,9 @@ class AppDatabase {
   /// * v4 added `pending_finalizations` (LO-23).
   /// * v5 added `tasks.notification_id` and made `chat_messages` part of the
   ///   migration path so chat can be persisted (LO-35).
-  static const int schemaVersion = 5;
+  /// * v6 added `chat_messages.seq`, the insertion order chat history is read
+  ///   back in (LO-65).
+  static const int schemaVersion = 6;
 
   static Database? _database;
 
@@ -128,6 +130,9 @@ class AppDatabase {
       await _createChatMessagesTable(db);
       await _addTaskNotificationId(db);
     }
+    if (oldVersion < 6) {
+      await _addChatMessageSeq(db);
+    }
   }
 
   /// Summarisation requests that still have to run (LO-23).
@@ -149,6 +154,13 @@ class AppDatabase {
 
   /// Persisted AI chat history. `conversation_id` is nullable: the chat page
   /// asks about the whole library, not necessarily one conversation.
+  ///
+  /// `seq` is the insertion order (LO-65) and is what `ChatRepo` reads the
+  /// history back in: `created_at` only has millisecond resolution, so a
+  /// question and the answer to it can share a timestamp, and `id` is a
+  /// random UUID that sorts arbitrarily. It is nullable so the v6 migration
+  /// can use NULL as its "not assigned yet" marker; every write path fills
+  /// it in.
   static Future<void> _createChatMessagesTable(Database db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS chat_messages (
@@ -156,9 +168,30 @@ class AppDatabase {
         conversation_id TEXT,
         text TEXT NOT NULL,
         is_user INTEGER NOT NULL,
-        created_at INTEGER NOT NULL
+        created_at INTEGER NOT NULL,
+        seq INTEGER
       )
     ''');
+  }
+
+  /// Adds `chat_messages.seq` and backfills the rows that predate it.
+  ///
+  /// `rowid` is SQLite's own insertion counter, so it is the order those rows
+  /// were written in — exactly what the column is for. It is copied out once
+  /// here rather than used as the sort key directly, because a restored
+  /// backup gets fresh rowids in whatever order the import happened to insert
+  /// rows, while a copied `seq` survives the round trip.
+  ///
+  /// Both steps are safe to replay: the column is probed first (`ALTER TABLE`
+  /// has no `IF NOT EXISTS`), and the backfill only touches rows that still
+  /// have no `seq`.
+  static Future<void> _addChatMessageSeq(Database db) async {
+    if (!await _hasColumn(db, 'chat_messages', 'seq')) {
+      await db.execute('ALTER TABLE chat_messages ADD COLUMN seq INTEGER');
+    }
+    await db.execute(
+      'UPDATE chat_messages SET seq = rowid WHERE seq IS NULL',
+    );
   }
 
   /// Adds `tasks.notification_id` and backfills the rows that predate it.
