@@ -17,6 +17,7 @@ import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 
 import '../core/ids.dart';
+import 'chat_repo.dart';
 
 /// Format revision of the document produced by [exportAll].
 ///
@@ -105,11 +106,21 @@ Future<Map<String, dynamic>> exportAll(
     'exported_at': (now ?? DateTime.now()).toIso8601String(),
   };
   for (final table in _exportedTables) {
-    final rows = await db.query(table, orderBy: 'created_at ASC, id ASC');
+    final rows = await db.query(table, orderBy: _exportOrderBy(table));
     payload[table] = rows.map(_rowToJson).toList();
   }
   return payload;
 }
+
+/// How each table's rows are ordered in the document.
+///
+/// Chronological for everything else, but `chat_messages` goes out in `seq`
+/// order (schema v6, LO-65) so the array itself carries the insertion order —
+/// that is what lets a file written before the column existed, or edited by
+/// hand, still be restored in the right order from its array positions alone.
+String _exportOrderBy(String table) => table == 'chat_messages'
+    ? 'seq ASC, created_at ASC, id ASC'
+    : 'created_at ASC, id ASC';
 
 /// The default filename for an export taken at [at], e.g.
 /// `libreomi-export-20260908-1432.json`.
@@ -185,6 +196,31 @@ Future<ImportReport> importAll(
               .map((row) => row['id'] as String)
               .toSet();
 
+      // Where the file's chat history is placed (LO-65). `chatSeqBase` is the
+      // shift applied to the file's own `seq` values: 0 after a replace has
+      // emptied the table, so they survive the round trip untouched, and the
+      // stored maximum in a merge, so the whole imported history lands past
+      // what is already there instead of interleaving with it at arbitrary
+      // positions. `nextChatSeq` is the counter for rows the file gives no
+      // `seq` at all.
+      var nextChatSeq =
+          table == 'chat_messages' ? await ChatRepo.nextSeq(txn) : 0;
+      final chatSeqBase = nextChatSeq - 1;
+
+      // Chat rows the file re-sends keep the place they already have, the
+      // same rule `ChatRepo.save` applies to a replayed write: importing one
+      // backup twice must not drag its messages past the chat that happened
+      // in between.
+      final storedChatSeqs = table == 'chat_messages' && existingIds.isNotEmpty
+          ? <String, int>{
+              for (final row in await txn.query(
+                'chat_messages',
+                columns: ['id', 'seq'],
+              ))
+                if (row['seq'] != null) row['id'] as String: row['seq'] as int,
+            }
+          : const <String, int>{};
+
       for (var index = 0; index < rows.length; index++) {
         final raw = rows[index];
         if (raw is! Map) {
@@ -205,6 +241,21 @@ Future<ImportReport> importAll(
         } on FormatException catch (e) {
           skip(table, index, e.message);
           continue;
+        }
+
+        if (table == 'chat_messages') {
+          // A file written before schema v6 — or one edited by hand — has no
+          // `seq`, so the row's position in the array is the only record of
+          // the order it was written in; the running counter turns that into
+          // a `seq` that cannot collide with the ones already handed out.
+          final fileSeq = values['seq'] as int?;
+          final stored = storedChatSeqs[values['id'] as String];
+          final seq = stored ??
+              (fileSeq != null && fileSeq > 0
+                  ? chatSeqBase + fileSeq
+                  : nextChatSeq);
+          values['seq'] = seq;
+          if (seq >= nextChatSeq) nextChatSeq = seq + 1;
         }
 
         final id = values['id'] as String;
@@ -315,6 +366,11 @@ Map<String, Object?> _toDbRow(String table, Map<String, dynamic> row) {
         'text': _optionalString(row, 'text') ?? '',
         'is_user': _boolAsInt(row['is_user']),
         'created_at': _requireEpoch(row, 'created_at'),
+        // A message exported before schema v6 has no insertion order. Left
+        // null here and filled in from the row's position in the array by
+        // [importAll], which is the only place that knows both the position
+        // and where the table's counter currently stands.
+        'seq': _optionalInt(row, 'seq'),
       };
     default:
       throw FormatException('unknown table "$table"');

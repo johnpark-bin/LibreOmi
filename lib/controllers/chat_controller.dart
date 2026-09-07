@@ -159,24 +159,16 @@ class ChatController extends ChangeNotifier {
       isUser: true,
       createdAt: DateTime.now(),
     );
-    // `ChatRepo.all` orders by `created_at` (persisted with millisecond
-    // resolution) with `id` as a tiebreaker, and the two calls above and
-    // below can land in the same millisecond -- so the answer is nudged
-    // forward when they tie at that resolution, to keep a reloaded history
-    // in the order it was written. Compared in milliseconds, not the raw
-    // `DateTime`, because two `DateTime.now()` calls a few microseconds
-    // apart still truncate to the same millisecond once persisted.
-    var answerCreatedAt = DateTime.now();
-    if (answerCreatedAt.millisecondsSinceEpoch <=
-        questionMessage.createdAt.millisecondsSinceEpoch) {
-      answerCreatedAt =
-          questionMessage.createdAt.add(const Duration(milliseconds: 1));
-    }
+    // Both timestamps are the real ones even when the two calls land in the
+    // same clock tick: `ChatRepo` sorts on `chat_messages.seq`, the insertion
+    // order stamped at save time (schema v6, LO-65), so a reloaded history
+    // keeps the question ahead of its answer without either of them having to
+    // be nudged off the clock.
     final answerMessage = ChatMessage(
       id: const Uuid().v4(),
       text: answer.answer,
       isUser: false,
-      createdAt: answerCreatedAt,
+      createdAt: DateTime.now(),
     );
     _chatMessages.add(questionMessage);
     _chatMessages.add(answerMessage);

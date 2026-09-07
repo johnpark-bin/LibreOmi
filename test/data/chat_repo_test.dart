@@ -24,6 +24,119 @@ void main() {
     );
   }
 
+  group('ChatRepo insertion order (LO-65)', () {
+    test('same-millisecond messages come back in the order they were saved',
+        () async {
+      // The tie the `seq` column exists to break: identical `created_at`, and
+      // ids that sort the other way round, so a `created_at, id` order would
+      // hand the pair back reversed.
+      final db = await openTestDb();
+      final repo = ChatRepo(db);
+      final sameInstant = DateTime.fromMillisecondsSinceEpoch(1000);
+
+      await repo.save(makeMessage(id: 'z', createdAt: sameInstant, text: 'Q'));
+      await repo.save(makeMessage(
+        id: 'a',
+        createdAt: sameInstant,
+        text: 'A',
+        isUser: false,
+      ));
+
+      expect((await repo.all()).map((m) => m.text), ['Q', 'A']);
+    });
+
+    test('an older timestamp saved later still sorts last', () async {
+      // `created_at` is display data, not the sort key: a clock that jumped
+      // backwards must not reorder a history that was written in one go.
+      final db = await openTestDb();
+      final repo = ChatRepo(db);
+
+      await repo.save(makeMessage(
+        id: 'm1',
+        createdAt: DateTime.fromMillisecondsSinceEpoch(2000),
+        text: 'written first',
+      ));
+      await repo.save(makeMessage(
+        id: 'm2',
+        createdAt: DateTime.fromMillisecondsSinceEpoch(1000),
+        text: 'written second',
+      ));
+
+      expect(
+        (await repo.all()).map((m) => m.text),
+        ['written first', 'written second'],
+      );
+    });
+
+    test('save stamps a monotonically increasing seq', () async {
+      final db = await openTestDb();
+      final repo = ChatRepo(db);
+      final sameInstant = DateTime.fromMillisecondsSinceEpoch(1000);
+
+      for (final id in ['m1', 'm2', 'm3']) {
+        await repo.save(makeMessage(id: id, createdAt: sameInstant));
+      }
+
+      final rows = await db.query('chat_messages', orderBy: 'id ASC');
+      expect(rows.map((row) => row['seq']), [1, 2, 3]);
+    });
+
+    test('re-saving a stored id keeps its place in the history', () async {
+      // `save` replaces on conflict, so a replayed write must not hand the
+      // message a fresh `seq` and move it to the end of the transcript.
+      final db = await openTestDb();
+      final repo = ChatRepo(db);
+      final sameInstant = DateTime.fromMillisecondsSinceEpoch(1000);
+      await repo.save(makeMessage(id: 'm1', createdAt: sameInstant, text: 'Q'));
+      await repo.save(makeMessage(id: 'm2', createdAt: sameInstant, text: 'A'));
+
+      await repo.save(
+        makeMessage(id: 'm1', createdAt: sameInstant, text: 'Q edited'),
+      );
+
+      expect((await repo.all()).map((m) => m.text), ['Q edited', 'A']);
+    });
+
+    test('a row left without a seq still sorts deterministically', () async {
+      // `all()` keeps `created_at, id` as trailing tiebreakers for a row that
+      // reached the table without going through `save` -- nothing writes one
+      // today, but the order must not become arbitrary if something ever
+      // does. SQLite sorts NULL below every value, and `all()` reverses the
+      // descending query, so such a row lands at the oldest end.
+      final db = await openTestDb();
+      final repo = ChatRepo(db);
+      await db.insert('chat_messages', <String, Object?>{
+        'id': 'legacy',
+        'conversation_id': null,
+        'text': 'no seq',
+        'is_user': 1,
+        'created_at': 1000,
+      });
+      await repo.save(makeMessage(
+        id: 'stamped',
+        createdAt: DateTime.fromMillisecondsSinceEpoch(1000),
+        text: 'stamped',
+      ));
+
+      expect((await repo.all()).map((m) => m.text), ['no seq', 'stamped']);
+    });
+
+    test('the newest messages are the ones kept when limit bites', () async {
+      // Same instant throughout, so only `seq` can tell the two ends of the
+      // history apart -- which is what makes `limit` mean "the recent end".
+      final db = await openTestDb();
+      final repo = ChatRepo(db);
+      final sameInstant = DateTime.fromMillisecondsSinceEpoch(1000);
+      for (final id in ['m1', 'm2', 'm3']) {
+        await repo.save(
+          makeMessage(id: id, createdAt: sameInstant, text: id),
+        );
+      }
+
+      expect((await repo.all(limit: 2)).map((m) => m.text), ['m2', 'm3']);
+    });
+  });
+
   group('ChatRepo.save/all', () {
     test('round trips a message', () async {
       final db = await openTestDb();
@@ -63,7 +176,10 @@ void main() {
       expect(restored.text, 'you said you drink tea');
     });
 
-    test('orders oldest first, using id as a tiebreaker', () async {
+    test('orders oldest first, by insertion order', () async {
+      // Since schema v6 the order is the one the messages were saved in, not
+      // the one their timestamps or ids happen to sort in -- the rows below
+      // disagree on both counts.
       final db = await openTestDb();
       final repo = ChatRepo(db);
 
@@ -81,8 +197,7 @@ void main() {
       ));
 
       final all = await repo.all();
-      // created_at 500 first, then the two tied at 1000 broken by id ASC.
-      expect(all.map((m) => m.id).toList(), ['z', 'a', 'b']);
+      expect(all.map((m) => m.id).toList(), ['b', 'a', 'z']);
     });
 
     test('respects limit', () async {

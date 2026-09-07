@@ -74,10 +74,79 @@ Future<Database> _openAt(int version, List<String> schema) async {
   return db;
 }
 
+/// The v5 schema, frozen for the same reason: `tasks` gained
+/// `notification_id` and `chat_messages` still had no `seq`.
+const List<String> _schemaV5 = <String>[
+  '''
+  CREATE TABLE conversations (
+    id TEXT PRIMARY KEY,
+    created_at INTEGER NOT NULL,
+    title TEXT,
+    summary TEXT,
+    transcript TEXT
+  )
+  ''',
+  '''
+  CREATE TABLE chat_messages (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT,
+    text TEXT NOT NULL,
+    is_user INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  )
+  ''',
+  '''
+  CREATE TABLE memories (
+    id TEXT PRIMARY KEY,
+    content TEXT NOT NULL,
+    category TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    source_conversation_id TEXT
+  )
+  ''',
+  '''
+  CREATE TABLE tasks (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    due_date INTEGER,
+    created_at INTEGER NOT NULL,
+    source_conversation_id TEXT,
+    is_completed INTEGER NOT NULL DEFAULT 0,
+    notification_id INTEGER
+  )
+  ''',
+  _pendingFinalizationsV4,
+];
+
 Future<Database> _openV3() => _openAt(3, _schemaV3);
 
 Future<Database> _openV4() =>
     _openAt(4, <String>[..._schemaV3, _pendingFinalizationsV4]);
+
+Future<Database> _openV5() => _openAt(5, _schemaV5);
+
+/// Writes one pre-v6 chat row. No `seq`: the column is what the v6 step adds.
+Future<void> _insertChatMessage(
+  Database db, {
+  required String id,
+  required int createdAt,
+  String text = 'hello',
+  bool isUser = true,
+}) async {
+  await db.insert('chat_messages', <String, Object?>{
+    'id': id,
+    'conversation_id': null,
+    'text': text,
+    'is_user': isUser ? 1 : 0,
+    'created_at': createdAt,
+  });
+}
+
+Future<List<Object?>> _chatSeqsById(Database db) async {
+  final rows = await db.query('chat_messages', orderBy: 'id ASC');
+  return rows.map((row) => row['seq']).toList();
+}
 
 Future<Set<String>> _tableNames(Database db) async {
   final rows = await db.rawQuery(
@@ -127,9 +196,9 @@ void main() {
     databaseFactory = databaseFactoryFfi;
   });
 
-  group('AppDatabase schema v5', () {
-    test('the declared version is 5', () {
-      expect(AppDatabase.schemaVersion, 5);
+  group('AppDatabase schema v6', () {
+    test('the declared version is 6', () {
+      expect(AppDatabase.schemaVersion, 6);
     });
 
     test('createPendingFinalizationsTable creates the queue table on its own',
@@ -230,7 +299,7 @@ void main() {
       expect(await _tableNames(db), contains('chat_messages'));
     });
 
-    test('a v3 database walks v4 and v5 in one upgrade', () async {
+    test('a v3 database walks v4, v5 and v6 in one upgrade', () async {
       final db = await _openV3();
       addTearDown(db.close);
       await _insertTask(db, id: 't1', createdAt: 1000);
@@ -315,7 +384,49 @@ void main() {
       }
     });
 
-    test('a v1 database walks every step up to v5', () async {
+    test('a v5 database gains chat_messages.seq', () async {
+      final db = await _openV5();
+      addTearDown(db.close);
+
+      expect(await _columns(db, 'chat_messages'), isNot(contains('seq')));
+
+      await AppDatabase.migrate(db, 5, AppDatabase.schemaVersion);
+
+      expect(await _columns(db, 'chat_messages'), contains('seq'));
+    });
+
+    test('the v6 backfill keeps the order the rows were written in', () async {
+      // Written oldest-last and with two of them sharing a `created_at`, which
+      // is exactly the case the column exists for: the backfill has to come
+      // from `rowid`, the order the inserts actually happened in, not from the
+      // timestamps.
+      final db = await _openV5();
+      addTearDown(db.close);
+      await _insertChatMessage(db, id: 'a', createdAt: 2000, text: 'first');
+      await _insertChatMessage(db, id: 'b', createdAt: 1000, text: 'second');
+      await _insertChatMessage(db, id: 'c', createdAt: 1000, text: 'third');
+
+      await AppDatabase.migrate(db, 5, AppDatabase.schemaVersion);
+
+      final rows = await db.query('chat_messages', orderBy: 'seq ASC');
+      expect(rows.map((row) => row['text']), ['first', 'second', 'third']);
+    });
+
+    test('replaying the v6 step leaves the backfilled order alone', () async {
+      final db = await _openV5();
+      addTearDown(db.close);
+      await _insertChatMessage(db, id: 'a', createdAt: 1000);
+      await _insertChatMessage(db, id: 'b', createdAt: 1000);
+
+      await AppDatabase.migrate(db, 5, AppDatabase.schemaVersion);
+      final afterFirst = await _chatSeqsById(db);
+      await AppDatabase.migrate(db, 5, AppDatabase.schemaVersion);
+
+      expect(await _chatSeqsById(db), equals(afterFirst));
+      expect(afterFirst, everyElement(isNotNull));
+    });
+
+    test('a v1 database walks every step up to v6', () async {
       final db = await _openAt(1, <String>[_schemaV3.first]);
       addTearDown(db.close);
 
@@ -331,6 +442,7 @@ void main() {
         ]),
       );
       expect(await _columns(db, 'tasks'), contains('notification_id'));
+      expect(await _columns(db, 'chat_messages'), contains('seq'));
     });
 
     test('replaying the upgrade keeps rows and ids untouched', () async {
