@@ -4,7 +4,7 @@ library;
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
-import '../models/conversation.dart';
+import '../core/models.dart';
 import 'deepgram/deepgram_parser.dart';
 import 'settings_service.dart';
 

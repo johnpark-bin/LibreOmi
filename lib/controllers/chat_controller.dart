@@ -16,7 +16,7 @@ import '../data/db.dart';
 import '../intelligence/llm_client.dart';
 import '../intelligence/openai_client.dart';
 import '../l10n/l10n.dart';
-import '../models/conversation.dart';
+import '../core/models.dart';
 import '../services/settings_service.dart';
 import '../session/recording_session.dart' show AiAnswer;
 import 'library_controller.dart';

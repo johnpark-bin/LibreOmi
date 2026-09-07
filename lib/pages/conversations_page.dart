@@ -4,7 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../controllers/library_controller.dart';
 import '../l10n/l10n.dart';
-import '../models/conversation.dart';
+import '../core/models.dart';
 import 'conversation_detail_page.dart';
 
 class ConversationsPage extends StatefulWidget {

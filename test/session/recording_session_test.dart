@@ -22,7 +22,7 @@ import 'package:libreomi/device/fake_omi_device.dart';
 import 'package:libreomi/device/omi_device.dart';
 import 'package:libreomi/device/omi_gatt.dart';
 import 'package:libreomi/intelligence/llm_client.dart';
-import 'package:libreomi/models/conversation.dart';
+import 'package:libreomi/core/models.dart';
 import 'package:libreomi/session/conversation_finalizer.dart';
 import 'package:libreomi/session/recording_session.dart';
 import 'package:libreomi/session/session_state.dart';

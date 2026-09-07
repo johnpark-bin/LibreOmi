@@ -7,7 +7,7 @@ import 'package:libreomi/data/conversation_repo.dart';
 import 'package:libreomi/data/memory_repo.dart';
 import 'package:libreomi/data/task_repo.dart';
 import 'package:libreomi/intelligence/llm_client.dart';
-import 'package:libreomi/models/conversation.dart';
+import 'package:libreomi/core/models.dart';
 import 'package:libreomi/services/notification_ids.dart';
 import 'package:libreomi/session/conversation_finalizer.dart';
 

@@ -9,7 +9,7 @@ import 'dart:convert';
 
 import 'package:sqflite/sqflite.dart';
 
-import '../models/conversation.dart';
+import '../core/models.dart';
 
 class ConversationRepo {
   ConversationRepo(this._db);

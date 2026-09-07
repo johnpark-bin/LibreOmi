@@ -18,7 +18,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../audio/wav.dart';
-import '../models/conversation.dart';
+import '../core/models.dart';
 import 'isolate_channel.dart';
 import 'model_catalog.dart';
 import 'model_store.dart';

@@ -6,7 +6,7 @@ library;
 
 import 'dart:convert';
 
-import '../../models/conversation.dart';
+import '../../core/models.dart';
 
 /// Result of parsing a Deepgram `Results` message.
 class DeepgramResult {

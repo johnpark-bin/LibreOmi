@@ -6,7 +6,7 @@ library;
 import 'dart:io';
 
 import '../audio/audio_source.dart';
-import '../models/conversation.dart';
+import '../core/models.dart';
 
 /// A transcriber that consumes a live stream of [AudioChunk]s and produces
 /// [TranscriptSegment]s as they become available.

@@ -6,7 +6,7 @@ library;
 
 import 'package:sqflite/sqflite.dart';
 
-import '../models/conversation.dart';
+import '../core/models.dart';
 
 class MemoryRepo {
   MemoryRepo(this._db);

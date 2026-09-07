@@ -8,7 +8,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libreomi/audio/audio_source.dart';
-import 'package:libreomi/models/conversation.dart';
+import 'package:libreomi/core/models.dart';
 import 'package:libreomi/transcription/isolate_channel.dart';
 import 'package:libreomi/transcription/sherpa_streaming.dart';
 import 'package:libreomi/transcription/sherpa_worker.dart';

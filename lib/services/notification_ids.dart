@@ -18,7 +18,7 @@
 library;
 
 import '../core/ids.dart' show fallbackNotificationId;
-import '../models/conversation.dart';
+import '../core/models.dart';
 
 /// The notification id used for [task]'s due-date reminder.
 ///
