@@ -554,4 +554,33 @@ void main() {
       expect(SettingsService.totalApiCost, closeTo(expected, 1e-9));
     });
   });
+
+  group('SettingsService.exactTaskReminders', () {
+    test('defaults to off so reminders stay inexact (LO-50)', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      expect(SettingsService.exactTaskReminders, isFalse);
+    });
+
+    test('round-trips through SharedPreferences', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      SettingsService.exactTaskReminders = true;
+      expect(SettingsService.exactTaskReminders, isTrue);
+
+      SettingsService.exactTaskReminders = false;
+      expect(SettingsService.exactTaskReminders, isFalse);
+    });
+
+    test('reads a value stored by a previous launch', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'exact_task_reminders': true,
+      });
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      expect(SettingsService.exactTaskReminders, isTrue);
+    });
+  });
 }

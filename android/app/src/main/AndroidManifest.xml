@@ -37,6 +37,14 @@
     <!-- Keeps the BLE link alive in Doze; offered with an explanation, never silently. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
 
+    <!-- Exact task reminders, opt-in only (LO-50). Declaring it does not grant it:
+         Android 14+ denies SCHEDULE_EXACT_ALARM by default to apps targeting API 33+,
+         so the user turns it on from Settings > Alarms & reminders and the app falls
+         back to an inexact alarm whenever it is not granted. USE_EXACT_ALARM is
+         deliberately NOT declared — Play policy restricts it to alarm-clock and
+         calendar apps. See docs/04-android-platform-notes.md §3 and §6. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+
     <!-- flutter_foreground_task's own manifest declares RECEIVE_BOOT_COMPLETED for its
          optional boot receiver. A boot receiver is explicitly out of scope for v1
          (docs/03-architecture.md §5) and the service is configured with
