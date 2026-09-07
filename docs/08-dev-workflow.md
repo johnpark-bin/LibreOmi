@@ -8,7 +8,7 @@
 | `docs/`, `README.md`, `AGENTS.md`, CHANGELOG | English | future contributors |
 | Commit messages | English, Conventional Commits (`feat(ble): request MTU 512 on Android`) | tooling, changelog generation |
 | GitHub issues and pull requests (bootstrap phase) | **Korean** title + body; PR body ends with a one-line English summary | project owner reads/writes Korean; the English line keeps history greppable |
-| In-app strings | English first, Korean via i18n (M6) | |
+| In-app strings | English and Korean, through `lib/l10n/*.arb` (LO-62) | `app_en.arb` is the template every new string is added to first; `app_ko.arb` translates it in the same PR, and `test/l10n/arb_parity_test.dart` fails the build if it does not |
 | Owner-facing summaries produced by agents | Korean | token efficiency for the owner; see `SUMMARY.ko.md` |
 
 After public launch, issues from outside contributors may be in any language; maintainers reply in the issue's language.

@@ -1,6 +1,7 @@
 /// Home page - device connection and live transcription
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../l10n/l10n.dart';
 import '../platform/battery_optimization.dart';
 import '../platform/battery_optimization_gateway.dart';
 import '../platform/permission_gateway.dart';
@@ -29,6 +30,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = L10n.of(context);
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
@@ -55,31 +57,31 @@ class _HomePageState extends State<HomePage> {
           selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
           unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 12),
           elevation: 0,
-          items: const [
+          items: [
             BottomNavigationBarItem(
-              icon: Icon(Icons.mic_none_outlined),
-              activeIcon: Icon(Icons.mic),
-              label: 'Live',
+              icon: const Icon(Icons.mic_none_outlined),
+              activeIcon: const Icon(Icons.mic),
+              label: l10n.home_nav_liveLabel,
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.history_outlined),
-              activeIcon: Icon(Icons.history),
-              label: 'History',
+              icon: const Icon(Icons.history_outlined),
+              activeIcon: const Icon(Icons.history),
+              label: l10n.home_nav_historyLabel,
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.psychology_outlined),
-              activeIcon: Icon(Icons.psychology),
-              label: 'Memories',
+              icon: const Icon(Icons.psychology_outlined),
+              activeIcon: const Icon(Icons.psychology),
+              label: l10n.home_nav_memoriesLabel,
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.check_circle_outline),
-              activeIcon: Icon(Icons.check_circle),
-              label: 'Tasks',
+              icon: const Icon(Icons.check_circle_outline),
+              activeIcon: const Icon(Icons.check_circle),
+              label: l10n.home_nav_tasksLabel,
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.settings_outlined),
-              activeIcon: Icon(Icons.settings),
-              label: 'Settings',
+              icon: const Icon(Icons.settings_outlined),
+              activeIcon: const Icon(Icons.settings),
+              label: l10n.home_nav_settingsLabel,
             ),
           ],
         ),
@@ -115,7 +117,8 @@ class _DeviceTabState extends State<DeviceTab> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+    final l10n = L10n.of(context);
+
     return Consumer2<DeviceController, SessionController>(
       builder: (context, deviceController, session, child) {
         return Scaffold(
@@ -129,7 +132,7 @@ class _DeviceTabState extends State<DeviceTab> {
               // is connected or a capture is running.
               IconButton(
                 icon: const Icon(Icons.privacy_tip_outlined),
-                tooltip: 'Permissions & privacy',
+                tooltip: l10n.common_permissionsPrivacyLabel,
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => const PermissionsRationalePage(),
@@ -190,7 +193,8 @@ class _DeviceTabState extends State<DeviceTab> {
     SessionController session,
   ) {
     final theme = Theme.of(context);
-    
+    final l10n = L10n.of(context);
+
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
@@ -208,14 +212,14 @@ class _DeviceTabState extends State<DeviceTab> {
           ),
         ),
         const SizedBox(height: 24),
-        const Text(
-          'Start Capturing',
+        Text(
+          l10n.home_device_startCapturingTitle,
           textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: -0.5),
+          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: -0.5),
         ),
         const SizedBox(height: 8),
         Text(
-          'Choose your audio source\nto capture and transcribe conversations.',
+          l10n.home_device_startCapturingSubtitle,
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface.withOpacity(0.6), height: 1.5),
         ),
@@ -238,16 +242,16 @@ class _DeviceTabState extends State<DeviceTab> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Missing API Keys', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+                      Text(l10n.home_device_missingApiKeysTitle, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
                       const SizedBox(height: 4),
-                      Text('Configure keys in Settings to enable transcription', 
+                      Text(l10n.home_device_missingApiKeysSubtitle,
                         style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurface.withOpacity(0.7))),
                     ],
                   ),
                 ),
                 TextButton(
                   onPressed: widget.onNavigateToSettings,
-                  child: const Text('Settings'),
+                  child: Text(l10n.home_nav_settingsLabel),
                 ),
               ],
             ),
@@ -262,8 +266,8 @@ class _DeviceTabState extends State<DeviceTab> {
         
         // Use Phone Microphone
         _buildActionCard(
-          title: 'Use iPhone Microphone',
-          subtitle: 'Record directly from your phone',
+          title: l10n.home_device_phoneMicTitle,
+          subtitle: l10n.home_device_phoneMicSubtitle,
           icon: Icons.phone_iphone,
           color: const Color(0xFF00b894),
           onTap: SettingsService.hasApiKeys ? () => _startPhoneMicRecording(session) : null,
@@ -274,6 +278,7 @@ class _DeviceTabState extends State<DeviceTab> {
   
   Widget _buildOmiCard(DeviceController deviceController) {
     final theme = Theme.of(context);
+    final l10n = L10n.of(context);
     // Only show connecting state for user-initiated connections
     final isConnecting = _isUserConnecting && deviceController.deviceState == DeviceConnectionState.connecting;
     
@@ -318,20 +323,20 @@ class _DeviceTabState extends State<DeviceTab> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          isConnecting ? 'Connecting...' : 'Use Omi Device',
+                          isConnecting ? l10n.home_device_omiConnectingTitle : l10n.home_device_omiTitle,
                           style: TextStyle(
-                            fontSize: 16, 
+                            fontSize: 16,
                             fontWeight: FontWeight.bold,
                             color: theme.colorScheme.onSurface,
                           ),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          isConnecting 
-                              ? 'Please wait while connecting to your Omi'
-                              : 'Connect via Bluetooth for hands-free recording',
+                          isConnecting
+                              ? l10n.home_device_omiConnectingSubtitle
+                              : l10n.home_device_omiSubtitle,
                           style: TextStyle(
-                            fontSize: 12, 
+                            fontSize: 12,
                             color: theme.colorScheme.onSurface.withOpacity(0.5),
                           ),
                         ),
@@ -347,11 +352,11 @@ class _DeviceTabState extends State<DeviceTab> {
                 const SizedBox(height: 16),
                 const Divider(),
                 const SizedBox(height: 8),
-                const Row(
+                Row(
                   children: [
-                    SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-                    SizedBox(width: 12),
-                    Text('Scanning for devices...', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+                    const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                    const SizedBox(width: 12),
+                    Text(l10n.home_device_scanningMessage, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -371,7 +376,7 @@ class _DeviceTabState extends State<DeviceTab> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(device.name.isNotEmpty ? device.name : 'Unknown Device',
+                            Text(device.name.isNotEmpty ? device.name : l10n.home_device_unknownDeviceName,
                               style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
                             Text(device.id,
                               style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurface.withOpacity(0.5))),
@@ -387,7 +392,7 @@ class _DeviceTabState extends State<DeviceTab> {
                           minimumSize: Size.zero,
                           textStyle: const TextStyle(fontSize: 13),
                         ),
-                        child: const Text('Connect'),
+                        child: Text(l10n.home_device_connectButton),
                       ),
                     ],
                   ),
@@ -463,6 +468,7 @@ class _DeviceTabState extends State<DeviceTab> {
     DeviceController deviceController,
     SessionController session,
   ) {
+    final l10n = L10n.of(context);
     return Column(
       children: [
         // Connected Header
@@ -488,21 +494,21 @@ class _DeviceTabState extends State<DeviceTab> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      session.isUsingPhoneMic ? 'Phone Mic Active' : 'Connected',
+                      session.isUsingPhoneMic ? l10n.home_connected_phoneMicActiveTitle : l10n.home_connected_connectedTitle,
                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                     Text(
-                      session.isUsingPhoneMic ? 'Using iPhone Microphone' : 'Omi Device Ready',
+                      session.isUsingPhoneMic ? l10n.home_connected_phoneMicActiveSubtitle : l10n.home_connected_omiReadySubtitle,
                       style: const TextStyle(color: Colors.grey, fontSize: 12),
                     ),
                   ],
                 ),
               ),
               TextButton(
-                onPressed: session.isUsingPhoneMic 
-                    ? session.stopListening 
+                onPressed: session.isUsingPhoneMic
+                    ? session.stopListening
                     : deviceController.disconnectDevice,
-                child: Text(session.isUsingPhoneMic ? 'Stop' : 'Disconnect'),
+                child: Text(session.isUsingPhoneMic ? l10n.home_connected_stopButton : l10n.home_connected_disconnectButton),
               ),
             ],
           ),
@@ -529,15 +535,15 @@ class _DeviceTabState extends State<DeviceTab> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Loading transcription model...',
-                        style: TextStyle(
+                      Text(
+                        l10n.home_connected_loadingModelTitle,
+                        style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           color: Colors.orange,
                         ),
                       ),
                       Text(
-                        'This may take a moment on first use',
+                        l10n.home_connected_loadingModelSubtitle,
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.grey.shade400,
@@ -553,15 +559,15 @@ class _DeviceTabState extends State<DeviceTab> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Listening...',
-                        style: TextStyle(
+                      Text(
+                        l10n.overlay_listening_title,
+                        style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           color: Colors.deepPurpleAccent,
                         ),
                       ),
                       Text(
-                        'Saves automatically after 2 min silence',
+                        l10n.home_connected_listeningSubtitle,
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.grey.shade400,
@@ -575,17 +581,17 @@ class _DeviceTabState extends State<DeviceTab> {
                   TextButton.icon(
                     onPressed: session.manualSaveConversation,
                     icon: const Icon(Icons.save, size: 18),
-                    label: const Text('Save Now'),
+                    label: Text(l10n.home_connected_saveNowButton),
                   ),
               ] else ...[
                 const Icon(Icons.mic_off, color: Colors.grey),
                 const SizedBox(width: 12),
-                const Expanded(child: Text('Not listening')),
+                Expanded(child: Text(l10n.home_connected_notListeningMessage)),
                 ElevatedButton(
                   onPressed: SettingsService.hasApiKeys
                       ? () => _startListening(session)
                       : null,
-                  child: const Text('Start'),
+                  child: Text(l10n.home_connected_startButton),
                 ),
               ],
             ],
@@ -600,7 +606,7 @@ class _DeviceTabState extends State<DeviceTab> {
                 ? session.stopListening
                 : () => _startListening(session),
             icon: Icon(session.isListening ? Icons.stop : Icons.mic),
-            label: Text(session.isListening ? 'Stop Listening' : 'Start Listening'),
+            label: Text(session.isListening ? l10n.home_connected_stopListeningButton : l10n.home_connected_startListeningButton),
             style: ElevatedButton.styleFrom(
               backgroundColor: session.isListening ? Colors.red : Colors.deepPurple,
               foregroundColor: Colors.white,
@@ -625,15 +631,15 @@ class _DeviceTabState extends State<DeviceTab> {
                 children: [
                   Row(
                     children: [
-                      const Text(
-                        'Current Conversation',
-                        style: TextStyle(
+                      Text(
+                        l10n.home_connected_currentConversationTitle,
+                        style: const TextStyle(
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                       const Spacer(),
                       Text(
-                        '${session.liveSegments.length} segments',
+                        l10n.home_connected_segmentsCount(session.liveSegments.length),
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.grey.shade400,
@@ -663,7 +669,7 @@ class _DeviceTabState extends State<DeviceTab> {
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
-                                  'S${segment.speakerId}',
+                                  l10n.home_connected_speakerLabel(segment.speakerId),
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 12,
@@ -683,16 +689,16 @@ class _DeviceTabState extends State<DeviceTab> {
             ),
           )
         else if (session.isListening)
-          const Expanded(
+          Expanded(
             child: Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.mic, size: 64, color: Colors.grey),
-                  SizedBox(height: 16),
+                  const Icon(Icons.mic, size: 64, color: Colors.grey),
+                  const SizedBox(height: 16),
                   Text(
-                    'Waiting for speech...',
-                    style: TextStyle(color: Colors.grey, fontSize: 16),
+                    l10n.home_connected_waitingForSpeechMessage,
+                    style: const TextStyle(color: Colors.grey, fontSize: 16),
                   ),
                 ],
               ),
@@ -714,6 +720,7 @@ class _DeviceTabState extends State<DeviceTab> {
   }
 
   Future<void> _startScan() async {
+    final l10n = L10n.of(context);
     // Ask for BLE permission at the point of use (docs/04 §3): BLUETOOTH_SCAN
     // and BLUETOOTH_CONNECT on Android 12+, ACCESS_FINE_LOCATION below that.
     final PermissionOutcome outcome;
@@ -722,13 +729,13 @@ class _DeviceTabState extends State<DeviceTab> {
     } catch (e) {
       // permission_handler throws when another request is still in flight or
       // no activity is attached; without this the button would look dead.
-      _showPermissionError('Could not request Bluetooth permission', e);
+      _showPermissionError(l10n.home_permission_bluetoothRequestFailedMessage, e);
       return;
     }
     if (!mounted) return;
     if (outcome != PermissionOutcome.granted) {
       _showPermissionDenied(
-        'Bluetooth permission is needed to scan for your Omi device.',
+        l10n.home_permission_bluetoothDeniedMessage,
         outcome,
       );
       return;
@@ -762,7 +769,7 @@ class _DeviceTabState extends State<DeviceTab> {
       setState(() => _isUserConnecting = false);
       if (!success) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to connect to device')),
+          SnackBar(content: Text(L10n.of(context).home_device_connectFailedMessage)),
         );
       }
     }
@@ -783,19 +790,20 @@ class _DeviceTabState extends State<DeviceTab> {
   }
 
   Future<void> _startPhoneMicRecording(SessionController session) async {
+    final l10n = L10n.of(context);
     // RECORD_AUDIO is only ever needed in phone-mic mode, so it is requested
     // here rather than at launch (docs/04 §3).
     final PermissionOutcome outcome;
     try {
       outcome = await appPermissions.ensureMicrophone();
     } catch (e) {
-      _showPermissionError('Could not request microphone permission', e);
+      _showPermissionError(l10n.home_permission_microphoneRequestFailedMessage, e);
       return;
     }
     if (!mounted) return;
     if (outcome != PermissionOutcome.granted) {
       _showPermissionDenied(
-        'Microphone permission is needed to record with the phone microphone.',
+        l10n.home_permission_microphoneDeniedMessage,
         outcome,
       );
       return;
@@ -835,24 +843,22 @@ class _DeviceTabState extends State<DeviceTab> {
     if (!shouldPrompt) return;
     if (!mounted) return;
 
+    final l10n = L10n.of(context);
     final bool continuePressed = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Keep recording while the screen is off?'),
-            content: const Text(
-              'Android\'s battery optimisation can suspend LibreOmi while '
-              'the screen is off, which can cut a recording session short. '
-              'Exempting LibreOmi from battery optimisation keeps the '
-              'Bluetooth session alive in the background.',
+            title: Text(l10n.home_batteryPrompt_title),
+            content: Text(
+              l10n.home_batteryPrompt_content,
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Not now'),
+                child: Text(l10n.common_notNowButton),
               ),
               TextButton(
                 onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Continue'),
+                child: Text(l10n.home_batteryPrompt_continueButton),
               ),
             ],
           ),
@@ -863,7 +869,7 @@ class _DeviceTabState extends State<DeviceTab> {
 
     if (!continuePressed) {
       _offerBatteryGuidance(
-        'You can exempt LibreOmi from battery optimisation later.',
+        l10n.home_batteryPrompt_declinedMessage,
       );
       return;
     }
@@ -879,7 +885,7 @@ class _DeviceTabState extends State<DeviceTab> {
 
     if (outcome == BatteryOptimizationOutcome.denied) {
       _offerBatteryGuidance(
-        'Battery optimisation is still on for LibreOmi.',
+        l10n.home_batteryPrompt_stillOnMessage,
       );
     }
   }
@@ -892,7 +898,7 @@ class _DeviceTabState extends State<DeviceTab> {
       SnackBar(
         content: Text(message),
         action: SnackBarAction(
-          label: 'Guidance',
+          label: L10n.of(context).home_batteryPrompt_guidanceAction,
           onPressed: () {
             Navigator.of(context).push(
               MaterialPageRoute(
@@ -909,7 +915,11 @@ class _DeviceTabState extends State<DeviceTab> {
   void _showPermissionError(String message, Object error) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$message: $error')),
+      SnackBar(
+        content: Text(
+          L10n.of(context).home_permission_errorTemplate(message, error),
+        ),
+      ),
     );
   }
 
@@ -917,15 +927,18 @@ class _DeviceTabState extends State<DeviceTab> {
   /// denied the system dialog never appears again, so the only way forward is
   /// the app's settings page.
   void _showPermissionDenied(String message, PermissionOutcome outcome) {
+    final l10n = L10n.of(context);
     final isPermanent = outcome == PermissionOutcome.permanentlyDenied;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          isPermanent ? '$message Enable it in app settings.' : message,
+          isPermanent
+              ? l10n.home_permission_deniedPermanentTemplate(message)
+              : message,
         ),
         action: isPermanent
             ? SnackBarAction(
-                label: 'Settings',
+                label: l10n.home_nav_settingsLabel,
                 onPressed: () => appPermissions.openAppSettings(),
               )
             : null,

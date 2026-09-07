@@ -1,6 +1,5 @@
 {
   "@@locale": "en",
-
   "overlay_listening_title": "Listening...",
   "@overlay_listening_title": {
     "description": "Full-screen overlay shown while a hold-to-ask question is being recorded"
@@ -9,12 +8,10 @@
   "@overlay_listening_hint": {
     "description": "Instruction under the listening overlay: press the wearable button again to stop"
   },
-
   "settings_title": "Settings",
   "@settings_title": {
     "description": "App bar title of the settings page"
   },
-
   "settings_language_header": "Language",
   "@settings_language_header": {
     "description": "Section header for the app display-language picker"
@@ -34,5 +31,782 @@
   "settings_language_korean": "한국어",
   "@settings_language_korean": {
     "description": "Language option: Korean. Written in Korean in every locale."
+  },
+  "settings_device_header": "Connected Device",
+  "@settings_device_header": {
+    "description": "Section header for the saved/connected device card on the Settings page"
+  },
+  "settings_device_noneTitle": "No device saved",
+  "@settings_device_noneTitle": {
+    "description": "Title shown when no Omi device has been saved yet"
+  },
+  "settings_device_noneSubtitle": "Connect to a device to get started",
+  "@settings_device_noneSubtitle": {
+    "description": "Subtitle shown when no Omi device has been saved yet"
+  },
+  "settings_device_connectedSubtitle": "Connected • Tap to Configure",
+  "@settings_device_connectedSubtitle": {
+    "description": "Subtitle of the saved-device row when it is currently connected"
+  },
+  "settings_device_savedSubtitle": "Saved Device",
+  "@settings_device_savedSubtitle": {
+    "description": "Subtitle of the saved-device row when it is not currently connected"
+  },
+  "settings_device_forgetButton": "Forget",
+  "@settings_device_forgetButton": {
+    "description": "Button that removes the saved device"
+  },
+  "settings_device_connectButton": "Connect",
+  "@settings_device_connectButton": {
+    "description": "Button that connects to the saved device"
+  },
+  "settings_transcription_header": "Transcription Engine",
+  "@settings_transcription_header": {
+    "description": "Section header for the transcription-mode picker"
+  },
+  "settings_transcription_cloudTitle": "Cloud (Deepgram)",
+  "@settings_transcription_cloudTitle": {
+    "description": "Radio option: cloud transcription via Deepgram"
+  },
+  "settings_transcription_cloudSubtitle": "Best quality, requires API key",
+  "@settings_transcription_cloudSubtitle": {
+    "description": "Subtitle of the cloud (Deepgram) transcription option"
+  },
+  "settings_transcription_localTitle": "Local (offline model)",
+  "@settings_transcription_localTitle": {
+    "description": "Radio option: on-device transcription using an offline model"
+  },
+  "settings_transcription_localSubtitle": "Whisper or SenseVoice, high accuracy",
+  "@settings_transcription_localSubtitle": {
+    "description": "Subtitle of the local offline-model transcription option"
+  },
+  "settings_transcription_modelLabel": "Model",
+  "@settings_transcription_modelLabel": {
+    "description": "Label of the offline speech-model dropdown"
+  },
+  "settings_transcription_sherpaTitle": "Local (Sherpa-ONNX)",
+  "@settings_transcription_sherpaTitle": {
+    "description": "Radio option: on-device streaming transcription via Sherpa-ONNX"
+  },
+  "settings_transcription_sherpaSubtitle": "Real-time streaming ASR",
+  "@settings_transcription_sherpaSubtitle": {
+    "description": "Subtitle of the local Sherpa-ONNX transcription option"
+  },
+  "settings_transcription_sttLanguageLabel": "Language:",
+  "@settings_transcription_sttLanguageLabel": {
+    "description": "Label in front of the local speech-to-text language picker"
+  },
+  "settings_transcription_sttLanguageEnglish": "English",
+  "@settings_transcription_sttLanguageEnglish": {
+    "description": "Segmented-button option: transcribe local speech as English. Written in English in every locale, like a language name."
+  },
+  "settings_transcription_sttLanguageKorean": "한국어",
+  "@settings_transcription_sttLanguageKorean": {
+    "description": "Segmented-button option: transcribe local speech as Korean. Written in Korean in every locale, like a language name."
+  },
+  "settings_transcription_localModesHint": "Local modes transcribe on the phone and need their model downloaded first — see Manage models below. Korean needs its own streaming model downloaded (~399 MB); SenseVoice covers Korean, English, Chinese, Japanese and Cantonese in one offline model.",
+  "@settings_transcription_localModesHint": {
+    "description": "Explanatory hint shown under the local transcription modes (whisper/sherpa)"
+  },
+  "settings_transcription_manageModelsTitle": "Manage models",
+  "@settings_transcription_manageModelsTitle": {
+    "description": "Row title that opens the on-device model manager"
+  },
+  "settings_transcription_manageModelsSubtitle": "Download or remove on-device speech models",
+  "@settings_transcription_manageModelsSubtitle": {
+    "description": "Row subtitle for the on-device model manager"
+  },
+  "common_apiKeyHint": "Enter API Key",
+  "@common_apiKeyHint": {
+    "description": "Hint text of an API key text field"
+  },
+  "common_apiKeyLabel": "API Key",
+  "@common_apiKeyLabel": {
+    "description": "Label of an API key text field"
+  },
+  "common_addButton": "Add",
+  "@common_addButton": {
+    "description": "Generic Add button, used for custom LLM models and priced models"
+  },
+  "common_notNowButton": "Not now",
+  "@common_notNowButton": {
+    "description": "Dialog action that declines an optional request without denying it permanently"
+  },
+  "common_cancelButton": "Cancel",
+  "@common_cancelButton": {
+    "description": "Generic dialog Cancel button"
+  },
+  "common_closeButton": "Close",
+  "@common_closeButton": {
+    "description": "Generic dialog Close button"
+  },
+  "common_permissionsPrivacyLabel": "Permissions & privacy",
+  "@common_permissionsPrivacyLabel": {
+    "description": "Label for the entry point into the permissions & privacy rationale screen, used both as a Settings row title and a Home app-bar tooltip"
+  },
+  "settings_deepgram_header": "Deepgram API Key",
+  "@settings_deepgram_header": {
+    "description": "Section header for the Deepgram API key card"
+  },
+  "settings_deepgram_getKeyHint": "Get from console.deepgram.com",
+  "@settings_deepgram_getKeyHint": {
+    "description": "Hint telling the user where to obtain a Deepgram API key"
+  },
+  "settings_deepgram_modelLabel": "Model",
+  "@settings_deepgram_modelLabel": {
+    "description": "Label of the Deepgram streaming-model dropdown"
+  },
+  "settings_deepgram_modelHint": "Streaming model used for live transcription",
+  "@settings_deepgram_modelHint": {
+    "description": "Hint under the Deepgram model dropdown"
+  },
+  "settings_llm_header": "LLM",
+  "@settings_llm_header": {
+    "description": "Section header for the LLM (chat/summarisation) configuration card"
+  },
+  "settings_llm_apiKeyHint": "Key for the configured endpoint below. Leave empty for a local server such as Ollama that does not require one.",
+  "@settings_llm_apiKeyHint": {
+    "description": "Hint under the LLM API key field"
+  },
+  "settings_llm_providerLabel": "Provider",
+  "@settings_llm_providerLabel": {
+    "description": "Label of the LLM provider preset dropdown"
+  },
+  "settings_llm_baseUrlHint": "e.g. http://localhost:11434/v1",
+  "@settings_llm_baseUrlHint": {
+    "description": "Hint text of the LLM base-URL field"
+  },
+  "settings_llm_baseUrlLabel": "Base URL",
+  "@settings_llm_baseUrlLabel": {
+    "description": "Label of the LLM base-URL field"
+  },
+  "settings_llm_baseUrlDescription": "OpenAI-compatible base URL, e.g. http://localhost:11434/v1 for Ollama.",
+  "@settings_llm_baseUrlDescription": {
+    "description": "Description under the LLM base-URL field"
+  },
+  "settings_llm_modelLabel": "Model",
+  "@settings_llm_modelLabel": {
+    "description": "Label of the LLM model dropdown"
+  },
+  "settings_llm_customModelHint": "Add custom model id",
+  "@settings_llm_customModelHint": {
+    "description": "Hint text of the custom LLM model id field"
+  },
+  "settings_llm_customModelLabel": "Custom model",
+  "@settings_llm_customModelLabel": {
+    "description": "Label of the custom LLM model id field"
+  },
+  "settings_llm_testConnectionButton": "Test connection",
+  "@settings_llm_testConnectionButton": {
+    "description": "Button that tests the configured LLM connection"
+  },
+  "settings_llm_pricingTitle": "Pricing (per 1M tokens)",
+  "@settings_llm_pricingTitle": {
+    "description": "Title of the expandable LLM pricing editor"
+  },
+  "settings_llm_pricingHint": "Models without a price show a cost of \"—\" on the stats page.",
+  "@settings_llm_pricingHint": {
+    "description": "Explanatory hint at the top of the LLM pricing editor"
+  },
+  "settings_llm_priceInputLabel": "Input $",
+  "@settings_llm_priceInputLabel": {
+    "description": "Label of a model's input-token price field"
+  },
+  "settings_llm_priceOutputLabel": "Output $",
+  "@settings_llm_priceOutputLabel": {
+    "description": "Label of a model's output-token price field"
+  },
+  "settings_llm_priceModelHint": "Model id to price",
+  "@settings_llm_priceModelHint": {
+    "description": "Hint text of the field that adds a new priced model"
+  },
+  "settings_llm_priceModelLabel": "Add priced model",
+  "@settings_llm_priceModelLabel": {
+    "description": "Label of the field that adds a new priced model"
+  },
+  "settings_llm_pricingResetButton": "Reset to defaults",
+  "@settings_llm_pricingResetButton": {
+    "description": "Button that resets the LLM pricing table to its defaults"
+  },
+  "settings_notifications_header": "Notifications",
+  "@settings_notifications_header": {
+    "description": "Section header for the notification toggles"
+  },
+  "settings_notifications_batteryLowTitle": "Battery Low (50%)",
+  "@settings_notifications_batteryLowTitle": {
+    "description": "Switch title: notify when the Omi device battery reaches 50%"
+  },
+  "settings_notifications_batteryLowSubtitle": "Alert when Omi reaches 50%",
+  "@settings_notifications_batteryLowSubtitle": {
+    "description": "Switch subtitle for the low-battery notification"
+  },
+  "settings_notifications_batteryCriticalTitle": "Battery Critical (20%)",
+  "@settings_notifications_batteryCriticalTitle": {
+    "description": "Switch title: notify when the Omi device battery reaches 20%"
+  },
+  "settings_notifications_batteryCriticalSubtitle": "Alert when Omi reaches 20%",
+  "@settings_notifications_batteryCriticalSubtitle": {
+    "description": "Switch subtitle for the critical-battery notification"
+  },
+  "settings_notifications_taskRemindersTitle": "Task Reminders",
+  "@settings_notifications_taskRemindersTitle": {
+    "description": "Switch title: enable task reminder notifications"
+  },
+  "settings_notifications_taskRemindersSubtitle": "Reminders for scheduled tasks",
+  "@settings_notifications_taskRemindersSubtitle": {
+    "description": "Switch subtitle for task reminders"
+  },
+  "settings_notifications_processingTitle": "Processing Alerts",
+  "@settings_notifications_processingTitle": {
+    "description": "Switch title: enable processing-status notifications"
+  },
+  "settings_notifications_processingSubtitle": "Show \"Processing: query\" notifications",
+  "@settings_notifications_processingSubtitle": {
+    "description": "Switch subtitle for processing-status notifications"
+  },
+  "settings_notifications_exactTitle": "Exact task reminders",
+  "@settings_notifications_exactTitle": {
+    "description": "Switch title: deliver task reminders at their exact due time"
+  },
+  "settings_notifications_exactCheckingSubtitle": "Checking permission…",
+  "@settings_notifications_exactCheckingSubtitle": {
+    "description": "Exact-reminders switch subtitle while the alarm permission is still being checked"
+  },
+  "settings_notifications_exactDeniedSubtitle": "Needs the Alarms & reminders permission — tap to grant it",
+  "@settings_notifications_exactDeniedSubtitle": {
+    "description": "Exact-reminders switch subtitle when the exact-alarm permission is denied"
+  },
+  "settings_notifications_exactDefaultSubtitle": "Deliver reminders at the exact due time; needs the Alarms & reminders permission",
+  "@settings_notifications_exactDefaultSubtitle": {
+    "description": "Exact-reminders switch subtitle in the default (granted or unsupported) state"
+  },
+  "settings_battery_header": "Background reliability",
+  "@settings_battery_header": {
+    "description": "Section header for the battery-optimisation card"
+  },
+  "settings_battery_statusTitle": "Battery optimisation",
+  "@settings_battery_statusTitle": {
+    "description": "Row title showing the current battery-optimisation status"
+  },
+  "settings_battery_checkingStatus": "Checking…",
+  "@settings_battery_checkingStatus": {
+    "description": "Battery-optimisation status text while the check is in progress"
+  },
+  "settings_battery_checkFailedStatus": "Could not check battery optimisation",
+  "@settings_battery_checkFailedStatus": {
+    "description": "Battery-optimisation status text when the check itself failed"
+  },
+  "settings_battery_exemptStatus": "Exempt from battery optimisation",
+  "@settings_battery_exemptStatus": {
+    "description": "Battery-optimisation status text when the app is exempt"
+  },
+  "settings_battery_activeStatus": "Battery optimisation is active",
+  "@settings_battery_activeStatus": {
+    "description": "Battery-optimisation status text when optimisation is still restricting the app"
+  },
+  "settings_battery_unsupportedStatus": "Not applicable on this platform",
+  "@settings_battery_unsupportedStatus": {
+    "description": "Battery-optimisation status text on a platform with no such concept"
+  },
+  "settings_battery_requestTitle": "Request exemption",
+  "@settings_battery_requestTitle": {
+    "description": "Row title that requests a battery-optimisation exemption"
+  },
+  "settings_battery_requestSubtitle": "Ask Android to stop restricting LibreOmi in the background",
+  "@settings_battery_requestSubtitle": {
+    "description": "Row subtitle explaining the battery-optimisation exemption request"
+  },
+  "settings_battery_openDialogFailedMessage": "Could not open the battery optimisation dialog.",
+  "@settings_battery_openDialogFailedMessage": {
+    "description": "SnackBar shown when the exemption request dialog fails to open"
+  },
+  "settings_battery_exemptedMessage": "LibreOmi is now exempt from battery optimisation.",
+  "@settings_battery_exemptedMessage": {
+    "description": "SnackBar shown after the exemption request succeeds"
+  },
+  "settings_battery_declinedMessage": "Exemption request was declined.",
+  "@settings_battery_declinedMessage": {
+    "description": "SnackBar shown after the user declines the exemption request"
+  },
+  "settings_battery_unsupportedMessage": "Not applicable on this platform.",
+  "@settings_battery_unsupportedMessage": {
+    "description": "SnackBar shown after requesting an exemption on a platform with no such concept"
+  },
+  "settings_battery_guidanceTitle": "Manufacturer guidance",
+  "@settings_battery_guidanceTitle": {
+    "description": "Row title that opens manufacturer-specific background-reliability guidance"
+  },
+  "settings_battery_guidanceSubtitle": "Vendor-specific steps to keep LibreOmi running",
+  "@settings_battery_guidanceSubtitle": {
+    "description": "Row subtitle for the manufacturer guidance link"
+  },
+  "settings_data_header": "Data",
+  "@settings_data_header": {
+    "description": "Section header for the data export/import/stats card"
+  },
+  "settings_data_exportTitle": "Export All Data",
+  "@settings_data_exportTitle": {
+    "description": "Row title for exporting all local data"
+  },
+  "settings_data_exportSubtitle": "Save conversations, memories & tasks as JSON",
+  "@settings_data_exportSubtitle": {
+    "description": "Row subtitle for the export row"
+  },
+  "settings_data_importTitle": "Import from Backup",
+  "@settings_data_importTitle": {
+    "description": "Row title for importing data from a backup file"
+  },
+  "settings_data_importSubtitle": "Restore conversations, memories & tasks from a JSON file",
+  "@settings_data_importSubtitle": {
+    "description": "Row subtitle for the import row"
+  },
+  "settings_data_statsTitle": "Statistics",
+  "@settings_data_statsTitle": {
+    "description": "Row title that opens the usage statistics page"
+  },
+  "settings_data_statsSubtitle": "View your usage stats",
+  "@settings_data_statsSubtitle": {
+    "description": "Row subtitle for the statistics row"
+  },
+  "settings_data_sdcardTitle": "SD Card Sync",
+  "@settings_data_sdcardTitle": {
+    "description": "Row title that opens SD-card recording sync"
+  },
+  "settings_data_sdcardSubtitleConnected": "Sync offline recordings from device",
+  "@settings_data_sdcardSubtitleConnected": {
+    "description": "SD-card sync row subtitle when a device is connected"
+  },
+  "settings_data_sdcardSubtitleDisconnected": "Connect Omi to access",
+  "@settings_data_sdcardSubtitleDisconnected": {
+    "description": "SD-card sync row subtitle when no device is connected"
+  },
+  "settings_data_icloudTitle": "iCloud Backup",
+  "@settings_data_icloudTitle": {
+    "description": "Switch title for iCloud backup"
+  },
+  "settings_data_icloudSubtitle": "Sync data across devices",
+  "@settings_data_icloudSubtitle": {
+    "description": "Switch subtitle for iCloud backup"
+  },
+  "settings_data_icloudEnabledMessage": "iCloud backup enabled. Data will sync automatically.",
+  "@settings_data_icloudEnabledMessage": {
+    "description": "SnackBar shown after enabling iCloud backup"
+  },
+  "settings_privacy_header": "Privacy",
+  "@settings_privacy_header": {
+    "description": "Section header for the privacy card"
+  },
+  "settings_privacy_subtitle": "What is collected, where it goes, and each permission's status",
+  "@settings_privacy_subtitle": {
+    "description": "Subtitle of the permissions & privacy row"
+  },
+  "settings_developer_header": "Developer",
+  "@settings_developer_header": {
+    "description": "Section header for the developer-only tools card"
+  },
+  "settings_developer_captureTitle": "Capture BLE session",
+  "@settings_developer_captureTitle": {
+    "description": "Switch title for recording a BLE replay fixture"
+  },
+  "settings_developer_captureSubtitle": "Records a replay fixture (audio, button, battery, storage notifications) to the app support directory for use with `flutter test`",
+  "@settings_developer_captureSubtitle": {
+    "description": "Switch subtitle explaining the BLE session capture developer tool"
+  },
+  "settings_about_versionLabel": "Version 2.1.0 • Self-Hosted",
+  "@settings_about_versionLabel": {
+    "description": "App version and hosting-model line at the bottom of the Settings page"
+  },
+  "settings_exactAlarmDialog_title": "Allow exact alarms",
+  "@settings_exactAlarmDialog_title": {
+    "description": "Title of the dialog asking to open the exact-alarm system settings"
+  },
+  "settings_exactAlarmDialog_content": "Android needs the \"Alarms & reminders\" permission to deliver task reminders at the exact due time. Without it, reminders may arrive a few minutes late.",
+  "@settings_exactAlarmDialog_content": {
+    "description": "Body of the exact-alarm permission dialog"
+  },
+  "settings_exactAlarmDialog_openSettingsButton": "Open settings",
+  "@settings_exactAlarmDialog_openSettingsButton": {
+    "description": "Dialog action that opens the exact-alarm system settings screen"
+  },
+  "settings_exactAlarm_openSettingsFailedMessage": "Could not open the Alarms & reminders settings.",
+  "@settings_exactAlarm_openSettingsFailedMessage": {
+    "description": "SnackBar shown when opening the exact-alarm settings screen fails"
+  },
+  "settings_exactAlarm_stillInexactMessage": "Reminders will stay inexact until the permission is granted.",
+  "@settings_exactAlarm_stillInexactMessage": {
+    "description": "SnackBar shown when the exact-alarm permission is still not granted after returning from settings"
+  },
+  "settings_export_preparingMessage": "Preparing export...",
+  "@settings_export_preparingMessage": {
+    "description": "Blocking-progress dialog message while a full data export is being prepared"
+  },
+  "settings_export_failedMessage": "Export failed: {error}",
+  "@settings_export_failedMessage": {
+    "description": "SnackBar shown when the full data export fails",
+    "placeholders": {
+      "error": {
+        "type": "Object"
+      }
+    }
+  },
+  "settings_import_readFailedMessage": "Could not read backup file: {error}",
+  "@settings_import_readFailedMessage": {
+    "description": "SnackBar shown when the picked backup file cannot be read or parsed",
+    "placeholders": {
+      "error": {
+        "type": "Object"
+      }
+    }
+  },
+  "settings_import_confirmTitle": "Restore Backup",
+  "@settings_import_confirmTitle": {
+    "description": "Title of the dialog summarising a backup file before it is imported"
+  },
+  "settings_import_conversationsCount": "Conversations: {count}",
+  "@settings_import_conversationsCount": {
+    "description": "Conversation count line in the import summary dialog",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_import_memoriesCount": "Memories: {count}",
+  "@settings_import_memoriesCount": {
+    "description": "Memory count line in the import summary dialog",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_import_tasksCount": "Tasks: {count}",
+  "@settings_import_tasksCount": {
+    "description": "Task count line in the import summary dialog",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_import_chatMessagesCount": "Chat messages: {count}",
+  "@settings_import_chatMessagesCount": {
+    "description": "Chat-message count line in the import summary dialog",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_import_exportedAt": "Exported: {date}",
+  "@settings_import_exportedAt": {
+    "description": "Export-timestamp line in the import summary dialog, shown when the backup carries one",
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_import_appVersion": "App version: {version}",
+  "@settings_import_appVersion": {
+    "description": "App-version line in the import summary dialog, shown when the backup carries one",
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_import_modeExplanation": "Merge adds these on top of what you have. Replace deletes everything currently stored first.",
+  "@settings_import_modeExplanation": {
+    "description": "Explanation of the Merge vs Replace import modes"
+  },
+  "settings_import_mergeButton": "Merge",
+  "@settings_import_mergeButton": {
+    "description": "Import-mode dialog action: merge the backup into existing data"
+  },
+  "settings_import_replaceButton": "Replace",
+  "@settings_import_replaceButton": {
+    "description": "Import-mode dialog action: replace existing data with the backup"
+  },
+  "settings_import_replaceConfirmTitle": "Replace All Data?",
+  "@settings_import_replaceConfirmTitle": {
+    "description": "Title of the confirmation dialog before a destructive Replace import"
+  },
+  "settings_import_replaceConfirmContent": "This deletes every conversation, memory, task and chat message currently stored before restoring the file. This cannot be undone.",
+  "@settings_import_replaceConfirmContent": {
+    "description": "Body of the confirmation dialog before a destructive Replace import"
+  },
+  "settings_import_deleteReplaceButton": "Delete & Replace",
+  "@settings_import_deleteReplaceButton": {
+    "description": "Confirmation action for a destructive Replace import"
+  },
+  "settings_import_restoringMessage": "Restoring backup...",
+  "@settings_import_restoringMessage": {
+    "description": "Blocking-progress dialog message while a backup is being restored"
+  },
+  "settings_import_resultMessage": "Imported {inserted} new, updated {updated}, skipped {skipped}.",
+  "@settings_import_resultMessage": {
+    "description": "SnackBar summarising the outcome of a completed import",
+    "placeholders": {
+      "inserted": {
+        "type": "int"
+      },
+      "updated": {
+        "type": "int"
+      },
+      "skipped": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_import_detailsAction": "Details",
+  "@settings_import_detailsAction": {
+    "description": "SnackBar action that shows the rows an import skipped"
+  },
+  "settings_import_failedMessage": "Import failed: {error}",
+  "@settings_import_failedMessage": {
+    "description": "SnackBar shown when an import fails",
+    "placeholders": {
+      "error": {
+        "type": "Object"
+      }
+    }
+  },
+  "settings_import_skippedTitle": "{count} rows skipped",
+  "@settings_import_skippedTitle": {
+    "description": "Title of the dialog listing skipped import rows",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_import_skippedMoreMessage": "...and {count} more.",
+  "@settings_import_skippedMoreMessage": {
+    "description": "Line shown when more rows were skipped than the report lists individually",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "home_nav_liveLabel": "Live",
+  "@home_nav_liveLabel": {
+    "description": "Bottom navigation tab label for the live capture/device tab"
+  },
+  "home_nav_historyLabel": "History",
+  "@home_nav_historyLabel": {
+    "description": "Bottom navigation tab label for the conversations history tab"
+  },
+  "home_nav_memoriesLabel": "Memories",
+  "@home_nav_memoriesLabel": {
+    "description": "Bottom navigation tab label for the memories tab"
+  },
+  "home_nav_tasksLabel": "Tasks",
+  "@home_nav_tasksLabel": {
+    "description": "Bottom navigation tab label for the tasks tab"
+  },
+  "home_nav_settingsLabel": "Settings",
+  "@home_nav_settingsLabel": {
+    "description": "Bottom navigation tab label for the settings tab; also reused for the in-body 'go to Settings' button and SnackBar action"
+  },
+  "home_device_startCapturingTitle": "Start Capturing",
+  "@home_device_startCapturingTitle": {
+    "description": "Heading on the disconnected Live tab, before any audio source is chosen"
+  },
+  "home_device_startCapturingSubtitle": "Choose your audio source\nto capture and transcribe conversations.",
+  "@home_device_startCapturingSubtitle": {
+    "description": "Subheading on the disconnected Live tab"
+  },
+  "home_device_missingApiKeysTitle": "Missing API Keys",
+  "@home_device_missingApiKeysTitle": {
+    "description": "Warning title shown when no transcription API keys are configured"
+  },
+  "home_device_missingApiKeysSubtitle": "Configure keys in Settings to enable transcription",
+  "@home_device_missingApiKeysSubtitle": {
+    "description": "Warning subtitle shown when no transcription API keys are configured"
+  },
+  "home_device_phoneMicTitle": "Use iPhone Microphone",
+  "@home_device_phoneMicTitle": {
+    "description": "Action-card title for recording with the phone's own microphone"
+  },
+  "home_device_phoneMicSubtitle": "Record directly from your phone",
+  "@home_device_phoneMicSubtitle": {
+    "description": "Action-card subtitle for recording with the phone's own microphone"
+  },
+  "home_device_omiConnectingTitle": "Connecting...",
+  "@home_device_omiConnectingTitle": {
+    "description": "Omi device card title while a connection attempt is in progress"
+  },
+  "home_device_omiTitle": "Use Omi Device",
+  "@home_device_omiTitle": {
+    "description": "Omi device card title when idle, inviting the user to scan and connect"
+  },
+  "home_device_omiConnectingSubtitle": "Please wait while connecting to your Omi",
+  "@home_device_omiConnectingSubtitle": {
+    "description": "Omi device card subtitle while a connection attempt is in progress"
+  },
+  "home_device_omiSubtitle": "Connect via Bluetooth for hands-free recording",
+  "@home_device_omiSubtitle": {
+    "description": "Omi device card subtitle when idle"
+  },
+  "home_device_scanningMessage": "Scanning for devices...",
+  "@home_device_scanningMessage": {
+    "description": "Status line shown while scanning for nearby Omi devices"
+  },
+  "home_device_unknownDeviceName": "Unknown Device",
+  "@home_device_unknownDeviceName": {
+    "description": "Fallback name for a discovered device that advertises no name"
+  },
+  "home_device_connectButton": "Connect",
+  "@home_device_connectButton": {
+    "description": "Button that connects to a device found during scanning"
+  },
+  "home_connected_phoneMicActiveTitle": "Phone Mic Active",
+  "@home_connected_phoneMicActiveTitle": {
+    "description": "Connected-header title when recording with the phone microphone"
+  },
+  "home_connected_connectedTitle": "Connected",
+  "@home_connected_connectedTitle": {
+    "description": "Connected-header title when an Omi device is connected"
+  },
+  "home_connected_phoneMicActiveSubtitle": "Using iPhone Microphone",
+  "@home_connected_phoneMicActiveSubtitle": {
+    "description": "Connected-header subtitle when recording with the phone microphone"
+  },
+  "home_connected_omiReadySubtitle": "Omi Device Ready",
+  "@home_connected_omiReadySubtitle": {
+    "description": "Connected-header subtitle when an Omi device is connected"
+  },
+  "home_connected_stopButton": "Stop",
+  "@home_connected_stopButton": {
+    "description": "Button that stops phone-microphone recording"
+  },
+  "home_connected_disconnectButton": "Disconnect",
+  "@home_connected_disconnectButton": {
+    "description": "Button that disconnects the Omi device"
+  },
+  "home_connected_loadingModelTitle": "Loading transcription model...",
+  "@home_connected_loadingModelTitle": {
+    "description": "Status banner title while the on-device transcription model is loading"
+  },
+  "home_connected_loadingModelSubtitle": "This may take a moment on first use",
+  "@home_connected_loadingModelSubtitle": {
+    "description": "Status banner subtitle while the on-device transcription model is loading"
+  },
+  "home_connected_listeningSubtitle": "Saves automatically after 2 min silence",
+  "@home_connected_listeningSubtitle": {
+    "description": "Status banner subtitle while actively listening"
+  },
+  "home_connected_saveNowButton": "Save Now",
+  "@home_connected_saveNowButton": {
+    "description": "Button that manually saves the in-progress conversation"
+  },
+  "home_connected_notListeningMessage": "Not listening",
+  "@home_connected_notListeningMessage": {
+    "description": "Status banner message when connected but not currently listening"
+  },
+  "home_connected_startButton": "Start",
+  "@home_connected_startButton": {
+    "description": "Button that starts listening from the status banner"
+  },
+  "home_connected_stopListeningButton": "Stop Listening",
+  "@home_connected_stopListeningButton": {
+    "description": "Main toggle button label while listening"
+  },
+  "home_connected_startListeningButton": "Start Listening",
+  "@home_connected_startListeningButton": {
+    "description": "Main toggle button label while not listening"
+  },
+  "home_connected_currentConversationTitle": "Current Conversation",
+  "@home_connected_currentConversationTitle": {
+    "description": "Title of the live transcript panel"
+  },
+  "home_connected_segmentsCount": "{count} segments",
+  "@home_connected_segmentsCount": {
+    "description": "Segment count shown in the live transcript panel header",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "home_connected_speakerLabel": "S{speaker}",
+  "@home_connected_speakerLabel": {
+    "description": "Short speaker tag next to each live transcript line, e.g. S1, S2",
+    "placeholders": {
+      "speaker": {
+        "type": "int"
+      }
+    }
+  },
+  "home_connected_waitingForSpeechMessage": "Waiting for speech...",
+  "@home_connected_waitingForSpeechMessage": {
+    "description": "Placeholder shown while listening but no speech has been transcribed yet"
+  },
+  "home_permission_bluetoothRequestFailedMessage": "Could not request Bluetooth permission",
+  "@home_permission_bluetoothRequestFailedMessage": {
+    "description": "SnackBar prefix shown when the Bluetooth permission request itself throws"
+  },
+  "home_permission_bluetoothDeniedMessage": "Bluetooth permission is needed to scan for your Omi device.",
+  "@home_permission_bluetoothDeniedMessage": {
+    "description": "SnackBar shown when Bluetooth permission is denied"
+  },
+  "home_device_connectFailedMessage": "Failed to connect to device",
+  "@home_device_connectFailedMessage": {
+    "description": "SnackBar shown when connecting to a scanned device fails"
+  },
+  "home_permission_microphoneRequestFailedMessage": "Could not request microphone permission",
+  "@home_permission_microphoneRequestFailedMessage": {
+    "description": "SnackBar prefix shown when the microphone permission request itself throws"
+  },
+  "home_permission_microphoneDeniedMessage": "Microphone permission is needed to record with the phone microphone.",
+  "@home_permission_microphoneDeniedMessage": {
+    "description": "SnackBar shown when microphone permission is denied"
+  },
+  "home_permission_errorTemplate": "{message}: {error}",
+  "@home_permission_errorTemplate": {
+    "description": "Combines a localized error prefix with the underlying exception detail",
+    "placeholders": {
+      "message": {
+        "type": "String"
+      },
+      "error": {
+        "type": "Object"
+      }
+    }
+  },
+  "home_permission_deniedPermanentTemplate": "{message} Enable it in app settings.",
+  "@home_permission_deniedPermanentTemplate": {
+    "description": "Appends the 'enable in settings' instruction after a permanently-denied permission message",
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "home_batteryPrompt_title": "Keep recording while the screen is off?",
+  "@home_batteryPrompt_title": {
+    "description": "Title of the dialog offered before the first recording session starts"
+  },
+  "home_batteryPrompt_content": "Android's battery optimisation can suspend LibreOmi while the screen is off, which can cut a recording session short. Exempting LibreOmi from battery optimisation keeps the Bluetooth session alive in the background.",
+  "@home_batteryPrompt_content": {
+    "description": "Body of the pre-recording battery-optimisation prompt"
+  },
+  "home_batteryPrompt_continueButton": "Continue",
+  "@home_batteryPrompt_continueButton": {
+    "description": "Dialog action that proceeds to request the battery-optimisation exemption"
+  },
+  "home_batteryPrompt_declinedMessage": "You can exempt LibreOmi from battery optimisation later.",
+  "@home_batteryPrompt_declinedMessage": {
+    "description": "SnackBar shown when the user declines the battery-optimisation prompt"
+  },
+  "home_batteryPrompt_stillOnMessage": "Battery optimisation is still on for LibreOmi.",
+  "@home_batteryPrompt_stillOnMessage": {
+    "description": "SnackBar shown when the exemption request is denied"
+  },
+  "home_batteryPrompt_guidanceAction": "Guidance",
+  "@home_batteryPrompt_guidanceAction": {
+    "description": "SnackBar action that opens the manufacturer-specific battery guidance page"
   }
 }

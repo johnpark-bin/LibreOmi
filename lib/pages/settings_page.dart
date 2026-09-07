@@ -132,6 +132,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _requestBatteryExemption() async {
+    final l10n = L10n.of(context);
     setState(() => _requestingBatteryExemption = true);
     final BatteryOptimizationOutcome outcome;
     try {
@@ -143,8 +144,8 @@ class _SettingsPageState extends State<SettingsPage> {
       }
       setState(() => _requestingBatteryExemption = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not open the battery optimisation dialog.'),
+        SnackBar(
+          content: Text(l10n.settings_battery_openDialogFailedMessage),
         ),
       );
       return;
@@ -155,11 +156,11 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() => _requestingBatteryExemption = false);
     final message = switch (outcome) {
       BatteryOptimizationOutcome.ignoring =>
-        'LibreOmi is now exempt from battery optimisation.',
+        l10n.settings_battery_exemptedMessage,
       BatteryOptimizationOutcome.denied =>
-        'Exemption request was declined.',
+        l10n.settings_battery_declinedMessage,
       BatteryOptimizationOutcome.unsupported =>
-        'Not applicable on this platform.',
+        l10n.settings_battery_unsupportedMessage,
     };
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
@@ -168,15 +169,15 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   String _exactAlarmSubtitle() {
+    final l10n = L10n.of(context);
     if (_checkingExactAlarm) {
-      return 'Checking permission…';
+      return l10n.settings_notifications_exactCheckingSubtitle;
     }
     if (SettingsService.exactTaskReminders &&
         _exactAlarmStatus == ExactAlarmStatus.denied) {
-      return 'Needs the Alarms & reminders permission — tap to grant it';
+      return l10n.settings_notifications_exactDeniedSubtitle;
     }
-    return 'Deliver reminders at the exact due time; needs the Alarms & '
-        'reminders permission';
+    return l10n.settings_notifications_exactDefaultSubtitle;
   }
 
   Future<void> _onExactTaskRemindersChanged(bool value) async {
@@ -190,23 +191,22 @@ class _SettingsPageState extends State<SettingsPage> {
       setState(() => SettingsService.exactTaskReminders = true);
       return;
     }
+    final l10n = L10n.of(context);
     final openSettings = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Allow exact alarms'),
-        content: const Text(
-          'Android needs the "Alarms & reminders" permission to deliver '
-          'task reminders at the exact due time. Without it, reminders may '
-          'arrive a few minutes late.',
+        title: Text(l10n.settings_exactAlarmDialog_title),
+        content: Text(
+          l10n.settings_exactAlarmDialog_content,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Not now'),
+            child: Text(l10n.common_notNowButton),
           ),
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Open settings'),
+            child: Text(l10n.settings_exactAlarmDialog_openSettingsButton),
           ),
         ],
       ),
@@ -223,8 +223,8 @@ class _SettingsPageState extends State<SettingsPage> {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not open the Alarms & reminders settings.'),
+        SnackBar(
+          content: Text(l10n.settings_exactAlarm_openSettingsFailedMessage),
         ),
       );
       return;
@@ -238,9 +238,8 @@ class _SettingsPageState extends State<SettingsPage> {
     });
     if (status != ExactAlarmStatus.granted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Reminders will stay inexact until the permission '
-              'is granted.'),
+        SnackBar(
+          content: Text(l10n.settings_exactAlarm_stillInexactMessage),
         ),
       );
     }
@@ -260,14 +259,14 @@ class _SettingsPageState extends State<SettingsPage> {
         padding: const EdgeInsets.all(20),
         children: [
           // Saved Device Section
-          _buildSectionHeader('Connected Device'),
+          _buildSectionHeader(l10n.settings_device_header),
           Card(
             clipBehavior: Clip.antiAlias,
             child: Consumer<DeviceController>(
               builder: (context, provider, _) {
                 final savedName = SettingsService.savedDeviceName;
                 final isConnected = provider.deviceState == DeviceConnectionState.connected;
-                
+
                 if (savedName.isEmpty) {
                   return ListTile(
                     contentPadding: const EdgeInsets.all(20),
@@ -279,8 +278,8 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                       child: Icon(Icons.bluetooth_disabled, color: theme.colorScheme.onSurface.withOpacity(0.5)),
                     ),
-                    title: const Text('No device saved'),
-                    subtitle: const Text('Connect to a device to get started'),
+                    title: Text(l10n.settings_device_noneTitle),
+                    subtitle: Text(l10n.settings_device_noneSubtitle),
                   );
                 }
                 
@@ -306,7 +305,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                       ),
                       title: Text(savedName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                      subtitle: Text(isConnected ? 'Connected • Tap to Configure' : 'Saved Device', 
+                      subtitle: Text(isConnected ? l10n.settings_device_connectedSubtitle : l10n.settings_device_savedSubtitle,
                         style: TextStyle(color: isConnected ? const Color(0xFF6C5CE7) : null)),
                       trailing: isConnected ? Icon(Icons.arrow_forward_ios, size: 16, color: theme.colorScheme.onSurface.withOpacity(0.5)) : null,
                     ),
@@ -325,7 +324,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                 foregroundColor: theme.colorScheme.onSurface,
                                 padding: const EdgeInsets.symmetric(vertical: 12),
                               ),
-                              child: const Text('Forget'),
+                              child: Text(l10n.settings_device_forgetButton),
                             ),
                           ),
                           if (!isConnected) ...[
@@ -338,7 +337,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                 style: ElevatedButton.styleFrom(
                                   padding: const EdgeInsets.symmetric(vertical: 12),
                                 ),
-                                child: const Text('Connect'),
+                                child: Text(l10n.settings_device_connectButton),
                               ),
                             ),
                           ],
@@ -353,14 +352,14 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 32),
 
           // Transcription Mode Section
-          _buildSectionHeader('Transcription Engine'),
+          _buildSectionHeader(l10n.settings_transcription_header),
           Card(
             clipBehavior: Clip.antiAlias,
             child: Column(
               children: [
                 _buildRadioTile(
-                  title: 'Cloud (Deepgram)',
-                  subtitle: 'Best quality, requires API key',
+                  title: l10n.settings_transcription_cloudTitle,
+                  subtitle: l10n.settings_transcription_cloudSubtitle,
                   value: 'cloud',
                   groupValue: SettingsService.transcriptionMode,
                   icon: Icons.cloud_outlined,
@@ -373,8 +372,8 @@ class _SettingsPageState extends State<SettingsPage> {
                   // need a preference migration for a string no user sees —
                   // but the mode now covers every offline model, so the label
                   // names the path rather than one of the models on it.
-                  title: 'Local (offline model)',
-                  subtitle: 'Whisper or SenseVoice, high accuracy',
+                  title: l10n.settings_transcription_localTitle,
+                  subtitle: l10n.settings_transcription_localSubtitle,
                   value: 'whisper',
                   groupValue: SettingsService.transcriptionMode,
                   icon: Icons.record_voice_over_outlined,
@@ -390,8 +389,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     child: DropdownButtonFormField<String>(
                       value: SettingsService.offlineSttModelId,
                       dropdownColor: const Color(0xFF2D2D2D),
-                      decoration: const InputDecoration(
-                        labelText: 'Model',
+                      decoration: InputDecoration(
+                        labelText: l10n.settings_transcription_modelLabel,
                       ),
                       icon: Icon(Icons.arrow_drop_down,
                           color: theme.colorScheme.onSurface.withOpacity(0.5)),
@@ -417,8 +416,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 Divider(height: 1, color: theme.dividerColor.withOpacity(0.1)),
 
                 _buildRadioTile(
-                  title: 'Local (Sherpa-ONNX)',
-                  subtitle: 'Real-time streaming ASR',
+                  title: l10n.settings_transcription_sherpaTitle,
+                  subtitle: l10n.settings_transcription_sherpaSubtitle,
                   value: 'sherpa',
                   groupValue: SettingsService.transcriptionMode,
                   icon: Icons.bolt_outlined,
@@ -439,13 +438,13 @@ class _SettingsPageState extends State<SettingsPage> {
                     padding: const EdgeInsets.fromLTRB(56, 12, 16, 4),
                     child: Row(
                       children: [
-                        Text('Language:', style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7))),
+                        Text(l10n.settings_transcription_sttLanguageLabel, style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7))),
                         const SizedBox(width: 12),
                         Expanded(
                           child: SegmentedButton<String>(
-                            segments: const [
-                              ButtonSegment(value: 'en', label: Text('English')),
-                              ButtonSegment(value: 'ko', label: Text('한국어')),
+                            segments: [
+                              ButtonSegment(value: 'en', label: Text(l10n.settings_transcription_sttLanguageEnglish)),
+                              ButtonSegment(value: 'ko', label: Text(l10n.settings_transcription_sttLanguageKorean)),
                             ],
                             selected: {SettingsService.localSttLanguage},
                             onSelectionChanged: (values) => setState(() => SettingsService.localSttLanguage = values.first),
@@ -460,11 +459,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(56, 12, 16, 12),
                     child: Text(
-                      'Local modes transcribe on the phone and need their '
-                      'model downloaded first — see Manage models below. '
-                      'Korean needs its own streaming model downloaded '
-                      '(~399 MB); SenseVoice covers Korean, English, '
-                      'Chinese, Japanese and Cantonese in one offline model.',
+                      l10n.settings_transcription_localModesHint,
                       style: TextStyle(
                         color: theme.colorScheme.onSurface.withOpacity(0.6),
                         fontSize: 12,
@@ -477,10 +472,10 @@ class _SettingsPageState extends State<SettingsPage> {
                 ListTile(
                   leading: Icon(Icons.storage_outlined,
                       color: theme.colorScheme.onSurface.withOpacity(0.7)),
-                  title: const Text('Manage models',
+                  title: Text(l10n.settings_transcription_manageModelsTitle,
                       style: TextStyle(fontWeight: FontWeight.w600)),
                   subtitle: Text(
-                    'Download or remove on-device speech models',
+                    l10n.settings_transcription_manageModelsSubtitle,
                     style: TextStyle(
                       color: theme.colorScheme.onSurface.withOpacity(0.6),
                       fontSize: 13,
@@ -501,7 +496,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
           // Deepgram API Key
           if (SettingsService.useDeepgram) ...[
-            _buildSectionHeader('Deepgram API Key'),
+            _buildSectionHeader(l10n.settings_deepgram_header),
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(20),
@@ -512,8 +507,8 @@ class _SettingsPageState extends State<SettingsPage> {
                       controller: _deepgramController,
                       obscureText: _obscureDeepgram,
                       decoration: InputDecoration(
-                        hintText: 'Enter API Key',
-                        labelText: 'API Key',
+                        hintText: l10n.common_apiKeyHint,
+                        labelText: l10n.common_apiKeyLabel,
                         suffixIcon: IconButton(
                           icon: Icon(_obscureDeepgram ? Icons.visibility_outlined : Icons.visibility_off_outlined),
                           onPressed: () => setState(() => _obscureDeepgram = !_obscureDeepgram),
@@ -526,15 +521,15 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Get from console.deepgram.com',
+                      l10n.settings_deepgram_getKeyHint,
                       style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), fontSize: 12),
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
                       value: SettingsService.deepgramModel,
                       dropdownColor: const Color(0xFF2D2D2D),
-                      decoration: const InputDecoration(
-                        labelText: 'Model',
+                      decoration: InputDecoration(
+                        labelText: l10n.settings_deepgram_modelLabel,
                       ),
                       icon: Icon(Icons.arrow_drop_down, color: theme.colorScheme.onSurface.withOpacity(0.5)),
                       items: const [
@@ -549,7 +544,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Streaming model used for live transcription',
+                      l10n.settings_deepgram_modelHint,
                       style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), fontSize: 12),
                     ),
                   ],
@@ -560,7 +555,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ],
 
           // LLM
-          _buildSectionHeader('LLM'),
+          _buildSectionHeader(l10n.settings_llm_header),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(20),
@@ -571,8 +566,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     controller: _openaiController,
                     obscureText: _obscureOpenai,
                     decoration: InputDecoration(
-                      hintText: 'Enter API Key',
-                      labelText: 'API Key',
+                      hintText: l10n.common_apiKeyHint,
+                      labelText: l10n.common_apiKeyLabel,
                       suffixIcon: IconButton(
                         icon: Icon(_obscureOpenai ? Icons.visibility_outlined : Icons.visibility_off_outlined),
                         onPressed: () => setState(() => _obscureOpenai = !_obscureOpenai),
@@ -585,16 +580,15 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Key for the configured endpoint below. Leave empty for a local '
-                    'server such as Ollama that does not require one.',
+                    l10n.settings_llm_apiKeyHint,
                     style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), fontSize: 12),
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     value: presetForBaseUrl(SettingsService.llmBaseUrl).id,
                     dropdownColor: const Color(0xFF2D2D2D),
-                    decoration: const InputDecoration(
-                      labelText: 'Provider',
+                    decoration: InputDecoration(
+                      labelText: l10n.settings_llm_providerLabel,
                     ),
                     icon: Icon(Icons.arrow_drop_down, color: theme.colorScheme.onSurface.withOpacity(0.5)),
                     items: [
@@ -615,9 +609,9 @@ class _SettingsPageState extends State<SettingsPage> {
                   const SizedBox(height: 16),
                   TextField(
                     controller: _llmBaseUrlController,
-                    decoration: const InputDecoration(
-                      hintText: 'e.g. http://localhost:11434/v1',
-                      labelText: 'Base URL',
+                    decoration: InputDecoration(
+                      hintText: l10n.settings_llm_baseUrlHint,
+                      labelText: l10n.settings_llm_baseUrlLabel,
                     ),
                     onChanged: (value) {
                       SettingsService.llmBaseUrl = value;
@@ -626,15 +620,15 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'OpenAI-compatible base URL, e.g. http://localhost:11434/v1 for Ollama.',
+                    l10n.settings_llm_baseUrlDescription,
                     style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), fontSize: 12),
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     value: _llmModelDropdownValue(),
                     dropdownColor: const Color(0xFF2D2D2D),
-                    decoration: const InputDecoration(
-                      labelText: 'Model',
+                    decoration: InputDecoration(
+                      labelText: l10n.settings_llm_modelLabel,
                     ),
                     icon: Icon(Icons.arrow_drop_down, color: theme.colorScheme.onSurface.withOpacity(0.5)),
                     items: [
@@ -653,9 +647,9 @@ class _SettingsPageState extends State<SettingsPage> {
                       Expanded(
                         child: TextField(
                           controller: _newModelController,
-                          decoration: const InputDecoration(
-                            hintText: 'Add custom model id',
-                            labelText: 'Custom model',
+                          decoration: InputDecoration(
+                            hintText: l10n.settings_llm_customModelHint,
+                            labelText: l10n.settings_llm_customModelLabel,
                           ),
                           onSubmitted: (_) => _addCustomModel(),
                         ),
@@ -663,7 +657,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       const SizedBox(width: 8),
                       OutlinedButton(
                         onPressed: _addCustomModel,
-                        child: const Text('Add'),
+                        child: Text(l10n.common_addButton),
                       ),
                     ],
                   ),
@@ -693,7 +687,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                 child: CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(Icons.wifi_tethering),
-                        label: const Text('Test connection'),
+                        label: Text(l10n.settings_llm_testConnectionButton),
                       ),
                     ],
                   ),
@@ -723,7 +717,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                   ],
                   const SizedBox(height: 12),
-                  _buildLlmPricingEditor(theme),
+                  _buildLlmPricingEditor(theme, l10n),
                 ],
               ),
             ),
@@ -731,13 +725,13 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 32),
 
           // Notifications section
-          _buildSectionHeader('Notifications'),
+          _buildSectionHeader(l10n.settings_notifications_header),
           Card(
             child: Column(
               children: [
                 SwitchListTile(
-                  title: const Text('Battery Low (50%)', style: TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Text('Alert when Omi reaches 50%',
+                  title: Text(l10n.settings_notifications_batteryLowTitle, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text(l10n.settings_notifications_batteryLowSubtitle,
                     style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6), fontSize: 13)),
                   value: SettingsService.notifyBatteryLow,
                   onChanged: (value) {
@@ -747,8 +741,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 const Divider(height: 1),
                 SwitchListTile(
-                  title: const Text('Battery Critical (20%)', style: TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Text('Alert when Omi reaches 20%',
+                  title: Text(l10n.settings_notifications_batteryCriticalTitle, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text(l10n.settings_notifications_batteryCriticalSubtitle,
                     style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6), fontSize: 13)),
                   value: SettingsService.notifyBatteryCritical,
                   onChanged: (value) {
@@ -758,8 +752,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 const Divider(height: 1),
                 SwitchListTile(
-                  title: const Text('Task Reminders', style: TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Text('Reminders for scheduled tasks',
+                  title: Text(l10n.settings_notifications_taskRemindersTitle, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text(l10n.settings_notifications_taskRemindersSubtitle,
                     style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6), fontSize: 13)),
                   value: SettingsService.notifyTaskReminders,
                   onChanged: (value) {
@@ -769,8 +763,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 const Divider(height: 1),
                 SwitchListTile(
-                  title: const Text('Processing Alerts', style: TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Text('Show "Processing: query" notifications',
+                  title: Text(l10n.settings_notifications_processingTitle, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text(l10n.settings_notifications_processingSubtitle,
                     style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6), fontSize: 13)),
                   value: SettingsService.notifyProcessing,
                   onChanged: (value) {
@@ -780,7 +774,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 const Divider(height: 1),
                 SwitchListTile(
-                  title: const Text('Exact task reminders', style: TextStyle(fontWeight: FontWeight.w600)),
+                  title: Text(l10n.settings_notifications_exactTitle, style: const TextStyle(fontWeight: FontWeight.w600)),
                   subtitle: Text(_exactAlarmSubtitle(),
                     style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6), fontSize: 13)),
                   // Never claim exact delivery the system will not honour:
@@ -802,7 +796,7 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 32),
 
           // Background reliability section
-          _buildSectionHeader('Background reliability'),
+          _buildSectionHeader(l10n.settings_battery_header),
           Card(
             child: Column(
               children: [
@@ -818,9 +812,9 @@ class _SettingsPageState extends State<SettingsPage> {
                       color: Color(0xFF00b894),
                     ),
                   ),
-                  title: const Text(
-                    'Battery optimisation',
-                    style: TextStyle(fontWeight: FontWeight.w600),
+                  title: Text(
+                    l10n.settings_battery_statusTitle,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   subtitle: Text(
                     _batteryOptimizationStatusText(),
@@ -850,13 +844,12 @@ class _SettingsPageState extends State<SettingsPage> {
                         color: Color(0xFF6C5CE7),
                       ),
                     ),
-                    title: const Text(
-                      'Request exemption',
-                      style: TextStyle(fontWeight: FontWeight.w600),
+                    title: Text(
+                      l10n.settings_battery_requestTitle,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                     subtitle: Text(
-                      'Ask Android to stop restricting LibreOmi in the '
-                      'background',
+                      l10n.settings_battery_requestSubtitle,
                       style: TextStyle(
                         color: theme.colorScheme.onSurface.withOpacity(0.6),
                         fontSize: 13,
@@ -881,12 +874,12 @@ class _SettingsPageState extends State<SettingsPage> {
                       color: Color(0xFF0984e3),
                     ),
                   ),
-                  title: const Text(
-                    'Manufacturer guidance',
-                    style: TextStyle(fontWeight: FontWeight.w600),
+                  title: Text(
+                    l10n.settings_battery_guidanceTitle,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   subtitle: Text(
-                    'Vendor-specific steps to keep LibreOmi running',
+                    l10n.settings_battery_guidanceSubtitle,
                     style: TextStyle(
                       color: theme.colorScheme.onSurface.withOpacity(0.6),
                       fontSize: 13,
@@ -910,7 +903,7 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 32),
 
           // Data section
-          _buildSectionHeader('Data'),
+          _buildSectionHeader(l10n.settings_data_header),
           Card(
             child: Column(
               children: [
@@ -923,8 +916,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     child: const Icon(Icons.download, color: Color(0xFF00b894)),
                   ),
-                  title: const Text('Export All Data', style: TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Text('Save conversations, memories & tasks as JSON',
+                  title: Text(l10n.settings_data_exportTitle, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text(l10n.settings_data_exportSubtitle,
                     style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6), fontSize: 13)),
                   trailing: Icon(Icons.arrow_forward_ios, size: 16, color: theme.colorScheme.onSurface.withOpacity(0.3)),
                   onTap: () => _exportAllData(context),
@@ -939,8 +932,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     child: const Icon(Icons.upload_file, color: Color(0xFF0984e3)),
                   ),
-                  title: const Text('Import from Backup', style: TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Text('Restore conversations, memories & tasks from a JSON file',
+                  title: Text(l10n.settings_data_importTitle, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text(l10n.settings_data_importSubtitle,
                     style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 13)),
                   trailing: Icon(Icons.arrow_forward_ios, size: 16, color: theme.colorScheme.onSurface.withValues(alpha: 0.3)),
                   onTap: () => _importAllData(context),
@@ -955,8 +948,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     child: const Icon(Icons.bar_chart, color: Color(0xFF6C5CE7)),
                   ),
-                  title: const Text('Statistics', style: TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Text('View your usage stats',
+                  title: Text(l10n.settings_data_statsTitle, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text(l10n.settings_data_statsSubtitle,
                     style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6), fontSize: 13)),
                   trailing: Icon(Icons.arrow_forward_ios, size: 16, color: theme.colorScheme.onSurface.withOpacity(0.3)),
                   onTap: () => Navigator.push(
@@ -976,11 +969,11 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                         child: const Icon(Icons.sd_card, color: Color(0xFFe17055)),
                       ),
-                      title: const Text('SD Card Sync', style: TextStyle(fontWeight: FontWeight.w600)),
+                      title: Text(l10n.settings_data_sdcardTitle, style: const TextStyle(fontWeight: FontWeight.w600)),
                       subtitle: Text(
-                        provider.hasStorageSupport 
-                            ? 'Sync offline recordings from device'
-                            : 'Connect Omi to access',
+                        provider.hasStorageSupport
+                            ? l10n.settings_data_sdcardSubtitleConnected
+                            : l10n.settings_data_sdcardSubtitleDisconnected,
                         style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6), fontSize: 13)),
                       trailing: Icon(Icons.arrow_forward_ios, size: 16, color: theme.colorScheme.onSurface.withOpacity(0.3)),
                       enabled: provider.deviceState == DeviceConnectionState.connected,
@@ -1003,15 +996,15 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     child: const Icon(Icons.cloud_outlined, color: Color(0xFF0984e3)),
                   ),
-                  title: const Text('iCloud Backup', style: TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Text('Sync data across devices',
+                  title: Text(l10n.settings_data_icloudTitle, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text(l10n.settings_data_icloudSubtitle,
                     style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6), fontSize: 13)),
                   value: SettingsService.icloudBackupEnabled,
                   onChanged: (value) {
                     setState(() => SettingsService.icloudBackupEnabled = value);
                     if (value) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('iCloud backup enabled. Data will sync automatically.')),
+                        SnackBar(content: Text(l10n.settings_data_icloudEnabledMessage)),
                       );
                     }
                   },
@@ -1063,7 +1056,7 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 32),
 
           // Privacy section (LO-64)
-          _buildSectionHeader('Privacy'),
+          _buildSectionHeader(l10n.settings_privacy_header),
           Card(
             child: ListTile(
               leading: Container(
@@ -1077,13 +1070,12 @@ class _SettingsPageState extends State<SettingsPage> {
                   color: Color(0xFF6C5CE7),
                 ),
               ),
-              title: const Text(
-                'Permissions & privacy',
-                style: TextStyle(fontWeight: FontWeight.w600),
+              title: Text(
+                l10n.common_permissionsPrivacyLabel,
+                style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               subtitle: Text(
-                'What is collected, where it goes, and each permission\'s '
-                'status',
+                l10n.settings_privacy_subtitle,
                 style: TextStyle(
                   color: theme.colorScheme.onSurface.withOpacity(0.6),
                   fontSize: 13,
@@ -1105,15 +1097,14 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 32),
 
           // Developer section
-          _buildSectionHeader('Developer'),
+          _buildSectionHeader(l10n.settings_developer_header),
           Card(
             child: Column(
               children: [
                 SwitchListTile(
-                  title: const Text('Capture BLE session', style: TextStyle(fontWeight: FontWeight.w600)),
+                  title: Text(l10n.settings_developer_captureTitle, style: const TextStyle(fontWeight: FontWeight.w600)),
                   subtitle: Text(
-                    'Records a replay fixture (audio, button, battery, storage notifications) '
-                    'to the app support directory for use with `flutter test`',
+                    l10n.settings_developer_captureSubtitle,
                     style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6), fontSize: 13)),
                   value: SettingsService.captureBleSession,
                   onChanged: (value) {
@@ -1132,7 +1123,7 @@ class _SettingsPageState extends State<SettingsPage> {
               children: [
                 Text('LibreOmi', style: TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 4),
-                Text('Version 2.1.0 • Self-Hosted', style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), fontSize: 12)),
+                Text(l10n.settings_about_versionLabel, style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), fontSize: 12)),
               ],
             ),
           ),
@@ -1143,16 +1134,17 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   String _batteryOptimizationStatusText() {
+    final l10n = L10n.of(context);
     if (_checkingBatteryOptimization) {
-      return 'Checking…';
+      return l10n.settings_battery_checkingStatus;
     }
     if (_batteryStatusCheckFailed) {
-      return 'Could not check battery optimisation';
+      return l10n.settings_battery_checkFailedStatus;
     }
     return switch (_isIgnoringBatteryOptimization) {
-      true => 'Exempt from battery optimisation',
-      false => 'Battery optimisation is active',
-      null => 'Not applicable on this platform',
+      true => l10n.settings_battery_exemptStatus,
+      false => l10n.settings_battery_activeStatus,
+      null => l10n.settings_battery_unsupportedStatus,
     };
   }
 
@@ -1236,7 +1228,7 @@ class _SettingsPageState extends State<SettingsPage> {
     });
   }
 
-  Widget _buildLlmPricingEditor(ThemeData theme) {
+  Widget _buildLlmPricingEditor(ThemeData theme, AppLocalizations l10n) {
     final pricing = SettingsService.llmPricing;
     final entries = pricing.entries.toList()
       ..sort((a, b) => a.key.compareTo(b.key));
@@ -1259,10 +1251,10 @@ class _SettingsPageState extends State<SettingsPage> {
 
     return ExpansionTile(
       tilePadding: EdgeInsets.zero,
-      title: const Text('Pricing (per 1M tokens)', style: TextStyle(fontWeight: FontWeight.w600)),
+      title: Text(l10n.settings_llm_pricingTitle, style: const TextStyle(fontWeight: FontWeight.w600)),
       children: [
         Text(
-          'Models without a price show a cost of "—" on the stats page.',
+          l10n.settings_llm_pricingHint,
           style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), fontSize: 12),
         ),
         const SizedBox(height: 12),
@@ -1278,7 +1270,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: TextFormField(
                   key: ValueKey('llm_price_input_${entry.key}'),
                   initialValue: entry.value['input']?.toString() ?? '0',
-                  decoration: const InputDecoration(labelText: 'Input \$'),
+                  decoration: InputDecoration(labelText: l10n.settings_llm_priceInputLabel),
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   onChanged: (value) {
                     final parsed = double.tryParse(value);
@@ -1294,7 +1286,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: TextFormField(
                   key: ValueKey('llm_price_output_${entry.key}'),
                   initialValue: entry.value['output']?.toString() ?? '0',
-                  decoration: const InputDecoration(labelText: 'Output \$'),
+                  decoration: InputDecoration(labelText: l10n.settings_llm_priceOutputLabel),
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   onChanged: (value) {
                     final parsed = double.tryParse(value);
@@ -1323,9 +1315,9 @@ class _SettingsPageState extends State<SettingsPage> {
             Expanded(
               child: TextField(
                 controller: _newPricedModelController,
-                decoration: const InputDecoration(
-                  hintText: 'Model id to price',
-                  labelText: 'Add priced model',
+                decoration: InputDecoration(
+                  hintText: l10n.settings_llm_priceModelHint,
+                  labelText: l10n.settings_llm_priceModelLabel,
                 ),
               ),
             ),
@@ -1344,7 +1336,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   _newPricedModelController.clear();
                 });
               },
-              child: const Text('Add'),
+              child: Text(l10n.common_addButton),
             ),
           ],
         ),
@@ -1353,7 +1345,7 @@ class _SettingsPageState extends State<SettingsPage> {
           alignment: Alignment.centerLeft,
           child: TextButton(
             onPressed: () => setState(() => SettingsService.resetLlmPricing()),
-            child: const Text('Reset to defaults'),
+            child: Text(l10n.settings_llm_pricingResetButton),
           ),
         ),
       ],
@@ -1400,14 +1392,15 @@ class _SettingsPageState extends State<SettingsPage> {
     // Store navigator before async operations
     final navigator = Navigator.of(context);
     final scaffoldMessenger = ScaffoldMessenger.of(context);
-    
+    final l10n = L10n.of(context);
+
     // Get the render box for share positioning (needed on iPad)
     final box = context.findRenderObject() as RenderBox?;
-    final sharePosition = box != null 
+    final sharePosition = box != null
         ? box.localToGlobal(Offset.zero) & box.size
         : const Rect.fromLTWH(0, 0, 100, 100);
-    
-    _showBlockingProgress(context, 'Preparing export...');
+
+    _showBlockingProgress(context, l10n.settings_export_preparingMessage);
 
     try {
       // Get all data
@@ -1433,7 +1426,7 @@ class _SettingsPageState extends State<SettingsPage> {
       navigator.pop();
 
       scaffoldMessenger.showSnackBar(
-        SnackBar(content: Text('Export failed: $e')),
+        SnackBar(content: Text(l10n.settings_export_failedMessage(e))),
       );
     }
   }
@@ -1456,6 +1449,7 @@ class _SettingsPageState extends State<SettingsPage> {
     if (!context.mounted) return;
 
     final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final l10n = L10n.of(context);
 
     Map<String, dynamic> document;
     try {
@@ -1467,7 +1461,7 @@ class _SettingsPageState extends State<SettingsPage> {
       document = decoded;
     } catch (e) {
       scaffoldMessenger.showSnackBar(
-        SnackBar(content: Text('Could not read backup file: $e')),
+        SnackBar(content: Text(l10n.settings_import_readFailedMessage(e))),
       );
       return;
     }
@@ -1480,7 +1474,7 @@ class _SettingsPageState extends State<SettingsPage> {
     if (!context.mounted) return;
     final navigator = Navigator.of(context);
 
-    _showBlockingProgress(context, 'Restoring backup...');
+    _showBlockingProgress(context, l10n.settings_import_restoringMessage);
 
     try {
       final report = await context
@@ -1493,13 +1487,16 @@ class _SettingsPageState extends State<SettingsPage> {
       scaffoldMessenger.showSnackBar(
         SnackBar(
           content: Text(
-            'Imported ${report.inserted} new, updated ${report.updated}, '
-            'skipped ${report.skipped}.',
+            l10n.settings_import_resultMessage(
+              report.inserted,
+              report.updated,
+              report.skipped,
+            ),
           ),
           action: report.errors.isEmpty
               ? null
               : SnackBarAction(
-                  label: 'Details',
+                  label: l10n.settings_import_detailsAction,
                   onPressed: () => _showSkippedRows(report),
                 ),
         ),
@@ -1509,14 +1506,14 @@ class _SettingsPageState extends State<SettingsPage> {
       navigator.pop();
 
       scaffoldMessenger.showSnackBar(
-        SnackBar(content: Text('Import failed: ${e.message}')),
+        SnackBar(content: Text(l10n.settings_import_failedMessage(e.message))),
       );
     } catch (e) {
       // Close loading dialog if open
       navigator.pop();
 
       scaffoldMessenger.showSnackBar(
-        SnackBar(content: Text('Import failed: $e')),
+        SnackBar(content: Text(l10n.settings_import_failedMessage(e))),
       );
     }
   }
@@ -1530,45 +1527,45 @@ class _SettingsPageState extends State<SettingsPage> {
   ) async {
     final exportedAt = document['exported_at'];
     final appVersion = document['app_version'];
+    final l10n = L10n.of(context);
 
     final mode = await showDialog<ImportMode>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Restore Backup'),
+        title: Text(l10n.settings_import_confirmTitle),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Conversations: ${counts['conversations'] ?? 0}'),
-            Text('Memories: ${counts['memories'] ?? 0}'),
-            Text('Tasks: ${counts['tasks'] ?? 0}'),
-            Text('Chat messages: ${counts['chat_messages'] ?? 0}'),
+            Text(l10n.settings_import_conversationsCount(counts['conversations'] ?? 0)),
+            Text(l10n.settings_import_memoriesCount(counts['memories'] ?? 0)),
+            Text(l10n.settings_import_tasksCount(counts['tasks'] ?? 0)),
+            Text(l10n.settings_import_chatMessagesCount(counts['chat_messages'] ?? 0)),
             if (exportedAt is String) ...[
               const SizedBox(height: 8),
-              Text('Exported: $exportedAt'),
+              Text(l10n.settings_import_exportedAt(exportedAt)),
             ],
-            if (appVersion is String) Text('App version: $appVersion'),
+            if (appVersion is String) Text(l10n.settings_import_appVersion(appVersion)),
             const SizedBox(height: 12),
-            const Text(
-              'Merge adds these on top of what you have. Replace deletes '
-              'everything currently stored first.',
+            Text(
+              l10n.settings_import_modeExplanation,
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
+            child: Text(l10n.common_cancelButton),
           ),
           TextButton(
             onPressed: () =>
                 Navigator.of(dialogContext).pop(ImportMode.merge),
-            child: const Text('Merge'),
+            child: Text(l10n.settings_import_mergeButton),
           ),
           TextButton(
             onPressed: () =>
                 Navigator.of(dialogContext).pop(ImportMode.replace),
-            child: const Text('Replace'),
+            child: Text(l10n.settings_import_replaceButton),
           ),
         ],
       ),
@@ -1580,19 +1577,18 @@ class _SettingsPageState extends State<SettingsPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Replace All Data?'),
-        content: const Text(
-          'This deletes every conversation, memory, task and chat message '
-          'currently stored before restoring the file. This cannot be undone.',
+        title: Text(l10n.settings_import_replaceConfirmTitle),
+        content: Text(
+          l10n.settings_import_replaceConfirmContent,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel'),
+            child: Text(l10n.common_cancelButton),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Delete & Replace'),
+            child: Text(l10n.settings_import_deleteReplaceButton),
           ),
         ],
       ),
@@ -1634,11 +1630,12 @@ class _SettingsPageState extends State<SettingsPage> {
   /// say so when there were more than it kept.
   void _showSkippedRows(ImportReport report) {
     if (!mounted) return;
+    final l10n = L10n.of(context);
     final hidden = report.skipped - report.errors.length;
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('${report.skipped} rows skipped'),
+        title: Text(l10n.settings_import_skippedTitle(report.skipped)),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1647,7 +1644,7 @@ class _SettingsPageState extends State<SettingsPage> {
               for (final error in report.errors) Text(error),
               if (hidden > 0) ...[
                 const SizedBox(height: 8),
-                Text('...and $hidden more.'),
+                Text(l10n.settings_import_skippedMoreMessage(hidden)),
               ],
             ],
           ),
@@ -1655,7 +1652,7 @@ class _SettingsPageState extends State<SettingsPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Close'),
+            child: Text(l10n.common_closeButton),
           ),
         ],
       ),

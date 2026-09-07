@@ -67,6 +67,21 @@ void main() {
     const sameInBothLanguages = {
       'settings_language_english',
       'settings_language_korean',
+      // The local-STT language picker's own segment labels: language names,
+      // written in their own language in every locale, same as the two above.
+      'settings_transcription_sttLanguageEnglish',
+      'settings_transcription_sttLanguageKorean',
+      // A pure `{message}: {error}` template: `message` is itself a
+      // localized string supplied by the caller, and `error` is raw
+      // exception text, so there is no natural-language content left to
+      // translate — the colon separator is the same in both locales.
+      'home_permission_errorTemplate',
+      // "LLM" is an acronym left untranslated in Korean UI copy, same as
+      // "BLE" or "API" (docs/08 Korean style).
+      'settings_llm_header',
+      // A bare `S{speaker}` speaker tag (e.g. "S1"): no natural-language
+      // content to translate.
+      'home_connected_speakerLabel',
     };
     for (final key in _messageKeys(en)) {
       if (sameInBothLanguages.contains(key)) continue;
