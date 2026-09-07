@@ -31,6 +31,13 @@ abstract class PermissionGateway {
     List<AppPermission> permissions,
   );
 
+  /// Reports the current outcome of each permission **without requesting
+  /// anything**. Used by the permissions rationale screen, which only ever
+  /// displays state (LO-64); requesting stays with the point-of-use flows.
+  Future<Map<AppPermission, PermissionOutcome>> statuses(
+    List<AppPermission> permissions,
+  );
+
   /// Opens the app's system settings page, e.g. to let the user grant a
   /// permission they previously denied permanently. Returns whether the
   /// settings page could be opened.
@@ -84,6 +91,34 @@ class AppPermissions {
       return PermissionOutcome.granted;
     }
     return _requestAndAggregate(<AppPermission>[AppPermission.microphone]);
+  }
+
+  /// The current outcome of each permission the app can request at runtime,
+  /// as the platform sees it right now. Requests nothing, so it is safe to
+  /// call from `build`-time state loading.
+  ///
+  /// On a platform without runtime permissions (iOS, and the unit-test host)
+  /// [PermissionGateway.androidSdkInt] reports `null` and every permission is
+  /// reported as [PermissionOutcome.granted], matching what the `ensure*`
+  /// methods do there.
+  Future<Map<AppPermission, PermissionOutcome>> currentStatuses(
+    List<AppPermission> permissions,
+  ) async {
+    if (permissions.isEmpty) {
+      return <AppPermission, PermissionOutcome>{};
+    }
+    final sdkInt = await gateway.androidSdkInt();
+    if (sdkInt == null) {
+      return <AppPermission, PermissionOutcome>{
+        for (final permission in permissions) permission:
+            PermissionOutcome.granted,
+      };
+    }
+    final results = await gateway.statuses(permissions);
+    return <AppPermission, PermissionOutcome>{
+      for (final permission in permissions) permission:
+          results[permission] ?? PermissionOutcome.denied,
+    };
   }
 
   /// Opens the app's system settings page.
