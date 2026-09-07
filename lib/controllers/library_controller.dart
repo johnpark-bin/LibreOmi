@@ -10,9 +10,9 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
-import '../data/chat_repo.dart';
 import '../data/conversation_repo.dart';
 import '../data/db.dart';
+import '../data/export_import.dart';
 import '../data/memory_repo.dart';
 import '../data/task_repo.dart';
 import '../models/conversation.dart';
@@ -161,21 +161,21 @@ class LibraryController extends ChangeNotifier {
     await loadTasks();
   }
 
-  /// Ports the old export-all-data facade method onto the repos directly.
-  Future<Map<String, dynamic>> exportAllData() async {
-    final db = await _database();
-    final conversations = await ConversationRepo(db).all(limit: 10000);
-    final memories = await MemoryRepo(db).all(limit: 10000);
-    final tasks = await TaskRepo(db).all(limit: 10000);
-    final chatMessages = await ChatRepo(db).all(limit: 10000);
+  /// The whole library as a backup document. The format lives in
+  /// `data/export_import.dart` (LO-61); this stays as the UI's entry point.
+  Future<Map<String, dynamic>> exportAllData() async =>
+      exportAll(await _database());
 
-    return {
-      'export_date': DateTime.now().toIso8601String(),
-      'app_version': '2.1.0',
-      'conversations': conversations.map((c) => c.toJson()).toList(),
-      'memories': memories.map((m) => m.toJson()).toList(),
-      'tasks': tasks.map((t) => t.toJson()).toList(),
-      'chat_messages': chatMessages.map((m) => m.toJson()).toList(),
-    };
+  /// Restores a backup document and reloads every list from the database.
+  ///
+  /// Throws [ImportFormatException] for a file this build cannot read; rows
+  /// that fail validation are reported in the result rather than thrown.
+  Future<ImportReport> importAllData(
+    Map<String, dynamic> document, {
+    ImportMode mode = ImportMode.merge,
+  }) async {
+    final report = await importAll(await _database(), document, mode: mode);
+    await reloadAll();
+    return report;
   }
 }

@@ -63,7 +63,7 @@ lib/
     chat_repo.dart              persisted AI chat history
     finalization_repo.dart      `pending_finalizations` table access (no retry policy)
     settings_repo.dart          SharedPreferences (non-secret) + flutter_secure_storage (keys)
-    export_import.dart          JSON export / import
+    export_import.dart          the backup document format: JSON export / import (LO-61)
   session/
     session_state.dart          the SessionState enum the state machine below is drawn in
     recording_session.dart      state machine: idle → listening → holdToAsk → finalizing
@@ -167,7 +167,9 @@ then `SessionController.init()` for the finalization queue. Two things are new r
 than moved: chat messages are persisted through `data/chat_repo.dart` (schema v5 had the
 table since LO-35 but nothing wrote to it), and `LibraryController` owns the export
 that the old `DatabaseService.exportAllData` used to serve — that facade is gone as of
-issue #64. What LO-34 deliberately did *not* do is move the data models to `core/` —
+issue #64. LO-61 moved the format itself down into `data/export_import.dart`, which
+now defines both directions (`exportAll` / `importAll`); the controller only delegates
+and reloads its lists afterwards. What LO-34 deliberately did *not* do is move the data models to `core/` —
 see the LO-35 note above.
 
 Migration status (LO-31, M3 wave B): `device/` now holds the `OmiDevice` and

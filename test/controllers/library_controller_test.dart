@@ -4,6 +4,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:libreomi/controllers/library_controller.dart';
 import 'package:libreomi/data/chat_repo.dart';
 import 'package:libreomi/data/conversation_repo.dart';
+import 'package:libreomi/data/export_import.dart';
 import 'package:libreomi/data/memory_repo.dart';
 import 'package:libreomi/data/task_repo.dart';
 import 'package:libreomi/models/conversation.dart';
@@ -189,8 +190,11 @@ void main() {
 
     final export = await controller.exportAllData();
 
-    expect(export['app_version'], '2.1.0');
-    expect(export['export_date'], isA<String>());
+    // LO-61 moved the format into `data/export_import.dart`: the stamp is now
+    // this fork's own version, and the timestamp key is `exported_at`.
+    expect(export['format_version'], exportFormatVersion);
+    expect(export['app_version'], exportAppVersion);
+    expect(export['exported_at'], isA<String>());
     expect(export['conversations'], hasLength(1));
     expect(export['memories'], hasLength(1));
     expect(export['tasks'], hasLength(1));
