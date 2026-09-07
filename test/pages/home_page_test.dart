@@ -22,6 +22,8 @@ import 'package:libreomi/services/settings_service.dart';
 
 import 'controller_harness.dart';
 
+import '../support/localized_app.dart';
+
 void main() {
   setUp(() async {
     // The tab reads settings while building, so the service has to be
@@ -36,7 +38,7 @@ void main() {
     // listener is attached -- the same call `main.dart`'s bootstrap makes.
     await controllers.device.init();
     await tester.pumpWidget(
-      controllers.wrap(const MaterialApp(home: Scaffold(body: DeviceTab()))),
+      controllers.wrap(const LocalizedApp(home: Scaffold(body: DeviceTab()))),
     );
     return controllers;
   }

@@ -1,8 +1,10 @@
 /// Conversation detail page with full transcript
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../models/conversation.dart';
 import '../controllers/library_controller.dart';
+import '../l10n/l10n.dart';
 
 class ConversationDetailPage extends StatefulWidget {
   final Conversation conversation;
@@ -18,16 +20,17 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = L10n.of(context);
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          widget.conversation.title.isNotEmpty ? widget.conversation.title : 'Conversation',
+          widget.conversation.title.isNotEmpty ? widget.conversation.title : l10n.conversationDetail_untitledTitle,
         ),
         actions: [
           if (_selectedText.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.add_circle_outline),
-              tooltip: 'Add selection as memory',
+              tooltip: l10n.conversationDetail_addSelectionTooltip,
               onPressed: () => _addAsMemory(context),
             ),
         ],
@@ -44,7 +47,7 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> {
             buttonItems: [
               ...selectableRegionState.contextMenuButtonItems,
               ContextMenuButtonItem(
-                label: 'Add as Memory',
+                label: l10n.conversationDetail_addAsMemoryMenuItem,
                 onPressed: () {
                   ContextMenuController.removeAny();
                   _addAsMemory(context);
@@ -62,7 +65,7 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> {
               Row(
                 children: [
                   Text(
-                    _formatFullDate(widget.conversation.createdAt),
+                    _formatFullDate(l10n, widget.conversation.createdAt),
                     style: TextStyle(color: Colors.grey.shade400),
                   ),
                   if (widget.conversation.duration.inSeconds > 0) ...[
@@ -80,9 +83,9 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> {
 
               // Summary
               if (widget.conversation.summary.isNotEmpty) ...[
-                const Text(
-                  'Summary',
-                  style: TextStyle(
+                Text(
+                  l10n.conversationDetail_summaryHeader,
+                  style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
@@ -103,16 +106,16 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> {
               // Transcript
               Row(
                 children: [
-                  const Text(
-                    'Transcript',
-                    style: TextStyle(
+                  Text(
+                    l10n.conversationDetail_transcriptHeader,
+                    style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   const Spacer(),
                   Text(
-                    'Select text to add as memory',
+                    l10n.conversationDetail_selectTextHint,
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
                   ),
                 ],
@@ -128,29 +131,41 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> {
 
   void _addAsMemory(BuildContext context) {
     if (_selectedText.isEmpty) return;
-    
+
+    final l10n = L10n.of(context);
     final provider = Provider.of<LibraryController>(context, listen: false);
     provider.addMemory(_selectedText, sourceConversationId: widget.conversation.id);
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Added memory: "${_selectedText.length > 50 ? '${_selectedText.substring(0, 50)}...' : _selectedText}"'),
+        content: Text(l10n.conversationDetail_memoryAddedSnackbar(
+            _selectedText.length > 50 ? '${_selectedText.substring(0, 50)}...' : _selectedText)),
         action: SnackBarAction(
-          label: 'View',
+          label: l10n.conversationDetail_viewSnackbarAction,
           onPressed: () => Navigator.pop(context), // Go back to see memories tab
         ),
       ),
     );
-    
+
     setState(() => _selectedText = '');
   }
 
-  String _formatFullDate(DateTime date) {
-    final months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-    ];
-    return '${months[date.month - 1]} ${date.day}, ${date.year} at ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+  /// Formats a conversation's timestamp in the reader's language.
+  ///
+  /// `intl` rather than a hand-written month table: the month name and the
+  /// order of the parts differ between English and Korean, and the date
+  /// symbols for the app's locales are loaded by `GlobalMaterialLocalizations`.
+  ///
+  /// `DateFormat.Hm` is the 24-hour clock in every locale, which is what this
+  /// screen showed before. The task list uses `DateFormat.jm` and so shows a
+  /// 12-hour clock in English; unifying the two is a UI decision, not a
+  /// localisation one, and is left alone here.
+  String _formatFullDate(AppLocalizations l10n, DateTime date) {
+    final locale = l10n.localeName;
+    return l10n.conversationDetail_dateTimeFormat(
+      DateFormat.yMMMd(locale).format(date),
+      DateFormat.Hm(locale).format(date),
+    );
   }
 }
 
@@ -161,6 +176,7 @@ class _TranscriptRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = L10n.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -190,7 +206,7 @@ class _TranscriptRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Speaker ${segment.speakerId}',
+                  l10n.conversationDetail_speakerLabel(segment.speakerId),
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
                     color: Colors.grey.shade400,

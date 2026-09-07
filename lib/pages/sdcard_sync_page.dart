@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import '../controllers/device_controller.dart';
 import '../controllers/sdcard_controller.dart';
 import '../device/omi_device.dart';
+import '../l10n/l10n.dart';
 import '../services/sdcard_sync_service.dart' show SyncedAudioFile;
 import 'conversations_page.dart';
 
@@ -51,15 +52,16 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
   }
 
   Future<void> _startSync(SdCardController controller) async {
+    final l10n = L10n.of(context);
     final filePath = await controller.startSync();
     if (!mounted) return;
     if (filePath != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Audio synced! Tap the file to process it.'),
+          content: Text(l10n.sdcard_sync_syncedSnackbar),
           backgroundColor: Colors.green,
           action: SnackBarAction(
-            label: 'Process Now',
+            label: l10n.sdcard_sync_processNowAction,
             textColor: Colors.white,
             onPressed: () => controller.processFile(filePath),
           ),
@@ -76,20 +78,21 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
   }
 
   Future<void> _deleteFile(SdCardController controller, SyncedAudioFile file) async {
+    final l10n = L10n.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete File'),
-        content: Text('Delete "${file.fileName}"?\n\nThis cannot be undone.'),
+        title: Text(l10n.sdcard_sync_deleteFileTitle),
+        content: Text(l10n.sdcard_sync_deleteFileConfirm(file.fileName)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.common_cancelButton),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
+            child: Text(l10n.sdcard_sync_deleteButton),
           ),
         ],
       ),
@@ -100,28 +103,29 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
     if (!mounted) return;
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('File deleted')),
+        SnackBar(content: Text(l10n.sdcard_sync_fileDeletedSnackbar)),
       );
     }
   }
 
   Future<void> _deleteAllFiles(SdCardController controller) async {
     if (controller.syncedFiles.isEmpty) return;
+    final l10n = L10n.of(context);
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete All Files'),
-        content: Text('Delete all ${controller.syncedFiles.length} synced files?\n\nThis cannot be undone.'),
+        title: Text(l10n.sdcard_sync_deleteAllTitle),
+        content: Text(l10n.sdcard_sync_deleteAllConfirm(controller.syncedFiles.length)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.common_cancelButton),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete All'),
+            child: Text(l10n.sdcard_sync_deleteAllButton),
           ),
         ],
       ),
@@ -131,29 +135,26 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
     final deleted = await controller.deleteAll();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Deleted $deleted files')),
+      SnackBar(content: Text(l10n.sdcard_sync_deletedCountSnackbar(deleted))),
     );
   }
 
   Future<void> _clearDeviceStorage(SdCardController controller) async {
+    final l10n = L10n.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Clear Device Storage'),
-        content: const Text(
-          'Clear all data from your Omi device\'s SD card?\n\n'
-          'This will delete all unsynced recordings on the device. '
-          'This cannot be undone.',
-        ),
+        title: Text(l10n.sdcard_sync_clearStorageTitle),
+        content: Text(l10n.sdcard_sync_clearStorageConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.common_cancelButton),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Clear Storage'),
+            child: Text(l10n.sdcard_sync_clearStorageButton),
           ),
         ],
       ),
@@ -164,8 +165,8 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
     if (!mounted) return;
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Device storage cleared'),
+        SnackBar(
+          content: Text(l10n.sdcard_sync_storageCleared),
           backgroundColor: Colors.green,
         ),
       );
@@ -174,9 +175,10 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
 
   @override
   Widget build(BuildContext context) {
+    final l10n = L10n.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('SD Card Sync'),
+        title: Text(l10n.sdcard_sync_title),
         backgroundColor: Colors.transparent,
       ),
       body: Consumer<SdCardController>(
@@ -192,6 +194,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
   }
 
   Widget _buildNoSupportView() {
+    final l10n = L10n.of(context);
     final deviceController = context.read<DeviceController>();
     final isConnected = deviceController.deviceState == DeviceConnectionState.connected;
 
@@ -215,7 +218,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
             ),
             const SizedBox(height: 24),
             Text(
-              isConnected ? 'SD Card Not Supported' : 'Device Not Connected',
+              isConnected ? l10n.sdcard_sync_noSupportTitle : l10n.sdcard_sync_notConnectedTitle,
               style: const TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
@@ -223,9 +226,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
             ),
             const SizedBox(height: 12),
             Text(
-              isConnected
-                  ? 'Your Omi device doesn\'t have SD card storage.\n\nThis feature requires an Omi DevKit 2 or newer with SD card hardware and firmware v2.0+.'
-                  : 'Connect to your Omi device first to check for SD card storage.',
+              isConnected ? l10n.sdcard_sync_noSupportBody : l10n.sdcard_sync_notConnectedBody,
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 15,
@@ -240,13 +241,13 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
                   Navigator.pop(context);
                 },
                 icon: const Icon(Icons.bluetooth),
-                label: const Text('Connect Device'),
+                label: Text(l10n.sdcard_sync_connectDeviceButton),
               )
             else
               OutlinedButton.icon(
                 onPressed: () => Navigator.pop(context),
                 icon: const Icon(Icons.arrow_back),
-                label: const Text('Go Back'),
+                label: Text(l10n.sdcard_sync_goBackButton),
               ),
           ],
         ),
@@ -312,6 +313,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
   }
 
   Widget _buildStatusCard(SdCardController controller) {
+    final l10n = L10n.of(context);
     Color statusColor;
     IconData statusIcon;
 
@@ -363,9 +365,9 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  controller.syncing ? 'Syncing...' :
-                  controller.isProcessing ? 'Processing...' :
-                  controller.pending != null ? 'Data Available' : 'All Synced',
+                  controller.syncing ? l10n.sdcard_sync_statusSyncing :
+                  controller.isProcessing ? l10n.sdcard_sync_statusProcessing :
+                  controller.pending != null ? l10n.sdcard_sync_statusDataAvailable : l10n.sdcard_sync_statusAllSynced,
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -395,15 +397,16 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
   }
 
   Widget _buildProgressCard(SdCardController controller) {
+    final l10n = L10n.of(context);
     String statusText;
     Color progressColor;
     bool showCancel = false;
 
     if (controller.clearing) {
-      statusText = 'Clearing device storage...';
+      statusText = l10n.sdcard_sync_clearingProgress;
       progressColor = Colors.red;
     } else {
-      statusText = 'Syncing from SD card...';
+      statusText = l10n.sdcard_sync_syncingProgress;
       progressColor = const Color(0xFF6C5CE7);
       showCancel = true;
     }
@@ -447,7 +450,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
                       ),
                       if (controller.syncEtaSeconds != null)
                         Text(
-                          _formatEta(controller.syncEtaSeconds!),
+                          _formatEta(controller.syncEtaSeconds!, l10n),
                           style: TextStyle(
                             fontSize: 14,
                             color: Colors.grey.shade400,
@@ -481,7 +484,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
             TextButton.icon(
               onPressed: controller.cancelSync,
               icon: const Icon(Icons.cancel, color: Colors.red),
-              label: const Text('Cancel', style: TextStyle(color: Colors.red)),
+              label: Text(l10n.common_cancelButton, style: const TextStyle(color: Colors.red)),
             ),
         ],
       ),
@@ -489,6 +492,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
   }
 
   Widget _buildPendingDataCard(SdCardController controller) {
+    final l10n = L10n.of(context);
     final pending = controller.pending!;
     return Container(
       padding: const EdgeInsets.all(24),
@@ -518,7 +522,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Audio Recording',
+                      l10n.sdcard_sync_audioRecordingLabel,
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -543,7 +547,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
           ElevatedButton.icon(
             onPressed: () => _startSync(controller),
             icon: const Icon(Icons.download),
-            label: const Text('Sync & Process'),
+            label: Text(l10n.sdcard_sync_syncAndProcessButton),
             style: ElevatedButton.styleFrom(
               minimumSize: const Size(double.infinity, 56),
               backgroundColor: const Color(0xFF6C5CE7),
@@ -555,6 +559,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
   }
 
   Widget _buildNoDataCard(SdCardController controller) {
+    final l10n = L10n.of(context);
     return Container(
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
@@ -577,16 +582,16 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
             ),
           ),
           const SizedBox(height: 20),
-          const Text(
-            'All Caught Up!',
-            style: TextStyle(
+          Text(
+            l10n.sdcard_sync_allCaughtUpTitle,
+            style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'No pending audio on your Omi\'s SD card',
+            l10n.sdcard_sync_noPendingAudio,
             style: TextStyle(
               fontSize: 14,
               color: Colors.grey.shade400,
@@ -596,7 +601,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
           OutlinedButton.icon(
             onPressed: controller.refreshPending,
             icon: const Icon(Icons.refresh),
-            label: const Text('Check Again'),
+            label: Text(l10n.sdcard_sync_checkAgainButton),
           ),
         ],
       ),
@@ -608,18 +613,19 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
     String filePath,
     FileProcessState state,
   ) {
+    final l10n = L10n.of(context);
     switch (state.status) {
       case FileProcessStatus.idle:
         return const SizedBox.shrink();
       case FileProcessStatus.transcribing:
-        return _buildInProgressCard('Transcribing ${_fileNameOf(filePath)}...');
+        return _buildInProgressCard(l10n.sdcard_sync_transcribingProgress(_fileNameOf(filePath)));
       case FileProcessStatus.summarizing:
-        return _buildInProgressCard('Saved — waiting for the summary...');
+        return _buildInProgressCard(l10n.sdcard_sync_summarizingProgress);
       case FileProcessStatus.failed:
         return _buildFailedCard(
           controller,
           filePath,
-          state.error ?? 'Unknown error',
+          state.error ?? l10n.sdcard_sync_unknownError,
         );
       case FileProcessStatus.done:
         return _buildTranscriptCard(state);
@@ -655,6 +661,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
     String filePath,
     String error,
   ) {
+    final l10n = L10n.of(context);
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -669,9 +676,9 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
             children: [
               Icon(Icons.error_outline, color: Colors.red.shade300),
               const SizedBox(width: 12),
-              const Text(
-                'Transcription failed',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              Text(
+                l10n.sdcard_sync_transcriptionFailedTitle,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
             ],
           ),
@@ -684,7 +691,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
           OutlinedButton.icon(
             onPressed: () => controller.processFile(filePath),
             icon: const Icon(Icons.refresh),
-            label: const Text('Retry'),
+            label: Text(l10n.sdcard_sync_retryButton),
           ),
         ],
       ),
@@ -692,6 +699,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
   }
 
   Widget _buildTranscriptCard(FileProcessState state) {
+    final l10n = L10n.of(context);
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -708,7 +716,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  state.conversationTitle ?? 'Transcript',
+                  state.conversationTitle ?? l10n.sdcard_sync_transcriptFallbackTitle,
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -721,7 +729,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
                   await Clipboard.setData(ClipboardData(text: state.transcript ?? ''));
                   if (!mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Transcript copied')),
+                    SnackBar(content: Text(l10n.sdcard_sync_transcriptCopiedSnackbar)),
                   );
                 },
               ),
@@ -730,7 +738,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
           if (state.summaryPending) ...[
             const SizedBox(height: 4),
             Text(
-              'Summary pending',
+              l10n.sdcard_sync_summaryPending,
               style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
             ),
           ],
@@ -758,7 +766,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
               );
             },
             icon: const Icon(Icons.history),
-            label: const Text('View in History'),
+            label: Text(l10n.sdcard_sync_viewInHistoryButton),
           ),
         ],
       ),
@@ -766,6 +774,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
   }
 
   Widget _buildSyncedFilesSection(SdCardController controller) {
+    final l10n = L10n.of(context);
     final files = controller.syncedFiles;
     return Container(
       decoration: BoxDecoration(
@@ -793,16 +802,18 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Synced Files',
-                        style: TextStyle(
+                      Text(
+                        l10n.sdcard_sync_syncedFilesHeader,
+                        style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                       Text(
-                        '${files.length} file${files.length == 1 ? '' : 's'} • '
-                        '${_formatBytes(controller.storageUsageBytes)} on your phone',
+                        l10n.sdcard_sync_syncedFilesSummary(
+                          files.length,
+                          _formatBytes(controller.storageUsageBytes),
+                        ),
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.grey.shade400,
@@ -815,7 +826,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
                   TextButton(
                     onPressed: () => _deleteAllFiles(controller),
                     style: TextButton.styleFrom(foregroundColor: Colors.red),
-                    child: const Text('Delete All'),
+                    child: Text(l10n.sdcard_sync_deleteAllButton),
                   ),
               ],
             ),
@@ -869,13 +880,13 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
                           IconButton(
                             onPressed: () => controller.processFile(file.filePath),
                             icon: const Icon(Icons.play_arrow, color: Color(0xFF00b894)),
-                            tooltip: 'Process & Transcribe',
+                            tooltip: l10n.sdcard_sync_processTooltip,
                           ),
                           // Delete button
                           IconButton(
                             onPressed: () => _deleteFile(controller, file),
                             icon: Icon(Icons.delete_outline, color: Colors.red.shade300),
-                            tooltip: 'Delete',
+                            tooltip: l10n.sdcard_sync_deleteButton,
                           ),
                         ],
                       ),
@@ -888,6 +899,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
   }
 
   Widget _buildDeviceActionsSection(SdCardController controller) {
+    final l10n = L10n.of(context);
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -903,7 +915,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
               Icon(Icons.warning_amber, color: Colors.red.shade300, size: 20),
               const SizedBox(width: 8),
               Text(
-                'Device Storage',
+                l10n.sdcard_sync_deviceStorageHeader,
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   color: Colors.red.shade300,
@@ -913,7 +925,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
           ),
           const SizedBox(height: 12),
           Text(
-            'Clear all unsynced data from your Omi device. Use this if you want to start fresh without syncing.',
+            l10n.sdcard_sync_deviceStorageBody,
             style: TextStyle(
               fontSize: 13,
               color: Colors.grey.shade400,
@@ -924,7 +936,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
           OutlinedButton.icon(
             onPressed: () => _clearDeviceStorage(controller),
             icon: const Icon(Icons.delete_forever),
-            label: const Text('Clear Device Storage'),
+            label: Text(l10n.sdcard_sync_clearStorageTitle),
             style: OutlinedButton.styleFrom(
               foregroundColor: Colors.red,
               side: BorderSide(color: Colors.red.shade300),
@@ -936,6 +948,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
   }
 
   Widget _buildInfoSection() {
+    final l10n = L10n.of(context);
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -951,7 +964,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
               Icon(Icons.info_outline, color: Colors.blue.shade300, size: 20),
               const SizedBox(width: 8),
               Text(
-                'About SD Card Sync',
+                l10n.sdcard_sync_aboutHeader,
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   color: Colors.blue.shade300,
@@ -961,11 +974,7 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
           ),
           const SizedBox(height: 12),
           Text(
-            'When your Omi device records audio while disconnected from your phone, '
-            'it stores the data on its SD card. Use this feature to:\n\n'
-            '• Download offline recordings\n'
-            '• Transcribe and save to your history\n'
-            '• Clear storage for new recordings',
+            l10n.sdcard_sync_aboutBody,
             style: TextStyle(
               fontSize: 13,
               color: Colors.grey.shade400,
@@ -977,13 +986,13 @@ class _SdCardSyncPageState extends State<SdCardSyncPage> with TickerProviderStat
     );
   }
 
-  String _formatEta(int seconds) {
+  String _formatEta(int seconds, AppLocalizations l10n) {
     if (seconds < 60) {
-      return '${seconds}s remaining';
+      return l10n.sdcard_sync_etaSeconds(seconds);
     }
     final mins = seconds ~/ 60;
     final secs = seconds % 60;
-    return '${mins}m ${secs}s remaining';
+    return l10n.sdcard_sync_etaMinutes(mins, secs);
   }
 
   String _formatBytes(int bytes) {

@@ -12,6 +12,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../l10n/l10n.dart';
 import '../transcription/model_catalog.dart';
 import '../transcription/model_store.dart';
 
@@ -83,7 +84,7 @@ class _ModelsPageState extends State<ModelsPage> {
       // forever: drop the loading state and say what happened.
       if (!mounted) return;
       setState(() => _loading = false);
-      _showMessage('Could not read installed models: $e');
+      _showMessage(L10n.of(context).models_readFailedMessage(e.toString()));
       return;
     }
 
@@ -150,22 +151,20 @@ class _ModelsPageState extends State<ModelsPage> {
     required String title,
     required VoidCallback onConfirmed,
   }) async {
+    final l10n = L10n.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('Delete $title?'),
-        content: const Text(
-          'This removes the downloaded model from your device. '
-          'You can download it again later.',
-        ),
+        title: Text(l10n.models_deleteConfirmTitle(title)),
+        content: Text(l10n.models_deleteConfirmBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel'),
+            child: Text(l10n.common_cancelButton),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Delete'),
+            child: Text(l10n.models_deleteButton),
           ),
         ],
       ),
@@ -174,10 +173,11 @@ class _ModelsPageState extends State<ModelsPage> {
   }
 
   Future<void> _deleteSpec(ModelSpec spec) async {
+    final l10n = L10n.of(context);
     try {
       await widget.store.delete(spec);
     } catch (e) {
-      _showMessage('Could not delete ${spec.displayName}: $e');
+      _showMessage(l10n.models_deleteSpecFailedMessage(spec.displayName, e.toString()));
     }
     await _refresh();
   }
@@ -185,26 +185,28 @@ class _ModelsPageState extends State<ModelsPage> {
   /// Removes an [InstalledModel] the catalog no longer knows about, which has
   /// no [ModelSpec] to delete by.
   Future<void> _deleteUnknown(InstalledModel model) async {
+    final l10n = L10n.of(context);
     try {
       await widget.store.deleteById(model.id);
     } catch (e) {
-      _showMessage('Could not delete ${model.id}: $e');
+      _showMessage(l10n.models_deleteUnknownFailedMessage(model.id, e.toString()));
     }
     await _refresh();
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = L10n.of(context);
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Manage models')),
+      appBar: AppBar(title: Text(l10n.models_title)),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
                 for (final spec in ModelCatalog.all) ...[
-                  _buildModelTile(theme, spec),
+                  _buildModelTile(theme, l10n, spec),
                   const SizedBox(height: 12),
                 ],
                 if (_unknown.isNotEmpty) ...[
@@ -212,7 +214,7 @@ class _ModelsPageState extends State<ModelsPage> {
                   Padding(
                     padding: const EdgeInsets.only(left: 4, bottom: 8),
                     child: Text(
-                      'OTHER FILES',
+                      l10n.models_otherFilesHeader,
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 12,
@@ -222,7 +224,7 @@ class _ModelsPageState extends State<ModelsPage> {
                     ),
                   ),
                   for (final model in _unknown) ...[
-                    _buildUnknownTile(theme, model),
+                    _buildUnknownTile(theme, l10n, model),
                     const SizedBox(height: 12),
                   ],
                 ],
@@ -231,32 +233,34 @@ class _ModelsPageState extends State<ModelsPage> {
     );
   }
 
-  Widget _buildModelTile(ThemeData theme, ModelSpec spec) {
+  Widget _buildModelTile(ThemeData theme, AppLocalizations l10n, ModelSpec spec) {
     final installing = _progress.containsKey(spec.id);
     final installed = _installed[spec.id] ?? false;
     final subtitle =
-        '${_kindLabel(spec.kind)} · ${spec.languages.join(', ')}';
+        '${_kindLabel(l10n, spec.kind)} · ${spec.languages.join(', ')}';
 
     Widget sizeLine;
     if (installing) {
-      sizeLine = Text(_progressLabel(_progress[spec.id]!));
+      sizeLine = Text(_progressLabel(l10n, _progress[spec.id]!));
     } else if (installed) {
-      sizeLine = Text('${_megabytes(_sizes[spec.id] ?? 0)} MB installed');
+      sizeLine = Text(l10n.models_installedSizeLabel(_megabytes(_sizes[spec.id] ?? 0)));
     } else {
-      sizeLine = Text('Download ${_megabytes(spec.archiveBytes)} MB · '
-          '${_megabytes(spec.installedBytes)} MB on disk');
+      sizeLine = Text(l10n.models_downloadSizeLabel(
+        _megabytes(spec.archiveBytes),
+        _megabytes(spec.installedBytes),
+      ));
     }
 
     Widget? trailing;
     if (installing) {
       trailing = TextButton(
         onPressed: () => _cancelInstall(spec),
-        child: const Text('Cancel'),
+        child: Text(l10n.common_cancelButton),
       );
     } else if (installed) {
       trailing = IconButton(
         icon: const Icon(Icons.delete_outline),
-        tooltip: 'Delete',
+        tooltip: l10n.models_deleteButton,
         onPressed: () => _confirmDelete(
           title: spec.displayName,
           onConfirmed: () => _deleteSpec(spec),
@@ -265,7 +269,7 @@ class _ModelsPageState extends State<ModelsPage> {
     } else {
       trailing = ElevatedButton(
         onPressed: () => _startInstall(spec),
-        child: const Text('Download'),
+        child: Text(l10n.models_downloadButton),
       );
     }
 
@@ -312,15 +316,15 @@ class _ModelsPageState extends State<ModelsPage> {
     );
   }
 
-  Widget _buildUnknownTile(ThemeData theme, InstalledModel model) {
+  Widget _buildUnknownTile(ThemeData theme, AppLocalizations l10n, InstalledModel model) {
     return Card(
       clipBehavior: Clip.antiAlias,
       child: ListTile(
         title: Text(model.id),
-        subtitle: Text('${_megabytes(model.bytes)} MB · unrecognised'),
+        subtitle: Text(l10n.models_unknownSizeLabel(_megabytes(model.bytes))),
         trailing: IconButton(
           icon: const Icon(Icons.delete_outline),
-          tooltip: 'Delete',
+          tooltip: l10n.models_deleteButton,
           onPressed: () => _confirmDelete(
             title: model.id,
             onConfirmed: () => _deleteUnknown(model),
@@ -330,34 +334,37 @@ class _ModelsPageState extends State<ModelsPage> {
     );
   }
 
-  String _kindLabel(ModelKind kind) {
+  String _kindLabel(AppLocalizations l10n, ModelKind kind) {
     switch (kind) {
       case ModelKind.streamingZipformer:
-        return 'Streaming';
+        return l10n.models_kindStreaming;
       case ModelKind.whisper:
-        return 'Whisper';
+        return l10n.models_kindWhisper;
       case ModelKind.senseVoice:
-        return 'SenseVoice';
+        return l10n.models_kindSenseVoice;
       case ModelKind.vad:
-        return 'VAD';
+        return l10n.models_kindVad;
     }
   }
 
-  String _progressLabel(ModelInstallProgress progress) {
+  String _progressLabel(AppLocalizations l10n, ModelInstallProgress progress) {
     switch (progress.phase) {
       case ModelInstallPhase.downloading:
         final total = progress.totalBytes;
         if (total != null && total > 0) {
-          return '${_megabytes(progress.receivedBytes)} / '
-              '${_megabytes(total)} MB (${((progress.fraction ?? 0) * 100).round()}%)';
+          return l10n.models_progressWithTotal(
+            _megabytes(progress.receivedBytes),
+            _megabytes(total),
+            ((progress.fraction ?? 0) * 100).round(),
+          );
         }
-        return '${_megabytes(progress.receivedBytes)} MB downloaded';
+        return l10n.models_progressDownloaded(_megabytes(progress.receivedBytes));
       case ModelInstallPhase.extracting:
-        return 'Extracting…';
+        return l10n.models_progressExtracting;
       case ModelInstallPhase.verifying:
-        return 'Verifying…';
+        return l10n.models_progressVerifying;
       case ModelInstallPhase.done:
-        return 'Done';
+        return l10n.models_progressDone;
     }
   }
 }

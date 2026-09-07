@@ -1,6 +1,7 @@
 import 'package:awesome_notifications/awesome_notifications.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/l10n.dart';
 import '../platform/exact_alarm.dart';
 import '../platform/exact_alarm_gateway.dart' show exactAlarm;
 import 'notification_channels.dart';
@@ -40,7 +41,7 @@ class NotificationService {
       content: NotificationContent(
         id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
         channelKey: NotificationChannels.aiResponses,
-        title: 'Omi',
+        title: L10n.current.notification_aiResponseTitle,
         body: message,
         notificationLayout: NotificationLayout.BigText,
       ),
@@ -100,8 +101,8 @@ class NotificationService {
       content: NotificationContent(
         id: id,
         channelKey: NotificationChannels.taskReminders,
-        title: 'Task Due: $title',
-        body: 'It is time to complete your task.',
+        title: L10n.current.notification_taskDueTitle(title),
+        body: L10n.current.notification_taskDueBody,
         notificationLayout: NotificationLayout.Default,
         category: NotificationCategory.Reminder,
         wakeUpScreen: true,

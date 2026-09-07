@@ -25,7 +25,14 @@ abstract class BackgroundRunner {
   /// Starts the foreground service for the given [reasons]. See
   /// [requiresForegroundStart] for when this must be triggered by a
   /// foreground UI action rather than a background callback.
-  Future<void> start({required Set<BackgroundReason> reasons});
+  ///
+  /// [labels] translates the first notification text this posts. It defaults
+  /// to English so a caller with no locale to hand still gets readable text;
+  /// `SessionController` passes the user's language.
+  Future<void> start({
+    required Set<BackgroundReason> reasons,
+    SessionNotificationLabels labels = const SessionNotificationLabels(),
+  });
 
   /// Best-effort update of the persistent notification text. Must never
   /// throw into the caller.

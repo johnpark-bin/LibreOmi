@@ -9,6 +9,8 @@ import 'package:libreomi/platform/permissions.dart';
 import 'package:libreomi/services/secret_store.dart';
 import 'package:libreomi/services/settings_service.dart';
 
+import '../support/localized_app.dart';
+
 /// Scripts the runtime-permission answers this page reads. Records every
 /// `request()` call so tests can assert the page never requests anything,
 /// and every `openSettings()` call so the Open settings button can be
@@ -139,7 +141,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(
-      MaterialApp(
+      LocalizedApp(
         home: PermissionsRationalePage(
           // A fresh key per pump forces a new State (and thus a fresh
           // `initState` load) even when a test pumps the page more than
@@ -561,9 +563,8 @@ void main() {
 
     // Pushed on top of another route, the re-entry form keeps the arrow.
     await tester.pumpWidget(
-      MaterialApp(
-        home: const Scaffold(body: SizedBox.shrink()),
-        routes: <String, WidgetBuilder>{},
+      const LocalizedApp(
+        home: Scaffold(body: SizedBox.shrink()),
       ),
     );
     final navigator = tester.state<NavigatorState>(find.byType(Navigator));

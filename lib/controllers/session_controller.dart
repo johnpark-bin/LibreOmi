@@ -30,6 +30,7 @@ import '../device/omi_device.dart';
 import '../device/omi_gatt.dart';
 import '../intelligence/llm_client.dart';
 import '../intelligence/openai_client.dart';
+import '../l10n/l10n.dart';
 import '../models/conversation.dart';
 import '../platform/background_runner.dart';
 import '../platform/background_runner_factory.dart';
@@ -302,7 +303,7 @@ class SessionController extends ChangeNotifier {
   /// Start continuous listening using Omi device
   Future<void> startListening() async {
     if (!_deviceManager.isConnected) {
-      throw Exception('No Omi device connected');
+      throw Exception(L10n.current.sessionController_noDeviceConnectedError);
     }
     if (_isListening || _isStarting) return;
 
@@ -366,7 +367,7 @@ class SessionController extends ChangeNotifier {
     final hasPermission = await _micService.hasPermission();
     if (!hasPermission) {
       throw Exception(
-        'Microphone permission denied. Please enable in Settings.',
+        L10n.current.sessionController_micPermissionDeniedError,
       );
     }
 
@@ -440,7 +441,7 @@ class SessionController extends ChangeNotifier {
     // Validate API keys for cloud mode
     if (transcriptionMode == 'cloud' && !SettingsService.hasDeepgramKey) {
       throw Exception(
-        'Please configure Deepgram API key in settings or switch to local transcription',
+        L10n.current.sessionController_deepgramKeyMissingError,
       );
     }
 
@@ -487,7 +488,15 @@ class SessionController extends ChangeNotifier {
   Future<void> _startBackgroundRunner(Set<BackgroundReason> reasons) async {
     _sessionNotificationThrottle.reset();
     try {
-      await _backgroundRunner.start(reasons: reasons);
+      final l10n = L10n.current;
+      await _backgroundRunner.start(
+        reasons: reasons,
+        labels: SessionNotificationLabels(
+          phoneMic: l10n.session_notification_sourcePhoneMic,
+          omiConnected: l10n.session_notification_sourceOmiConnected,
+          omiDisconnected: l10n.session_notification_sourceOmiDisconnected,
+        ),
+      );
     } catch (e) {
       debugPrint('Background runner failed to start: $e');
     }
@@ -536,11 +545,17 @@ class SessionController extends ChangeNotifier {
     }
     final startedAt = _session.currentConversation?.createdAt;
     final now = DateTime.now();
+    final l10n = L10n.current;
     final candidate = SessionNotificationText.forSession(
       usingPhoneMic: _isUsingPhoneMic,
       deviceConnected: _deviceManager.isConnected,
       conversationLength:
           startedAt == null ? Duration.zero : now.difference(startedAt),
+      labels: SessionNotificationLabels(
+        phoneMic: l10n.session_notification_sourcePhoneMic,
+        omiConnected: l10n.session_notification_sourceOmiConnected,
+        omiDisconnected: l10n.session_notification_sourceOmiDisconnected,
+      ),
     );
     final next = _sessionNotificationThrottle.next(candidate, now);
     if (next == null) {
@@ -672,7 +687,7 @@ class SessionController extends ChangeNotifier {
       );
     }
     if (!SettingsService.hasDeepgramKey) {
-      throw Exception('Deepgram API key not configured');
+      throw Exception(L10n.current.sessionController_deepgramKeyNotConfiguredError);
     }
     return DeepgramPreRecordedTranscriber(
       apiKey: SettingsService.deepgramApiKey,

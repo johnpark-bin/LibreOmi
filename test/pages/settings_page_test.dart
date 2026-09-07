@@ -11,6 +11,8 @@ import 'package:libreomi/transcription/model_catalog.dart';
 
 import 'controller_harness.dart';
 
+import '../support/localized_app.dart';
+
 /// Scripts the platform answers for [BatteryOptimization] so tests never
 /// touch a plugin channel. Shape mirrors
 /// `test/platform/battery_optimization_test.dart`'s
@@ -130,7 +132,7 @@ void main() {
     final controllers = await PageControllers.create();
     await tester.pumpWidget(
       controllers.wrap(
-        MaterialApp(
+        LocalizedApp(
           home: SettingsPage(
             batteryOptimizationOverride: batteryOptimizationOverride,
             exactAlarmOverride: exactAlarmOverride,
@@ -214,7 +216,12 @@ void main() {
     ) async {
       await pumpSettingsPage(tester, transcriptionMode: 'sherpa');
 
-      final englishFinder = find.text('English');
+      // Scoped to the STT picker: the app's own display-language section
+       // (LO-62) offers an "English" tile too.
+      final englishFinder = find.descendant(
+        of: find.byType(SegmentedButton<String>),
+        matching: find.text('English'),
+      );
       await tester.scrollUntilVisible(
         englishFinder,
         300,
@@ -223,7 +230,13 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(englishFinder, findsOneWidget);
-      expect(find.text('한국어'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(SegmentedButton<String>),
+          matching: find.text('한국어'),
+        ),
+        findsOneWidget,
+      );
 
       final segmentedButton = tester.widget<SegmentedButton<String>>(
         find.byType(SegmentedButton<String>),
@@ -236,7 +249,11 @@ void main() {
     ) async {
       await pumpSettingsPage(tester, transcriptionMode: 'sherpa');
 
-      final koreanFinder = find.text('한국어');
+      // Scoped to the STT picker, as above.
+      final koreanFinder = find.descendant(
+        of: find.byType(SegmentedButton<String>),
+        matching: find.text('한국어'),
+      );
       await tester.scrollUntilVisible(
         koreanFinder,
         300,
@@ -260,7 +277,9 @@ void main() {
       await pumpSettingsPage(tester, transcriptionMode: 'cloud');
 
       expect(find.text('Language:'), findsNothing);
-      expect(find.text('한국어'), findsNothing);
+      // The STT picker is the page's only `SegmentedButton`; the display
+      // language below it is a radio group, so its 한국어 tile stays.
+      expect(find.byType(SegmentedButton<String>), findsNothing);
     });
 
     testWidgets('shows both the language picker and the offline model picker '
@@ -280,8 +299,17 @@ void main() {
 
       expect(modelFinder, findsOneWidget);
       expect(find.text('Language:'), findsOneWidget);
-      expect(find.text('English'), findsOneWidget);
-      expect(find.text('한국어'), findsOneWidget);
+      // Scoped to the STT picker: the display-language section names both
+      // languages too (LO-62).
+      final segments = find.byType(SegmentedButton<String>);
+      expect(
+        find.descendant(of: segments, matching: find.text('English')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: segments, matching: find.text('한국어')),
+        findsOneWidget,
+      );
     });
 
     testWidgets(

@@ -22,7 +22,10 @@ class FakeBackgroundRunner implements BackgroundRunner {
   bool running = false;
 
   @override
-  Future<void> start({required Set<BackgroundReason> reasons}) async {
+  Future<void> start({
+    required Set<BackgroundReason> reasons,
+    SessionNotificationLabels labels = const SessionNotificationLabels(),
+  }) async {
     if (throwOnStart) {
       throw StateError('FakeBackgroundRunner.start failed');
     }

@@ -15,6 +15,7 @@ import '../data/chat_repo.dart';
 import '../data/db.dart';
 import '../intelligence/llm_client.dart';
 import '../intelligence/openai_client.dart';
+import '../l10n/l10n.dart';
 import '../models/conversation.dart';
 import '../services/settings_service.dart';
 import '../session/recording_session.dart' show AiAnswer;
@@ -74,7 +75,7 @@ class ChatController extends ChangeNotifier {
   Future<void> sendChatMessage(String message) async {
     if (message.trim().isEmpty) return;
     if (!SettingsService.hasOpenAIKey) {
-      throw Exception('Please configure OpenAI API key in settings');
+      throw Exception(L10n.current.chatController_openAiKeyMissingError);
     }
 
     // Add user message
@@ -109,7 +110,7 @@ class ChatController extends ChangeNotifier {
     } catch (e) {
       replyMessage = ChatMessage(
         id: const Uuid().v4(),
-        text: 'Error: ${e.toString()}',
+        text: L10n.current.chatController_replyErrorMessage(e.toString()),
         isUser: false,
         createdAt: DateTime.now(),
       );

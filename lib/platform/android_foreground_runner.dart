@@ -130,7 +130,10 @@ class AndroidForegroundRunner implements BackgroundRunner {
   }
 
   @override
-  Future<void> start({required Set<BackgroundReason> reasons}) async {
+  Future<void> start({
+    required Set<BackgroundReason> reasons,
+    SessionNotificationLabels labels = const SessionNotificationLabels(),
+  }) async {
     if (reasons.isEmpty) {
       return;
     }
@@ -147,6 +150,7 @@ class AndroidForegroundRunner implements BackgroundRunner {
       usingPhoneMic: reasons.contains(BackgroundReason.microphone),
       deviceConnected: reasons.contains(BackgroundReason.connectedDevice),
       conversationLength: Duration.zero,
+      labels: labels,
     );
 
     final result = await FlutterForegroundTask.startService(

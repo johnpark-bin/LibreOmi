@@ -583,4 +583,45 @@ void main() {
       expect(SettingsService.exactTaskReminders, isTrue);
     });
   });
+
+  group('SettingsService.appLocaleTag (LO-62)', () {
+    test('defaults to null, which means follow the system language', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      expect(SettingsService.appLocaleTag, isNull);
+    });
+
+    test('a manual choice persists and reads back', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      SettingsService.appLocaleTag = 'ko';
+
+      expect(SettingsService.appLocaleTag, 'ko');
+    });
+
+    test('setting it back to null clears the stored override', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'app_locale': 'ko',
+      });
+      await SettingsService.init(secretStore: InMemorySecretStore());
+      expect(SettingsService.appLocaleTag, 'ko');
+
+      SettingsService.appLocaleTag = null;
+
+      expect(SettingsService.appLocaleTag, isNull);
+    });
+
+    test('is independent of the Deepgram transcription language', () async {
+      // The two answer different questions: a user can read a Korean UI while
+      // dictating English.
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      SettingsService.appLocaleTag = 'ko';
+
+      expect(SettingsService.language, 'en');
+    });
+  });
 }

@@ -5,7 +5,9 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
+import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
+import '../l10n/l10n.dart';
 import '../device/omi_gatt.dart';
 import '../device/omi_storage.dart';
 import 'sdcard_transfer.dart';
@@ -48,12 +50,13 @@ class SdCardWal {
   int get bytesToSync => storageTotalBytes - storageOffset;
   
   String get durationFormatted {
+    final l10n = L10n.current;
     final mins = seconds ~/ 60;
     final secs = seconds % 60;
     if (mins > 0) {
-      return '${mins}m ${secs}s';
+      return l10n.sdcard_file_durationMinutesSeconds(mins, secs);
     }
-    return '${secs}s';
+    return l10n.sdcard_file_durationSeconds(secs);
   }
   
   String get sizeFormatted {
@@ -90,26 +93,31 @@ class SyncedAudioFile {
     return '${(sizeBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
   
+  /// `L10n.current` rather than a `BuildContext`: this is a plain data class
+  /// with no place in the widget tree, and the static follows the locale the
+  /// UI resolved to (see `lib/l10n/l10n.dart`).
   String get durationFormatted {
-    if (durationSeconds == null) return 'Unknown';
+    final l10n = L10n.current;
+    if (durationSeconds == null) return l10n.sdcard_file_durationUnknown;
     final mins = durationSeconds! ~/ 60;
     final secs = durationSeconds! % 60;
     if (mins > 0) {
-      return '${mins}m ${secs}s';
+      return l10n.sdcard_file_durationMinutesSeconds(mins, secs);
     }
-    return '${secs}s';
+    return l10n.sdcard_file_durationSeconds(secs);
   }
   
   String get dateFormatted {
+    final l10n = L10n.current;
     final now = DateTime.now();
     final diff = now.difference(createdAt);
     
-    if (diff.inMinutes < 1) return 'Just now';
-    if (diff.inHours < 1) return '${diff.inMinutes}m ago';
-    if (diff.inDays < 1) return '${diff.inHours}h ago';
-    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    if (diff.inMinutes < 1) return l10n.sdcard_file_ageJustNow;
+    if (diff.inHours < 1) return l10n.sdcard_file_ageMinutes(diff.inMinutes);
+    if (diff.inDays < 1) return l10n.sdcard_file_ageHours(diff.inHours);
+    if (diff.inDays < 7) return l10n.sdcard_file_ageDays(diff.inDays);
     
-    return '${createdAt.month}/${createdAt.day}/${createdAt.year}';
+    return DateFormat.yMd(l10n.localeName).format(createdAt);
   }
 }
 
