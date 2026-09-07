@@ -84,12 +84,17 @@ List<TranscriptSegment> _extractSegments(Map<String, dynamic> json) {
   final words = alternative['words'];
   if (words is! List) return const [];
 
-  return _parseWords(words);
+  return segmentsFromDeepgramWords(words);
 }
 
 /// Groups Deepgram `words` entries by speaker, preserving first-seen speaker
 /// order, and joins each speaker's words into one segment.
-List<TranscriptSegment> _parseWords(List words) {
+///
+/// Public because both the streaming parser above (via [_extractSegments])
+/// and `transcription/deepgram_prerecorded.dart`'s pre-recorded file
+/// transcriber consume the same Deepgram `words` array shape and must not
+/// drift into two different grouping rules (LO-51).
+List<TranscriptSegment> segmentsFromDeepgramWords(List words) {
   if (words.isEmpty) return [];
 
   // Group words by speaker

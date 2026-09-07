@@ -101,6 +101,14 @@ Responses on the data characteristic:
 
 Local file format written by omibutfree (kept for compatibility):
 `sdcard_audio_{codec}_16000_1_{unixStart}.bin` = repeated `[len int32 LE][opus frame]`.
+`unixStart` is whole seconds since the epoch; `session/sdcard_import.dart` reads it back to
+stamp the imported conversation and its segments with when the audio was *captured*.
+The length prefixes are load-bearing: an Opus decoder needs whole packets, so anything that
+concatenates the payloads (as `SdCardSyncService.readAudioFile` does) makes the recording
+undecodable. LO-51's importer therefore parses the file itself.
+Only `opus` files are transcribed today — codec id 1 is recorded below as 8-bit PCM with a
+question mark and has never been verified against a device, and guessing its sample width
+would yield a confident-looking transcript of noise, so `SdCardImporter` refuses it.
 
 Timing: firmware streams at roughly real time × N; omibutfree waits `seconds + 60` for
 completion and 5 s for the first packet.
