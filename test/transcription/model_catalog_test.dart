@@ -101,6 +101,94 @@ void main() {
       });
     });
 
+    test('the SenseVoice entry points at the upstream int8 release asset',
+        () {
+      // Every number was read off the asset itself (LO-71): the release API
+      // for the archive size, `tar xjf` plus `ls -l` for the two extracted
+      // files. A typo here is a 163 MB download that fails verification, or
+      // a "this will use N MB" label that lies by a factor.
+      const spec = ModelCatalog.senseVoice;
+      expect(spec.kind, ModelKind.senseVoice);
+      expect(spec.id, 'sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17');
+      expect(spec.requiredFiles, ['model.int8.onnx', 'tokens.txt']);
+      expect(spec.archiveBytes, 163002883);
+      expect(spec.installedBytes, 239233841 + 315894);
+      expect(spec.languages, ['zh', 'en', 'ja', 'ko', 'yue']);
+      expect(spec.url, contains('-int8-'),
+          reason: 'the float variant of the same model is a 1 GB archive');
+    });
+
+    test('every SenseVoice entry names one model file and its tokens', () {
+      // OfflineWorkerConfig resolves these two out of requiredFiles rather
+      // than hard-coding names, so a future entry that ships its weights
+      // under different names still has to have exactly one .onnx and a
+      // tokens.txt.
+      final senseVoice = ModelCatalog.all
+          .where((s) => s.kind == ModelKind.senseVoice)
+          .toList();
+      expect(senseVoice, isNotEmpty);
+      for (final spec in senseVoice) {
+        expect(spec.requiredFiles.where((f) => f.endsWith('.onnx')),
+            hasLength(1), reason: spec.id);
+        expect(spec.requiredFiles, contains('tokens.txt'), reason: spec.id);
+      }
+    });
+
+    group('offlineModel(id)', () {
+      test('lists the three models the batch mode offers, in settings order',
+          () {
+        expect(ModelCatalog.offlineModels, [
+          ModelCatalog.whisperTiny,
+          ModelCatalog.whisperBase,
+          ModelCatalog.senseVoice,
+        ]);
+      });
+
+      test('every offline model is installable from the models page', () {
+        for (final spec in ModelCatalog.offlineModels) {
+          expect(ModelCatalog.all, contains(spec), reason: spec.id);
+        }
+      });
+
+      test('maps each offered id to its spec', () {
+        for (final spec in ModelCatalog.offlineModels) {
+          expect(ModelCatalog.offlineModel(spec.id), same(spec));
+        }
+      });
+
+      test('falls back to the default for a stale preference', () {
+        expect(ModelCatalog.offlineModel('sherpa-onnx-whisper-small'),
+            same(ModelCatalog.defaultOfflineModel));
+        expect(ModelCatalog.offlineModel(''),
+            same(ModelCatalog.defaultOfflineModel));
+        // A streaming model is in the catalog but is not decodable by the
+        // offline path, so it must not resolve either.
+        expect(ModelCatalog.offlineModel(ModelCatalog.streamingZipformerKo.id),
+            same(ModelCatalog.defaultOfflineModel));
+      });
+
+      test('defaultOfflineModel is Whisper tiny', () {
+        expect(ModelCatalog.defaultOfflineModel, same(ModelCatalog.whisperTiny));
+      });
+    });
+
+    group('senseVoiceLanguage(language)', () {
+      test('passes through every language the app offers', () {
+        // Both of LO-44's languages are ones SenseVoice was trained on, so
+        // picking SenseVoice never silently loses the language pin today.
+        for (final language in ModelCatalog.localSttLanguages) {
+          expect(ModelCatalog.senseVoiceLanguage(language), language,
+              reason: language);
+          expect(ModelCatalog.senseVoice.languages, contains(language));
+        }
+      });
+
+      test('falls back to auto-detection for a language the model lacks', () {
+        expect(ModelCatalog.senseVoiceLanguage('de'), 'auto');
+        expect(ModelCatalog.senseVoiceLanguage(''), 'auto');
+      });
+    });
+
     test('every streaming entry names the files SherpaWorkerConfig defaults '
         'to', () {
       // SherpaStreamingTranscriber builds a SherpaWorkerConfig without
