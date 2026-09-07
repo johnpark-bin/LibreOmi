@@ -620,4 +620,14 @@ void main() {
       },
     );
   });
+
+  group('Privacy section', () {
+    testWidgets('offers a way back into the permissions & privacy screen', (
+      tester,
+    ) async {
+      await pumpSettingsPage(tester);
+
+      expect(find.text('Permissions & privacy'), findsOneWidget);
+    });
+  });
 }
