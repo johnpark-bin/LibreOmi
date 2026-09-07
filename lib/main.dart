@@ -12,6 +12,7 @@ import 'controllers/sdcard_controller.dart';
 import 'controllers/session_controller.dart';
 import 'device/device_manager.dart';
 import 'pages/home_page.dart';
+import 'pages/permissions_rationale_page.dart';
 import 'transcription/model_store.dart';
 
 void main() async {
@@ -27,31 +28,62 @@ void main() async {
     debugPrint('Settings init error: $e');
   }
 
-  runApp(const LibreOmiApp());
+  final showRationale = shouldShowRationale();
 
-  // Notifications are the only permission requested at launch (docs/04 §3):
-  // every notification the app posts, including the persistent session one,
-  // needs it from Android 13 on. BLE and microphone are requested at the point
-  // of use instead. Asked after the first frame so the dialog has an attached
-  // activity, and deliberately not awaited: a denial only means the user gets
-  // no notifications, which must not block the UI from coming up.
-  WidgetsBinding.instance.addPostFrameCallback((_) async {
-    try {
-      await appPermissions.ensureNotifications();
-    } catch (e) {
-      debugPrint('Notification permission request failed: $e');
-    }
-  });
+  runApp(LibreOmiApp(showRationale: showRationale));
+
+  // On first launch the permissions & privacy screen goes first and the
+  // request waits until the user has read it (docs/08 §8): Play's prominent
+  // disclosure has to precede the permission dialog, not race it.
+  if (!showRationale) {
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => unawaited(requestLaunchPermissions()),
+    );
+  }
+}
+
+/// Whether this launch should open the permissions & privacy screen instead
+/// of the home page (LO-64). Shown once; the screen sets the flag itself.
+///
+/// A settings store that failed to initialise errs towards showing it: the
+/// disclosure appearing twice is harmless, silently skipping it is not.
+bool shouldShowRationale() {
+  try {
+    return !SettingsService.rationaleShown;
+  } catch (e) {
+    debugPrint('Rationale flag unreadable, showing the screen: $e');
+    return true;
+  }
+}
+
+/// Notifications are the only permission requested at launch (docs/04 §3):
+/// every notification the app posts, including the persistent session one,
+/// needs it from Android 13 on. BLE and microphone are requested at the point
+/// of use instead. Called after the first frame so the dialog has an attached
+/// activity, and never awaited by the caller: a denial only means the user
+/// gets no notifications, which must not block the UI from coming up.
+Future<void> requestLaunchPermissions() async {
+  try {
+    await appPermissions.ensureNotifications();
+  } catch (e) {
+    debugPrint('Notification permission request failed: $e');
+  }
 }
 
 class LibreOmiApp extends StatefulWidget {
-  const LibreOmiApp({super.key});
+  const LibreOmiApp({super.key, this.showRationale = false});
+
+  /// Whether to open on the permissions & privacy screen. Captured once at
+  /// startup so the flag flipping mid-session cannot swap the root screen
+  /// under the user.
+  final bool showRationale;
 
   @override
   State<LibreOmiApp> createState() => _LibreOmiAppState();
 }
 
 class _LibreOmiAppState extends State<LibreOmiApp> {
+  late bool _showRationale;
   late final DeviceManager _deviceManager;
   late final LibraryController _library;
   late final ChatController _chat;
@@ -63,6 +95,7 @@ class _LibreOmiAppState extends State<LibreOmiApp> {
   void initState() {
     super.initState();
 
+    _showRationale = widget.showRationale;
     _deviceManager = createDeviceManager();
     _library = LibraryController();
     _chat = ChatController(library: _library);
@@ -260,7 +293,18 @@ class _LibreOmiAppState extends State<LibreOmiApp> {
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
           useMaterial3: true,
         ),
-        home: const HomePage(),
+        home: _showRationale
+            ? PermissionsRationalePage(
+                isFirstRun: true,
+                onContinue: () {
+                  setState(() => _showRationale = false);
+                  // Deferred to here rather than to the first frame so the
+                  // notification dialog lands after the disclosure the user
+                  // just read.
+                  unawaited(requestLaunchPermissions());
+                },
+              )
+            : const HomePage(),
         builder: (context, child) {
           return Stack(
             children: [if (child != null) child, const ListeningOverlay()],

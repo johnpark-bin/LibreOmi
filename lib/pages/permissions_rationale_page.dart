@@ -13,8 +13,8 @@ library;
 import 'package:flutter/material.dart';
 
 import '../platform/battery_optimization.dart';
-import '../platform/battery_optimization_gateway.dart';
-import '../platform/permission_gateway.dart';
+import '../platform/battery_optimization_gateway.dart' show batteryOptimization;
+import '../platform/permission_gateway.dart' show appPermissions;
 import '../platform/permissions.dart';
 import '../services/settings_service.dart';
 
@@ -185,14 +185,11 @@ class _PermissionsRationalePageState extends State<PermissionsRationalePage> {
       batteryStatus = _RowStatus.notGranted;
     }
 
-    final showAppBar = !widget.isFirstRun || widget.isFirstRun;
     return Scaffold(
-      appBar: showAppBar
-          ? AppBar(
-              title: const Text('Permissions & privacy'),
-              automaticallyImplyLeading: !widget.isFirstRun,
-            )
-          : null,
+      appBar: AppBar(
+        title: const Text('Permissions & privacy'),
+        automaticallyImplyLeading: !widget.isFirstRun,
+      ),
       body: !_loaded
           ? const Center(child: CircularProgressIndicator())
           : _RationaleView(

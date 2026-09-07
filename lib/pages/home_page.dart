@@ -11,6 +11,7 @@ import '../controllers/device_controller.dart';
 import '../controllers/session_controller.dart';
 import '../services/settings_service.dart';
 import 'battery_guidance_page.dart';
+import 'permissions_rationale_page.dart';
 import 'settings_page.dart';
 import 'conversations_page.dart';
 import 'memories_page.dart';
@@ -253,6 +254,22 @@ class _DeviceTabState extends State<DeviceTab> {
           icon: Icons.phone_iphone,
           color: const Color(0xFF00b894),
           onTap: SettingsService.hasApiKeys ? () => _startPhoneMicRecording(session) : null,
+        ),
+
+        const SizedBox(height: 24),
+
+        // The way back into the first-run disclosure (LO-64), which is
+        // otherwise shown only once.
+        Center(
+          child: TextButton.icon(
+            icon: const Icon(Icons.privacy_tip_outlined, size: 18),
+            label: const Text('Permissions & privacy'),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const PermissionsRationalePage(),
+              ),
+            ),
+          ),
         ),
       ],
     );
