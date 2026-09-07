@@ -15,6 +15,7 @@ lib/
     session_controller.dart     listening, transcriber choice, foreground service, finalization
     library_controller.dart     conversations / memories / tasks lists and their CRUD
     chat_controller.dart        chat history (persisted) and the LLM chat call
+    sdcard_controller.dart      SD-card page state: pending WAL, transfer, imports (LO-52)
   core/                         models, Result/Failure types, logging, clock, ids
   device/                       Omi device transport
     omi_device.dart             abstract OmiDevice (interface) + DeviceConnectionState
@@ -62,6 +63,7 @@ lib/
     session_state.dart          the SessionState enum the state machine below is drawn in
     recording_session.dart      state machine: idle → listening → holdToAsk → finalizing
     conversation_finalizer.dart summarize → memories/tasks → persist → notify (single implementation)
+    sdcard_import.dart          synced `.bin` → PCM16 → WAV → FileTranscriber → finalizer (LO-51)
     button_handler.dart         Omi button event state machine
     silence_detector.dart
   platform/
@@ -389,7 +391,7 @@ Not in scope for v1: boot receiver, companion-device pairing, native Kotlin serv
 | `services/database_service.dart`, `models/` | LO-35 split the SQL into `data/` repos behind an unchanged `DatabaseService` facade; schema v5 adds `tasks.notification_id` (backfilled with the pre-v5 `created_at & 0x7fffffff` derivation) and puts `chat_messages` on the migration path so chat is persisted. `start_at/end_at` on segments live in the transcript JSON, so they needed no table change. LO-34 moved every production caller onto the repositories, leaving the facade with test-only callers. Still to do: move the models to `core/`, and delete the facade once its two test files are rewritten. |
 | `services/settings_service.dart` | Copy → `data/settings_repo.dart`; keys move to secure storage with one-time migration. |
 | `services/notification_service.dart` | Copy → `platform/notifications.dart`; stable numeric IDs now come from the `tasks.notification_id` column (LO-35), read via `services/notification_ids.dart`; Android res added. |
-| `services/sdcard_sync_service.dart` | LO-31 repointed it onto `OmiStorage` (it no longer knows about BLE); LO-50 moved the byte-level transfer loop onto `OmiStorage.packets` + the pure `services/sdcard_transfer.dart`; LO-51 moved post-processing out to `session/sdcard_import.dart` (`.bin` → PCM16 → WAV → `FileTranscriber` → `ConversationFinalizer`). That importer reads the `.bin` itself rather than through `SdCardSyncService.readAudioFile`, which concatenates the frame payloads and so destroys the packet boundaries an Opus decoder needs. Still to move: `readAudioFile`'s remaining callers off that lossy read. |
+| `services/sdcard_sync_service.dart` | LO-31 repointed it onto `OmiStorage` (it no longer knows about BLE); LO-50 moved the byte-level transfer loop onto `OmiStorage.packets` + the pure `services/sdcard_transfer.dart`; LO-51 moved post-processing out to `session/sdcard_import.dart` (`.bin` → PCM16 → WAV → `FileTranscriber` → `ConversationFinalizer`). LO-52 put `controllers/sdcard_controller.dart` in front of both halves, so `pages/sdcard_sync_page.dart` no longer calls this service — including its static file helpers — or `SessionController.processLocalAudioFile` directly; the controller reaches the static helpers through its own `SyncedFileStore` seam, which is what makes the page's state machine testable without `path_provider`. That importer reads the `.bin` itself rather than through `SdCardSyncService.readAudioFile`, which concatenates the frame payloads and so destroys the packet boundaries an Opus decoder needs. Still to move: `readAudioFile`'s remaining callers off that lossy read. |
 | `providers/app_provider.dart` | **Done (LO-34).** Dissolved into `session/*` (LO-33) plus the four `ChangeNotifier`s in `controllers/`: `DeviceController`, `SessionController`, `LibraryController`, `ChatController`. The file and `lib/providers/` are gone. |
 | `pages/*` | Port unchanged in M1; re-point to the new controllers in M3. |
 | `OmiLocal/`, Finder duplicates, iCloud toggle | Drop. |
