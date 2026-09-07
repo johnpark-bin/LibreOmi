@@ -40,11 +40,14 @@ lib/
     isolate_channel.dart        request/response + events over Isolate.spawn
     sherpa_streaming.dart       zipformer (en/ko), runs in isolate
     sherpa_worker.dart          the streaming worker isolate; imports sherpa_onnx
-    whisper_batch.dart          offline whisper + Silero VAD, runs in isolate
-    whisper_worker.dart         the batch worker isolate; imports sherpa_onnx
+    offline_batch.dart          offline recognizer + Silero VAD, runs in isolate
+    offline_worker.dart         the batch worker isolate (whisper | sense voice);
+                                imports sherpa_onnx
+    offline_file_transcriber.dart  whole-WAV decode through the same worker
     vad.dart                    Silero VAD abstraction + sample-index timeline
     model_catalog.dart          catalog of installable models: id, url, required files, sizes,
-                                language; maps the local-STT language to a streaming model
+                                language; maps the local-STT language to a streaming model and
+                                the offline-model preference to an offline one
     model_store.dart            model download / verify / delete, progress
   intelligence/
     llm_client.dart             abstract LlmClient (chat, summarize → ConversationInsights)
@@ -387,7 +390,7 @@ Not in scope for v1: boot receiver, companion-device pairing, native Kotlin serv
 | `services/opus_decoder_service.dart` | LO-32 wrapped it as `audio/opus_decoder.dart`; the service still holds the `opus_flutter` code until it moves. |
 | `services/mic_service.dart` | LO-32 put `audio/phone_mic_source.dart` in front of it behind `AudioSource` (via `audio/mic_recorder.dart`); the recorder itself still lives in `services/`. |
 | `services/deepgram_service.dart` | LO-32 wrapped it as `transcription/deepgram_streaming.dart` behind `StreamingTranscriber`. LO-51 added the pre-recorded sibling `transcription/deepgram_prerecorded.dart` (a `FileTranscriber` that uploads a WAV to `POST /v1/listen`), and both now share the word-to-segment grouping in `services/deepgram/deepgram_parser.dart` (`segmentsFromDeepgramWords`). Still to move: the streaming service body, plus fix its usage accounting and make the streaming model configurable. |
-| `services/sherpa_service.dart`, `whisper_service.dart` | **Done (LO-51).** LO-32 wrapped them as `transcription/sherpa_streaming.dart` / `whisper_batch.dart`; LO-41 moved the sherpa decode loop into `transcription/sherpa_worker.dart` and LO-42 the whisper one into `transcription/whisper_worker.dart`, cutting utterances with the Silero VAD in `transcription/vad.dart` instead of the old fixed 3-second timer. That left both services with a single caller each — the file-transcription stubs in `SessionController` — and LO-51 replaced those with `transcription/offline_file_transcriber.dart`, so both files are deleted. |
+| `services/sherpa_service.dart`, `whisper_service.dart` | **Done (LO-51).** LO-32 wrapped them as `transcription/sherpa_streaming.dart` / `offline_batch.dart`; LO-41 moved the sherpa decode loop into `transcription/sherpa_worker.dart` and LO-42 the whisper one into `transcription/offline_worker.dart` (named `whisper_worker.dart` until LO-71 widened it to SenseVoice), cutting utterances with the Silero VAD in `transcription/vad.dart` instead of the old fixed 3-second timer. That left both services with a single caller each — the file-transcription stubs in `SessionController` — and LO-51 replaced those with `transcription/offline_file_transcriber.dart`, so both files are deleted. |
 | `services/openai_service.dart` | LO-32 wrapped it in `intelligence/openai_client.dart` behind `LlmClient` with typed `ConversationInsights` and retryable/permanent errors. LO-60 made the endpoint configurable: the URL assembly, provider presets and the lenient JSON-object extractor live in the pure `services/llm_endpoint.dart`, the service reads its base URL from a constructor argument (`OpenAiClient.fromApiKey` supplies `SettingsService.llmBaseUrl`), summarize retries once without `response_format` when the server rejects JSON mode, and `testConnection()` probes `GET <base>/models`. The HTTP service body itself still lives in `services/`; moving it into `intelligence/` would also have to move its `controllers/` callers, so it is left for a later refactor. |
 | `services/database_service.dart`, `models/` | **Facade deleted (issue #64).** LO-35 split the SQL into `data/` repos behind an unchanged `DatabaseService` facade; schema v5 adds `tasks.notification_id` (backfilled with the pre-v5 `created_at & 0x7fffffff` derivation) and puts `chat_messages` on the migration path so chat is persisted. `start_at/end_at` on segments live in the transcript JSON, so they needed no table change. LO-34 moved every production caller onto the repositories, leaving the facade with test-only callers, and issue #64 deleted `services/database_service.dart` together with the two test files that only exercised its delegation — what those files actually checked lives in `test/data/` and `test/controllers/library_controller_test.dart`. Still to do: move the models to `core/`. |
 | `services/settings_service.dart` | Copy → `data/settings_repo.dart`; keys move to secure storage with one-time migration. |
