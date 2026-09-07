@@ -139,7 +139,9 @@ void main() {
     // Declared first on purpose: `SettingsService` keeps its `SharedPreferences`
     // in a static that nothing resets, so this is the only point in the file
     // where the store is genuinely uninitialised. Keep it above the tests that
-    // call `SettingsService.init`.
+    // call `SettingsService.init`; the assertion below fails loudly rather
+    // than passing vacuously if that order ever changes.
+    expect(() => SettingsService.rationaleShown, throwsA(isA<Exception>()));
 
     var continueCalls = 0;
     final gateway = _FakePermissionGateway(

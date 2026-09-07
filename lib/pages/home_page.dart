@@ -268,7 +268,6 @@ class _DeviceTabState extends State<DeviceTab> {
           color: const Color(0xFF00b894),
           onTap: SettingsService.hasApiKeys ? () => _startPhoneMicRecording(session) : null,
         ),
-
       ],
     );
   }
