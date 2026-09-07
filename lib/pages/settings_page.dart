@@ -8,6 +8,8 @@ import 'package:path_provider/path_provider.dart';
 import '../controllers/device_controller.dart';
 import '../controllers/library_controller.dart';
 import '../device/omi_device.dart';
+import '../services/llm_endpoint.dart';
+import '../services/openai_service.dart';
 import '../services/settings_service.dart';
 import '../platform/battery_optimization.dart';
 import '../platform/battery_optimization_gateway.dart';
@@ -31,8 +33,14 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   final _deepgramController = TextEditingController();
   final _openaiController = TextEditingController();
+  final _llmBaseUrlController = TextEditingController();
+  final _newModelController = TextEditingController();
+  final _newPricedModelController = TextEditingController();
   bool _obscureDeepgram = true;
   bool _obscureOpenai = true;
+
+  bool _testingLlmConnection = false;
+  LlmConnectionResult? _llmConnectionResult;
 
   late final BatteryOptimization _batteryOptimization;
   bool? _isIgnoringBatteryOptimization;
@@ -45,6 +53,7 @@ class _SettingsPageState extends State<SettingsPage> {
     super.initState();
     _deepgramController.text = SettingsService.deepgramApiKey;
     _openaiController.text = SettingsService.openaiApiKey;
+    _llmBaseUrlController.text = SettingsService.llmBaseUrl;
     _batteryOptimization =
         widget.batteryOptimizationOverride ?? batteryOptimization;
     _refreshBatteryOptimizationStatus(notify: false);
@@ -413,8 +422,8 @@ class _SettingsPageState extends State<SettingsPage> {
             const SizedBox(height: 24),
           ],
 
-          // OpenAI API Key
-          _buildSectionHeader('OpenAI API Key'),
+          // LLM
+          _buildSectionHeader('LLM'),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(20),
@@ -439,21 +448,61 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'For chat features. Get from platform.openai.com',
+                    'Key for the configured endpoint below. Leave empty for a local '
+                    'server such as Ollama that does not require one.',
                     style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), fontSize: 12),
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
-                    value: SettingsService.openaiModel,
+                    value: presetForBaseUrl(SettingsService.llmBaseUrl).id,
+                    dropdownColor: const Color(0xFF2D2D2D),
+                    decoration: const InputDecoration(
+                      labelText: 'Provider',
+                    ),
+                    icon: Icon(Icons.arrow_drop_down, color: theme.colorScheme.onSurface.withOpacity(0.5)),
+                    items: [
+                      for (final preset in llmPresets)
+                        DropdownMenuItem(value: preset.id, child: Text(preset.label)),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      final preset = presetById(value);
+                      setState(() {
+                        if (preset.id != 'custom') {
+                          SettingsService.llmBaseUrl = preset.baseUrl;
+                          _llmBaseUrlController.text = SettingsService.llmBaseUrl;
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _llmBaseUrlController,
+                    decoration: const InputDecoration(
+                      hintText: 'e.g. http://localhost:11434/v1',
+                      labelText: 'Base URL',
+                    ),
+                    onChanged: (value) {
+                      SettingsService.llmBaseUrl = value;
+                      setState(() {});
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'OpenAI-compatible base URL, e.g. http://localhost:11434/v1 for Ollama.',
+                    style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), fontSize: 12),
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: _llmModelDropdownValue(),
                     dropdownColor: const Color(0xFF2D2D2D),
                     decoration: const InputDecoration(
                       labelText: 'Model',
                     ),
                     icon: Icon(Icons.arrow_drop_down, color: theme.colorScheme.onSurface.withOpacity(0.5)),
-                    items: const [
-                      DropdownMenuItem(value: 'gpt-4.1', child: Text('GPT-4.1')),
-                      DropdownMenuItem(value: 'gpt-4.1-mini', child: Text('GPT-4.1 Mini')),
-                      DropdownMenuItem(value: 'gpt-4.1-nano', child: Text('GPT-4.1 Nano')),
+                    items: [
+                      for (final model in _llmModelChoices())
+                        DropdownMenuItem(value: model, child: Text(model)),
                     ],
                     onChanged: (value) {
                       if (value != null) {
@@ -461,6 +510,83 @@ class _SettingsPageState extends State<SettingsPage> {
                       }
                     },
                   ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _newModelController,
+                          decoration: const InputDecoration(
+                            hintText: 'Add custom model id',
+                            labelText: 'Custom model',
+                          ),
+                          onSubmitted: (_) => _addCustomModel(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed: _addCustomModel,
+                        child: const Text('Add'),
+                      ),
+                    ],
+                  ),
+                  if (SettingsService.llmCustomModels.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final model in SettingsService.llmCustomModels)
+                          Chip(
+                            label: Text(model),
+                            onDeleted: () => _removeCustomModel(model),
+                          ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _testingLlmConnection ? null : _testLlmConnection,
+                        icon: _testingLlmConnection
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.wifi_tethering),
+                        label: const Text('Test connection'),
+                      ),
+                    ],
+                  ),
+                  if (_llmConnectionResult != null) ...[
+                    const SizedBox(height: 12),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          _llmConnectionResult!.ok
+                              ? Icons.check_circle_outline
+                              : Icons.error_outline,
+                          color: _llmConnectionResult!.ok ? Colors.green : Colors.red,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _llmConnectionResult!.message,
+                            style: TextStyle(
+                              color: _llmConnectionResult!.ok ? Colors.green : Colors.red,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  _buildLlmPricingEditor(theme),
                 ],
               ),
             ),
@@ -792,6 +918,191 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  /// Models offered for the configured endpoint: the current preset's
+  /// built-in models plus any user-added custom models, de-duplicated.
+  List<String> _llmModelChoices() {
+    final preset = presetForBaseUrl(SettingsService.llmBaseUrl);
+    final seen = <String>{};
+    final result = <String>[];
+    for (final model in [...preset.models, ...SettingsService.llmCustomModels]) {
+      if (seen.add(model)) {
+        result.add(model);
+      }
+    }
+    final current = SettingsService.openaiModel;
+    if (seen.add(current)) {
+      result.add(current);
+    }
+    return result;
+  }
+
+  /// The model dropdown's current value. Always present in
+  /// [_llmModelChoices] so `DropdownButtonFormField`'s assert never trips.
+  String _llmModelDropdownValue() => SettingsService.openaiModel;
+
+  void _addCustomModel() {
+    final id = _newModelController.text.trim();
+    if (id.isEmpty) return;
+    final existing = SettingsService.llmCustomModels;
+    if (existing.contains(id)) {
+      _newModelController.clear();
+      return;
+    }
+    setState(() {
+      SettingsService.llmCustomModels = [...existing, id];
+      _newModelController.clear();
+    });
+  }
+
+  void _removeCustomModel(String id) {
+    setState(() {
+      SettingsService.llmCustomModels =
+          SettingsService.llmCustomModels.where((m) => m != id).toList();
+    });
+  }
+
+  Future<void> _testLlmConnection() async {
+    setState(() {
+      _testingLlmConnection = true;
+      _llmConnectionResult = null;
+    });
+    final service = OpenAIService(
+      apiKey: SettingsService.openaiApiKey,
+      model: SettingsService.openaiModel,
+      baseUrl: SettingsService.llmBaseUrl,
+    );
+    final result = await service.testConnection();
+    if (!mounted) return;
+    setState(() {
+      _testingLlmConnection = false;
+      _llmConnectionResult = result;
+    });
+  }
+
+  Widget _buildLlmPricingEditor(ThemeData theme) {
+    final pricing = SettingsService.llmPricing;
+    final entries = pricing.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+
+    // Every write re-reads the stored table instead of closing over the
+    // build-time `pricing` snapshot: these handlers fire without a rebuild
+    // (editing a price must not steal focus), so a captured snapshot would
+    // go stale and a second edit would revert the first.
+    void updatePrice(String modelId, {double? input, double? output}) {
+      final updated = {
+        for (final entry in SettingsService.llmPricing.entries)
+          entry.key: Map<String, double>.from(entry.value),
+      };
+      final row = updated[modelId] ?? {'input': 0.0, 'output': 0.0};
+      if (input != null) row['input'] = input;
+      if (output != null) row['output'] = output;
+      updated[modelId] = row;
+      SettingsService.llmPricing = updated;
+    }
+
+    return ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      title: const Text('Pricing (per 1M tokens)', style: TextStyle(fontWeight: FontWeight.w600)),
+      children: [
+        Text(
+          'Models without a price show a cost of "—" on the stats page.',
+          style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), fontSize: 12),
+        ),
+        const SizedBox(height: 12),
+        for (final entry in entries) ...[
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: Text(entry.key, style: const TextStyle(fontSize: 13)),
+              ),
+              Expanded(
+                flex: 2,
+                child: TextFormField(
+                  key: ValueKey('llm_price_input_${entry.key}'),
+                  initialValue: entry.value['input']?.toString() ?? '0',
+                  decoration: const InputDecoration(labelText: 'Input \$'),
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (value) {
+                    final parsed = double.tryParse(value);
+                    if (parsed != null) {
+                      updatePrice(entry.key, input: parsed);
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: TextFormField(
+                  key: ValueKey('llm_price_output_${entry.key}'),
+                  initialValue: entry.value['output']?.toString() ?? '0',
+                  decoration: const InputDecoration(labelText: 'Output \$'),
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (value) {
+                    final parsed = double.tryParse(value);
+                    if (parsed != null) {
+                      updatePrice(entry.key, output: parsed);
+                    }
+                  },
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, size: 20),
+                onPressed: () {
+                  final updated = {
+                    for (final e in SettingsService.llmPricing.entries)
+                      if (e.key != entry.key) e.key: e.value,
+                  };
+                  setState(() => SettingsService.llmPricing = updated);
+                },
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _newPricedModelController,
+                decoration: const InputDecoration(
+                  hintText: 'Model id to price',
+                  labelText: 'Add priced model',
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton(
+              onPressed: () {
+                final id = _newPricedModelController.text.trim();
+                final current = SettingsService.llmPricing;
+                if (id.isEmpty || current.containsKey(id)) return;
+                final updated = {
+                  for (final entry in current.entries) entry.key: entry.value,
+                  id: {'input': 0.0, 'output': 0.0},
+                };
+                setState(() {
+                  SettingsService.llmPricing = updated;
+                  _newPricedModelController.clear();
+                });
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            onPressed: () => setState(() => SettingsService.resetLlmPricing()),
+            child: const Text('Reset to defaults'),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildRadioTile({
     required String title,
     required String subtitle,
@@ -822,6 +1133,9 @@ class _SettingsPageState extends State<SettingsPage> {
   void dispose() {
     _deepgramController.dispose();
     _openaiController.dispose();
+    _llmBaseUrlController.dispose();
+    _newModelController.dispose();
+    _newPricedModelController.dispose();
     super.dispose();
   }
 

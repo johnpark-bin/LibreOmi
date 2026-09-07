@@ -1,10 +1,13 @@
 /// Settings service for storing API keys locally
 library;
 
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../transcription/model_catalog.dart';
+import 'llm_endpoint.dart' as llm_endpoint;
 import 'secret_store.dart';
 
 class SettingsService {
@@ -135,6 +138,41 @@ class SettingsService {
   static String get openaiModel => prefs.getString('openai_model') ?? 'gpt-4.1-mini';
   static set openaiModel(String value) => prefs.setString('openai_model', value);
 
+  /// Base URL of the OpenAI-compatible LLM endpoint (LO-60). Defaults to
+  /// OpenAI's own API; normalized (trailing slashes stripped) on both read
+  /// and write so callers never need to re-normalize it.
+  static const String defaultLlmBaseUrl = llm_endpoint.defaultLlmBaseUrl;
+
+  static String get llmBaseUrl =>
+      llm_endpoint.normalizeLlmBaseUrl(prefs.getString('llm_base_url') ?? defaultLlmBaseUrl);
+  static set llmBaseUrl(String value) =>
+      prefs.setString('llm_base_url', llm_endpoint.normalizeLlmBaseUrl(value));
+
+  static const String _llmCustomModelsKey = 'llm_custom_models';
+
+  /// User-added model ids for the configured endpoint. Defensive on read:
+  /// malformed JSON or a value containing non-string entries yields an
+  /// empty list rather than throwing.
+  static List<String> get llmCustomModels {
+    final raw = prefs.getString(_llmCustomModelsKey);
+    if (raw == null || raw.isEmpty) return [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return [];
+      final result = <String>[];
+      for (final item in decoded) {
+        if (item is! String) return [];
+        result.add(item);
+      }
+      return result;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static set llmCustomModels(List<String> value) =>
+      prefs.setString(_llmCustomModelsKey, jsonEncode(value));
+
   /// Deepgram streaming model. Keys of [deepgramPricePerMinute] are the
   /// supported values; anything else falls back to the default.
   static String get deepgramModel {
@@ -261,8 +299,8 @@ class SettingsService {
     openaiOutputTokens = 0;
   }
   
-  // Pricing (per 1M tokens for OpenAI, per minute for Deepgram)
-  static const Map<String, Map<String, double>> openaiPricing = {
+  // Pricing (per 1M tokens for the LLM, per minute for Deepgram)
+  static const Map<String, Map<String, double>> defaultLlmPricing = {
     'gpt-5-nano': {'input': 0.10, 'output': 0.40},
     'gpt-5-mini': {'input': 0.40, 'output': 1.60},
     'gpt-5': {'input': 2.00, 'output': 8.00},
@@ -274,29 +312,73 @@ class SettingsService {
     'gpt-4-turbo': {'input': 10.00, 'output': 30.00},
     'gpt-3.5-turbo': {'input': 0.50, 'output': 1.50},
   };
-  
+
+  static const String _llmPricingKey = 'llm_pricing';
+
+  /// The editable LLM pricing table (LO-60). Decoded from JSON stored under
+  /// [_llmPricingKey]; when absent or malformed, [defaultLlmPricing] is
+  /// returned instead of throwing.
+  static Map<String, Map<String, double>> get llmPricing {
+    final raw = prefs.getString(_llmPricingKey);
+    if (raw == null || raw.isEmpty) return defaultLlmPricing;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return defaultLlmPricing;
+      final result = <String, Map<String, double>>{};
+      for (final entry in decoded.entries) {
+        final modelId = entry.key;
+        final value = entry.value;
+        if (modelId is! String || value is! Map) return defaultLlmPricing;
+        final input = value['input'];
+        final output = value['output'];
+        if (input is! num || output is! num) return defaultLlmPricing;
+        result[modelId] = {
+          'input': input.toDouble(),
+          'output': output.toDouble(),
+        };
+      }
+      return result;
+    } catch (_) {
+      return defaultLlmPricing;
+    }
+  }
+
+  static set llmPricing(Map<String, Map<String, double>> value) =>
+      prefs.setString(_llmPricingKey, jsonEncode(value));
+
+  /// Removes the stored pricing override, reverting [llmPricing] to
+  /// [defaultLlmPricing].
+  static void resetLlmPricing() => prefs.remove(_llmPricingKey);
+
   static const String defaultDeepgramModel = 'nova-2';
 
   /// Streaming price per minute, per model. Both models are billed at the same
-  /// published rate today; LO-60 makes this table editable.
+  /// published rate today; LO-60 makes only the LLM pricing table editable,
+  /// this one stays fixed.
   static const Map<String, double> deepgramPricePerMinute = {
     'nova-2': 0.0059,
     'nova-3': 0.0059,
   };
-  
+
   // Cost calculations
   static double get deepgramCost =>
       deepgramMinutesUsed *
       (deepgramPricePerMinute[deepgramModel] ??
           deepgramPricePerMinute[defaultDeepgramModel]!);
-  
-  static double get openaiCost {
-    final model = openaiModel;
-    final pricing = openaiPricing[model] ?? {'input': 2.00, 'output': 8.00}; // Default to gpt-4.1 pricing
+
+  /// Estimated LLM cost so far, or null when no pricing is known for
+  /// [openaiModel] (no default-pricing assumption is made).
+  static double? get llmCost {
+    final pricing = llmPricing[openaiModel];
+    if (pricing == null) return null;
     final inputCost = (openaiInputTokens / 1000000) * pricing['input']!;
     final outputCost = (openaiOutputTokens / 1000000) * pricing['output']!;
     return inputCost + outputCost;
   }
-  
-  static double get totalApiCost => deepgramCost + openaiCost;
+
+  static double? get totalApiCost {
+    final llm = llmCost;
+    if (llm == null) return null;
+    return deepgramCost + llm;
+  }
 }

@@ -291,4 +291,181 @@ void main() {
       expect(ModelCatalog.byId(SettingsService.sherpaModelId), isNotNull);
     });
   });
+
+  group('SettingsService.llmBaseUrl', () {
+    test('defaults to the OpenAI base URL', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      expect(SettingsService.llmBaseUrl, 'https://api.openai.com/v1');
+    });
+
+    test('normalizes on write: trailing slashes are stripped', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      SettingsService.llmBaseUrl = 'http://localhost:11434/v1///';
+
+      expect(SettingsService.llmBaseUrl, 'http://localhost:11434/v1');
+    });
+
+    test('normalizes a stored raw value on read', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'llm_base_url': '  https://openrouter.ai/api/v1/  ',
+      });
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      expect(SettingsService.llmBaseUrl, 'https://openrouter.ai/api/v1');
+    });
+  });
+
+  group('SettingsService.llmCustomModels', () {
+    test('defaults to empty', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      expect(SettingsService.llmCustomModels, isEmpty);
+    });
+
+    test('round-trips a list of model ids', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      SettingsService.llmCustomModels = ['my-model', 'another-model'];
+
+      expect(SettingsService.llmCustomModels, ['my-model', 'another-model']);
+    });
+
+    test('malformed JSON reads back as empty', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'llm_custom_models': 'not json',
+      });
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      expect(SettingsService.llmCustomModels, isEmpty);
+    });
+
+    test('a JSON value with non-string entries reads back as empty', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'llm_custom_models': '["ok", 42, "also-ok"]',
+      });
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      expect(SettingsService.llmCustomModels, isEmpty);
+    });
+
+    test('a JSON object instead of a list reads back as empty', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'llm_custom_models': '{"a": 1}',
+      });
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      expect(SettingsService.llmCustomModels, isEmpty);
+    });
+  });
+
+  group('SettingsService.llmPricing', () {
+    test('defaults to defaultLlmPricing when unset', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      expect(SettingsService.llmPricing, SettingsService.defaultLlmPricing);
+    });
+
+    test('round-trips an edited table exactly', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      final table = {
+        'my-model': {'input': 0.12, 'output': 0.34},
+        'gpt-4.1-mini': {'input': 0.40, 'output': 1.60},
+      };
+      SettingsService.llmPricing = table;
+
+      expect(SettingsService.llmPricing, table);
+    });
+
+    test('malformed JSON reads back as defaults', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'llm_pricing': 'not json',
+      });
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      expect(SettingsService.llmPricing, SettingsService.defaultLlmPricing);
+    });
+
+    test('a malformed shape (missing input/output) reads back as defaults',
+        () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'llm_pricing': '{"my-model": {"input": "oops"}}',
+      });
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      expect(SettingsService.llmPricing, SettingsService.defaultLlmPricing);
+    });
+
+    test('resetLlmPricing removes the override', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      SettingsService.llmPricing = {
+        'my-model': {'input': 1.0, 'output': 2.0},
+      };
+      expect(SettingsService.llmPricing, isNot(SettingsService.defaultLlmPricing));
+
+      SettingsService.resetLlmPricing();
+
+      expect(SettingsService.llmPricing, SettingsService.defaultLlmPricing);
+    });
+  });
+
+  group('SettingsService.llmCost / totalApiCost', () {
+    test('llmCost is null for a model with no known pricing', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      SettingsService.openaiModel = 'some-unknown-model';
+      SettingsService.openaiInputTokens = 1000;
+      SettingsService.openaiOutputTokens = 1000;
+
+      expect(SettingsService.llmCost, isNull);
+    });
+
+    test('llmCost computes from the pricing table for a known model', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      SettingsService.openaiModel = 'gpt-4.1-mini';
+      SettingsService.openaiInputTokens = 1000000;
+      SettingsService.openaiOutputTokens = 1000000;
+
+      // defaultLlmPricing['gpt-4.1-mini'] = {'input': 0.40, 'output': 1.60}
+      expect(SettingsService.llmCost, closeTo(0.40 + 1.60, 1e-9));
+    });
+
+    test('totalApiCost is null when llmCost is null', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      SettingsService.openaiModel = 'some-unknown-model';
+      SettingsService.deepgramMinutesUsed = 5.0;
+
+      expect(SettingsService.totalApiCost, isNull);
+    });
+
+    test('totalApiCost sums deepgramCost and llmCost when both are known',
+        () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await SettingsService.init(secretStore: InMemorySecretStore());
+
+      SettingsService.deepgramModel = 'nova-2';
+      SettingsService.deepgramMinutesUsed = 10.0;
+      SettingsService.openaiModel = 'gpt-4.1-mini';
+      SettingsService.openaiInputTokens = 1000000;
+      SettingsService.openaiOutputTokens = 1000000;
+
+      final expected = 10.0 * 0.0059 + (0.40 + 1.60);
+      expect(SettingsService.totalApiCost, closeTo(expected, 1e-9));
+    });
+  });
 }

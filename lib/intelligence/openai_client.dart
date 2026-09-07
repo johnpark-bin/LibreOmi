@@ -4,11 +4,13 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../services/openai_service.dart';
+import '../services/settings_service.dart';
 import 'llm_client.dart';
 
-/// [LlmClient] backed by [OpenAIService]. Wraps the service's HTTP calls and
-/// translates its untyped map/exception surface into the typed
-/// [LlmClient] contract.
+/// [LlmClient] backed by [OpenAIService], talking to any OpenAI-compatible
+/// endpoint (OpenAI itself, OpenRouter, Ollama, LM Studio, ...). Wraps the
+/// service's HTTP calls and translates its untyped map/exception surface
+/// into the typed [LlmClient] contract.
 class OpenAiClient implements LlmClient {
   /// Primary constructor: wraps an already-configured [OpenAIService]. This
   /// is what tests use (with a `MockClient` wired into the service) and
@@ -17,8 +19,18 @@ class OpenAiClient implements LlmClient {
   OpenAiClient({required OpenAIService service}) : _service = service;
 
   /// Convenience constructor for callers that only have raw credentials.
-  OpenAiClient.fromApiKey({required String apiKey, String? model, http.Client? client})
-      : _service = OpenAIService(apiKey: apiKey, model: model, client: client);
+  ///
+  /// This is the app-facing entry point (used by `lib/controllers/`), so
+  /// [baseUrl] defaults to the user's configured `SettingsService.llmBaseUrl`
+  /// when omitted — mirroring how [model] already defaults to
+  /// `SettingsService.openaiModel`.
+  OpenAiClient.fromApiKey({required String apiKey, String? model, String? baseUrl, http.Client? client})
+      : _service = OpenAIService(
+          apiKey: apiKey,
+          model: model,
+          baseUrl: baseUrl ?? SettingsService.llmBaseUrl,
+          client: client,
+        );
 
   final OpenAIService _service;
 

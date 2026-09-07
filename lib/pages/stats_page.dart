@@ -204,20 +204,32 @@ class _StatsPageState extends State<StatsPage> {
                       const Divider(),
                       _DetailRow(
                         icon: Icons.smart_toy_outlined,
-                        label: 'OpenAI (${_formatTokens(SettingsService.openaiInputTokens + SettingsService.openaiOutputTokens)} tokens)',
-                        value: '\$${SettingsService.openaiCost.toStringAsFixed(4)}',
+                        label: 'LLM (${_formatTokens(SettingsService.openaiInputTokens + SettingsService.openaiOutputTokens)} tokens)',
+                        value: SettingsService.llmCost == null
+                            ? '—'
+                            : '\$${SettingsService.llmCost!.toStringAsFixed(4)}',
                       ),
                       const Divider(),
                       _DetailRow(
                         icon: Icons.attach_money,
                         label: 'Total Estimated',
-                        value: '\$${SettingsService.totalApiCost.toStringAsFixed(4)}',
+                        value: SettingsService.totalApiCost == null
+                            ? '—'
+                            : '\$${SettingsService.totalApiCost!.toStringAsFixed(4)}',
                       ),
                       const SizedBox(height: 8),
                       Text(
                         'Model: ${SettingsService.openaiModel}',
                         style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
                       ),
+                      // "—" above means the configured model has no row in the
+                      // editable pricing table (Settings → LLM → Pricing). We
+                      // deliberately do not assume a default price for it.
+                      if (SettingsService.llmCost == null)
+                        Text(
+                          'No price set for this model — add one in Settings → LLM → Pricing.',
+                          style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                        ),
                     ],
                   ),
                 ),
