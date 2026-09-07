@@ -127,8 +127,16 @@ class _PermissionsRationalePageState extends State<PermissionsRationalePage> {
     });
   }
 
-  Future<void> _continue() async {
-    SettingsService.rationaleShown = true;
+  void _continue() {
+    // `main.dart` shows this screen when the settings store could not be read
+    // at all, and the setter throws in exactly that case. Recording the flag
+    // is best-effort; leaving the user stuck on the disclosure with no way
+    // forward is not.
+    try {
+      SettingsService.rationaleShown = true;
+    } catch (e) {
+      debugPrint('permissions rationale: could not record that it was shown: $e');
+    }
     widget.onContinue?.call();
   }
 
@@ -228,7 +236,7 @@ class _RationaleView extends StatelessWidget {
   final _RowStatus notificationStatus;
   final _RowStatus batteryStatus;
   final Future<void> Function() onOpenSettings;
-  final Future<void> Function() onContinue;
+  final VoidCallback onContinue;
 
   @override
   Widget build(BuildContext context) {
@@ -254,24 +262,29 @@ class _RationaleView extends StatelessWidget {
           'either entirely on your phone (on-device model) or, if you enter a '
           'Deepgram API key, by sending audio to Deepgram. Conversation text is '
           'sent to the LLM endpoint you configure only when you supply a key '
-          'for it. With no keys entered, nothing leaves the phone.',
+          'for it. With no keys entered, no capture is sent to any service.',
           style: bodyStyle,
         ),
         const SizedBox(height: 20),
         _buildSectionHeader(context, 'Where it is stored'),
         Text(
-          'In a SQLite database in the app\'s private storage, with downloaded '
-          'speech models in a directory excluded from Android\'s auto-backup. '
-          'API keys are held in the Android keystore, not in the database, '
-          'and are excluded from backup.',
+          'Conversations, memories, tasks and chat history live in a SQLite '
+          'database in the app\'s private storage. Recordings synced from the '
+          'wearable\'s SD card are kept as audio files alongside it until you '
+          'delete them. API keys are stored encrypted, under a key that never '
+          'leaves the Android keystore.\n\n'
+          'Android\'s automatic backup is left on, so the database and any '
+          'synced recordings are included in your Google account backup. Your '
+          'API keys and the downloaded speech models are excluded from it.',
           style: bodyStyle,
         ),
         const SizedBox(height: 20),
         _buildSectionHeader(context, 'Your control'),
         Text(
-          'Settings → Data → Export All Data writes everything as JSON; '
-          'Import from Backup restores it. Deleting the app, or clearing its '
-          'data in Android settings, removes everything on the device.',
+          'Settings → Data → Export All Data writes your conversations, '
+          'memories, tasks and chat history to a JSON file; Import from Backup '
+          'reads one back. Deleting the app, or clearing its data in Android '
+          'settings, removes everything on the device, audio files included.',
           style: bodyStyle,
         ),
         const SizedBox(height: 24),

@@ -123,6 +123,19 @@ class _DeviceTabState extends State<DeviceTab> {
             title: const Text('LibreOmi'),
             backgroundColor: Colors.transparent,
             actions: [
+              // The way back into the first-run disclosure (LO-64), which is
+              // otherwise shown only once. In the app bar rather than in one
+              // of the two bodies below, so it stays reachable while a device
+              // is connected or a capture is running.
+              IconButton(
+                icon: const Icon(Icons.privacy_tip_outlined),
+                tooltip: 'Permissions & privacy',
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const PermissionsRationalePage(),
+                  ),
+                ),
+              ),
               if (deviceController.batteryLevel != null)
                 Container(
                   margin: const EdgeInsets.only(right: 16),
@@ -256,21 +269,6 @@ class _DeviceTabState extends State<DeviceTab> {
           onTap: SettingsService.hasApiKeys ? () => _startPhoneMicRecording(session) : null,
         ),
 
-        const SizedBox(height: 24),
-
-        // The way back into the first-run disclosure (LO-64), which is
-        // otherwise shown only once.
-        Center(
-          child: TextButton.icon(
-            icon: const Icon(Icons.privacy_tip_outlined, size: 18),
-            label: const Text('Permissions & privacy'),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const PermissionsRationalePage(),
-              ),
-            ),
-          ),
-        ),
       ],
     );
   }

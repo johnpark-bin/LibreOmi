@@ -129,6 +129,44 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('Continue still hands over when the settings store is broken', (
+    tester,
+  ) async {
+    // `main.dart` shows this screen precisely when the settings store could
+    // not be initialised, and the flag setter throws in that state. The user
+    // must still get past the screen.
+    //
+    // Declared first on purpose: `SettingsService` keeps its `SharedPreferences`
+    // in a static that nothing resets, so this is the only point in the file
+    // where the store is genuinely uninitialised. Keep it above the tests that
+    // call `SettingsService.init`.
+
+    var continueCalls = 0;
+    final gateway = _FakePermissionGateway(
+      sdkInt: 33,
+      statuses: <AppPermission, PermissionOutcome>{
+        AppPermission.bluetoothScan: PermissionOutcome.granted,
+        AppPermission.bluetoothConnect: PermissionOutcome.granted,
+        AppPermission.microphone: PermissionOutcome.granted,
+        AppPermission.notification: PermissionOutcome.granted,
+      },
+    );
+
+    await pumpPage(
+      tester,
+      permissionGateway: gateway,
+      batteryIgnoring: true,
+      isFirstRun: true,
+      onContinue: () => continueCalls++,
+    );
+
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+
+    expect(continueCalls, 1);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('renders granted vs not-granted rows from scripted statuses', (
     tester,
   ) async {
@@ -340,6 +378,89 @@ void main() {
       expect(continueCalls, 1);
     },
   );
+
+  testWidgets('renders the four disclosure sections and the closing note', (
+    tester,
+  ) async {
+    final gateway = _FakePermissionGateway(
+      sdkInt: 33,
+      statuses: <AppPermission, PermissionOutcome>{
+        AppPermission.bluetoothScan: PermissionOutcome.granted,
+        AppPermission.bluetoothConnect: PermissionOutcome.granted,
+        AppPermission.microphone: PermissionOutcome.granted,
+        AppPermission.notification: PermissionOutcome.granted,
+      },
+    );
+
+    await pumpPage(tester, permissionGateway: gateway, batteryIgnoring: true);
+
+    // The prose, not the status chips, is what Play's prominent disclosure
+    // is judged on, so it is pinned here: a page that kept only the
+    // permission cards would otherwise still pass this suite.
+    expect(find.text('WHAT LIBREOMI COLLECTS'), findsOneWidget);
+    expect(find.text('WHERE IT GOES'), findsOneWidget);
+    expect(find.text('WHERE IT IS STORED'), findsOneWidget);
+    expect(find.text('YOUR CONTROL'), findsOneWidget);
+    expect(find.text('PERMISSIONS'), findsOneWidget);
+    expect(
+      find.textContaining('never asks for a permission'),
+      findsOneWidget,
+    );
+    // The two claims most easily broken by an edit: what leaves the phone,
+    // and that auto-backup carries the database.
+    expect(
+      find.textContaining('no capture is sent to any service'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('included in your Google account backup'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('the first-run screen has no back arrow, the re-entry one does', (
+    tester,
+  ) async {
+    _FakePermissionGateway granted() => _FakePermissionGateway(
+      sdkInt: 33,
+      statuses: <AppPermission, PermissionOutcome>{
+        AppPermission.bluetoothScan: PermissionOutcome.granted,
+        AppPermission.bluetoothConnect: PermissionOutcome.granted,
+        AppPermission.microphone: PermissionOutcome.granted,
+        AppPermission.notification: PermissionOutcome.granted,
+      },
+    );
+
+    await pumpPage(
+      tester,
+      permissionGateway: granted(),
+      batteryIgnoring: true,
+      isFirstRun: true,
+    );
+    expect(find.byType(BackButton), findsNothing);
+
+    // Pushed on top of another route, the re-entry form keeps the arrow.
+    await tester.pumpWidget(
+      MaterialApp(
+        home: const Scaffold(body: SizedBox.shrink()),
+        routes: <String, WidgetBuilder>{},
+      ),
+    );
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+    navigator.push(
+      MaterialPageRoute<void>(
+        builder: (_) => PermissionsRationalePage(
+          permissionsOverride: AppPermissions(granted()),
+          batteryOptimizationOverride: BatteryOptimization(
+            _FakeBatteryOptimizationGateway(ignoring: true),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(BackButton), findsOneWidget);
+  });
 
   testWidgets('isFirstRun: false shows no Continue button', (tester) async {
     final gateway = _FakePermissionGateway(

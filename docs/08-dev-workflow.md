@@ -191,9 +191,14 @@ Play Console paraphrase of it. If one changes, change the other in the same PR.
 > while the user has started a capture. The audio is transcribed either entirely on the device or,
 > if the user enters their own Deepgram API key, by sending it to Deepgram. Conversation text is
 > sent to an LLM endpoint only when the user supplies a key for one. LibreOmi has no server and no
-> account: with no keys entered, no data leaves the device. Transcripts, conversations, memories
-> and tasks are stored in the app's private SQLite database; API keys are stored in the Android
-> keystore. The user can export everything as JSON or remove it by clearing the app's data.
+> account: with no keys entered, no capture is sent to any service. Transcripts, conversations,
+> memories, tasks and chat history are stored in the app's private SQLite database, and recordings
+> synced from the wearable's SD card are stored as audio files in the app's private support
+> directory. API keys are stored encrypted under a key held in the Android keystore. Android's
+> automatic backup is left on (`allowBackup` default), so the database and the synced recordings
+> are part of the user's Google account backup; the API keys and the downloaded speech models are
+> excluded from it (`res/xml/backup_rules.xml`, `res/xml/data_extraction_rules.xml`). The user can
+> export the four content tables as JSON or remove everything by clearing the app's data.
 >
 > Permissions and their purpose:
 >
@@ -219,3 +224,6 @@ Play Console paraphrase of it. If one changes, change the other in the same PR.
 - Fill the Data safety form from the same facts: audio and "other user-generated content" are
   collected, are not shared with third parties except the transcription/LLM endpoint the user
   configures themselves, and are not used for advertising or analytics.
+- The backup claim is only as true as the two XML rule files. If a future issue adds a data
+  directory (the way LO-50 added `<app support>/sdcard/`), decide whether it is excluded and
+  update this section, the rationale screen and `docs/04-android-platform-notes.md` §9 together.
