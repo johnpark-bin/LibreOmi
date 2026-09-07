@@ -1,5 +1,6 @@
 /// Tasks page - displays extracted tasks from conversations
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../controllers/library_controller.dart';
 import '../l10n/l10n.dart';
@@ -254,6 +255,7 @@ class TasksPage extends StatelessWidget {
   }
 
   String _formatDueDate(AppLocalizations l10n, DateTime date) {
+    final locale = l10n.localeName;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final tomorrow = today.add(const Duration(days: 1));
@@ -265,17 +267,16 @@ class TasksPage extends StatelessWidget {
     } else if (taskDate == tomorrow) {
       dayPart = l10n.tasks_dueTomorrow;
     } else if (date.difference(now).inDays < 7) {
-      final weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      dayPart = weekdays[date.weekday - 1];
+      // `intl` rather than hand-written weekday/AM-PM tables: the abbreviation,
+      // the numeric date order and whether the clock is 12- or 24-hour all
+      // differ between English and Korean. The date symbols for the app's
+      // locales are loaded by `GlobalMaterialLocalizations`.
+      dayPart = DateFormat.E(locale).format(date);
     } else {
-      dayPart = '${date.month}/${date.day}';
+      dayPart = DateFormat.Md(locale).format(date);
     }
 
-    final hour = date.hour > 12 ? date.hour - 12 : (date.hour == 0 ? 12 : date.hour);
-    final amPm = date.hour >= 12 ? 'PM' : 'AM';
-    final timePart = '$hour:${date.minute.toString().padLeft(2, '0')} $amPm';
-
-    return l10n.tasks_dueDateFormat(dayPart, timePart);
+    return l10n.tasks_dueDateFormat(dayPart, DateFormat.jm(locale).format(date));
   }
 
   void _confirmDelete(BuildContext context, LibraryController provider, String taskId) {

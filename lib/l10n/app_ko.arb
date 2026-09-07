@@ -429,5 +429,6 @@
   "sessionController_noDeviceConnectedError": "연결된 Omi 기기가 없습니다",
   "sessionController_micPermissionDeniedError": "마이크 권한이 거부되었습니다. 설정에서 활성화하세요.",
   "sessionController_deepgramKeyMissingError": "설정에서 Deepgram API 키를 구성하거나 로컬 전사로 전환하세요",
-  "sessionController_deepgramKeyNotConfiguredError": "Deepgram API 키가 구성되지 않았습니다"
+  "sessionController_deepgramKeyNotConfiguredError": "Deepgram API 키가 구성되지 않았습니다",
+  "conversationDetail_dateTimeFormat": "{date} {time}"
 }

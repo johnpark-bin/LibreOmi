@@ -2,7 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import 'app_localizations.dart';
 
-export 'app_localizations.dart' show AppLocalizations;
+export 'app_localizations.dart' show AppLocalizations, lookupAppLocalizations;
 
 /// Access to the app's translations, both inside and outside the widget tree.
 ///

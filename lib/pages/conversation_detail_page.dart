@@ -1,5 +1,6 @@
 /// Conversation detail page with full transcript
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../models/conversation.dart';
 import '../controllers/library_controller.dart';
@@ -64,7 +65,7 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> {
               Row(
                 children: [
                   Text(
-                    _formatFullDate(widget.conversation.createdAt),
+                    _formatFullDate(l10n, widget.conversation.createdAt),
                     style: TextStyle(color: Colors.grey.shade400),
                   ),
                   if (widget.conversation.duration.inSeconds > 0) ...[
@@ -149,12 +150,18 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> {
     setState(() => _selectedText = '');
   }
 
-  String _formatFullDate(DateTime date) {
-    final months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-    ];
-    return '${months[date.month - 1]} ${date.day}, ${date.year} at ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+  /// Formats a conversation's timestamp in the reader's language.
+  ///
+  /// `intl` rather than a hand-written month table: the month name, the order
+  /// of the parts and the 12/24-hour clock all differ between English and
+  /// Korean, and the date symbols for the app's locales are loaded by
+  /// `GlobalMaterialLocalizations`.
+  String _formatFullDate(AppLocalizations l10n, DateTime date) {
+    final locale = l10n.localeName;
+    return l10n.conversationDetail_dateTimeFormat(
+      DateFormat.yMMMd(locale).format(date),
+      DateFormat.Hm(locale).format(date),
+    );
   }
 }
 

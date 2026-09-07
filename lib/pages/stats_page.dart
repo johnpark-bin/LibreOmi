@@ -1,5 +1,6 @@
 /// Statistics dashboard page
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../controllers/library_controller.dart';
 import '../l10n/l10n.dart';
@@ -130,7 +131,7 @@ class _StatsPageState extends State<StatsPage> {
                         icon: Icons.calendar_today,
                         label: l10n.stats_firstConversationLabel,
                         value: conversations.isNotEmpty
-                            ? _formatDate(conversations.last.createdAt)
+                            ? _formatDate(l10n, conversations.last.createdAt)
                             : l10n.stats_notAvailable,
                       ),
                     ],
@@ -313,10 +314,11 @@ class _StatsPageState extends State<StatsPage> {
     return l10n.stats_durationSeconds(d.inSeconds);
   }
 
-  String _formatDate(DateTime date) {
-    final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return '${months[date.month - 1]} ${date.day}, ${date.year}';
-  }
+  /// `intl` rather than a hand-written month table: the month name and the
+  /// order of the parts differ between English and Korean, and the date
+  /// symbols for the app's locales are loaded by `GlobalMaterialLocalizations`.
+  String _formatDate(AppLocalizations l10n, DateTime date) =>
+      DateFormat.yMMMd(l10n.localeName).format(date);
 }
 
 class _StatCard extends StatelessWidget {

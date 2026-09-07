@@ -444,18 +444,14 @@
   "@settings_export_failedMessage": {
     "description": "SnackBar shown when the full data export fails",
     "placeholders": {
-      "error": {
-        "type": "Object"
-      }
+      "error": { "type": "Object" }
     }
   },
   "settings_import_readFailedMessage": "Could not read backup file: {error}",
   "@settings_import_readFailedMessage": {
     "description": "SnackBar shown when the picked backup file cannot be read or parsed",
     "placeholders": {
-      "error": {
-        "type": "Object"
-      }
+      "error": { "type": "Object" }
     }
   },
   "settings_import_confirmTitle": "Restore Backup",
@@ -466,54 +462,42 @@
   "@settings_import_conversationsCount": {
     "description": "Conversation count line in the import summary dialog",
     "placeholders": {
-      "count": {
-        "type": "int"
-      }
+      "count": { "type": "int" }
     }
   },
   "settings_import_memoriesCount": "Memories: {count}",
   "@settings_import_memoriesCount": {
     "description": "Memory count line in the import summary dialog",
     "placeholders": {
-      "count": {
-        "type": "int"
-      }
+      "count": { "type": "int" }
     }
   },
   "settings_import_tasksCount": "Tasks: {count}",
   "@settings_import_tasksCount": {
     "description": "Task count line in the import summary dialog",
     "placeholders": {
-      "count": {
-        "type": "int"
-      }
+      "count": { "type": "int" }
     }
   },
   "settings_import_chatMessagesCount": "Chat messages: {count}",
   "@settings_import_chatMessagesCount": {
     "description": "Chat-message count line in the import summary dialog",
     "placeholders": {
-      "count": {
-        "type": "int"
-      }
+      "count": { "type": "int" }
     }
   },
   "settings_import_exportedAt": "Exported: {date}",
   "@settings_import_exportedAt": {
     "description": "Export-timestamp line in the import summary dialog, shown when the backup carries one",
     "placeholders": {
-      "date": {
-        "type": "String"
-      }
+      "date": { "type": "String" }
     }
   },
   "settings_import_appVersion": "App version: {version}",
   "@settings_import_appVersion": {
     "description": "App-version line in the import summary dialog, shown when the backup carries one",
     "placeholders": {
-      "version": {
-        "type": "String"
-      }
+      "version": { "type": "String" }
     }
   },
   "settings_import_modeExplanation": "Merge adds these on top of what you have. Replace deletes everything currently stored first.",
@@ -548,15 +532,9 @@
   "@settings_import_resultMessage": {
     "description": "SnackBar summarising the outcome of a completed import",
     "placeholders": {
-      "inserted": {
-        "type": "int"
-      },
-      "updated": {
-        "type": "int"
-      },
-      "skipped": {
-        "type": "int"
-      }
+      "inserted": { "type": "int" },
+      "updated": { "type": "int" },
+      "skipped": { "type": "int" }
     }
   },
   "settings_import_detailsAction": "Details",
@@ -567,27 +545,21 @@
   "@settings_import_failedMessage": {
     "description": "SnackBar shown when an import fails",
     "placeholders": {
-      "error": {
-        "type": "Object"
-      }
+      "error": { "type": "Object" }
     }
   },
   "settings_import_skippedTitle": "{count} rows skipped",
   "@settings_import_skippedTitle": {
     "description": "Title of the dialog listing skipped import rows",
     "placeholders": {
-      "count": {
-        "type": "int"
-      }
+      "count": { "type": "int" }
     }
   },
   "settings_import_skippedMoreMessage": "...and {count} more.",
   "@settings_import_skippedMoreMessage": {
     "description": "Line shown when more rows were skipped than the report lists individually",
     "placeholders": {
-      "count": {
-        "type": "int"
-      }
+      "count": { "type": "int" }
     }
   },
   "home_nav_liveLabel": "Live",
@@ -726,18 +698,14 @@
   "@home_connected_segmentsCount": {
     "description": "Segment count shown in the live transcript panel header",
     "placeholders": {
-      "count": {
-        "type": "int"
-      }
+      "count": { "type": "int" }
     }
   },
   "home_connected_speakerLabel": "S{speaker}",
   "@home_connected_speakerLabel": {
     "description": "Short speaker tag next to each live transcript line, e.g. S1, S2",
     "placeholders": {
-      "speaker": {
-        "type": "int"
-      }
+      "speaker": { "type": "int" }
     }
   },
   "home_connected_waitingForSpeechMessage": "Waiting for speech...",
@@ -768,21 +736,15 @@
   "@home_permission_errorTemplate": {
     "description": "Combines a localized error prefix with the underlying exception detail",
     "placeholders": {
-      "message": {
-        "type": "String"
-      },
-      "error": {
-        "type": "Object"
-      }
+      "message": { "type": "String" },
+      "error": { "type": "Object" }
     }
   },
   "home_permission_deniedPermanentTemplate": "{message} Enable it in app settings.",
   "@home_permission_deniedPermanentTemplate": {
     "description": "Appends the 'enable in settings' instruction after a permanently-denied permission message",
     "placeholders": {
-      "message": {
-        "type": "String"
-      }
+      "message": { "type": "String" }
     }
   },
   "home_batteryPrompt_title": "Keep recording while the screen is off?",
@@ -1946,5 +1908,13 @@
   "sessionController_deepgramKeyNotConfiguredError": "Deepgram API key not configured",
   "@sessionController_deepgramKeyNotConfiguredError": {
     "description": "Error shown when importing a synced SD-card recording with cloud transcription and no Deepgram API key configured"
+  },
+  "conversationDetail_dateTimeFormat": "{date} at {time}",
+  "@conversationDetail_dateTimeFormat": {
+    "description": "Joins a conversation's already-formatted date and time in the detail header",
+    "placeholders": {
+      "date": { "type": "String" },
+      "time": { "type": "String" }
+    }
   }
 }
