@@ -1,7 +1,67 @@
+import java.io.File
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// Release signing material, resolved in this order (LO-63, docs/08 §7):
+//   1. LIBREOMI_KEYSTORE_PATH / _PASSWORD / _ALIAS / _KEY_PASSWORD environment variables
+//      (this is how CI injects the key from repository secrets),
+//   2. android/key.properties, which is git-ignored and is what a local release build uses,
+//   3. nothing -> the release build falls back to the debug key with a warning.
+// The fallback keeps `flutter build apk --release` working for contributors and for the CI
+// compile check, neither of which has the signing key.
+val keyPropertiesFile = rootProject.file("key.properties")
+val keyProperties = Properties().apply {
+    if (keyPropertiesFile.exists()) {
+        keyPropertiesFile.inputStream().use { load(it) }
+    }
+}
+
+fun signingValue(envName: String, propertyName: String): String? =
+    (System.getenv(envName) ?: keyProperties.getProperty(propertyName))?.trim()?.takeIf { it.isNotEmpty() }
+
+val keystorePath = signingValue("LIBREOMI_KEYSTORE_PATH", "storeFile")
+val keystorePassword = signingValue("LIBREOMI_KEYSTORE_PASSWORD", "storePassword")
+val releaseKeyAlias = signingValue("LIBREOMI_KEYSTORE_ALIAS", "keyAlias")
+val releaseKeyPassword = signingValue("LIBREOMI_KEY_PASSWORD", "keyPassword")
+
+// A relative storeFile in key.properties is resolved against android/, so the file can sit
+// next to key.properties without the path depending on where Gradle was invoked from.
+val keystoreFile = keystorePath?.let { path ->
+    // Deliberately java.io.File, not Gradle's file(): the latter always returns an absolute
+    // path resolved against the *module* directory (android/app), which would make the
+    // relative-path branch below unreachable and resolve key.properties entries one level
+    // deeper than the file they are written in.
+    val candidate = File(path)
+    if (candidate.isAbsolute) candidate else rootProject.file(path)
+}
+
+val hasReleaseSigning =
+    keystoreFile != null &&
+        keystoreFile.exists() &&
+        keystorePassword != null &&
+        releaseKeyAlias != null &&
+        releaseKeyPassword != null
+
+// Explain *which* piece is missing: "release is unsigned" is a slow thing to debug from a
+// build log that only says the fallback happened. `flutter build` filters Gradle's own output,
+// though - neither `logger.warn` nor `logger.lifecycle` reaches its console (measured), so this
+// line only appears under a direct Gradle invocation. What actually protects a release is
+// scripts/release.sh: it prints the signing certificate on every run and refuses to create a
+// GitHub Release from debug-signed artifacts.
+if (!hasReleaseSigning) {
+    val reason = when {
+        keystorePath == null -> "no keystore configured (set LIBREOMI_KEYSTORE_PATH or android/key.properties)"
+        keystoreFile == null || !keystoreFile.exists() -> "keystore file not found at ${keystoreFile?.absolutePath ?: keystorePath}"
+        keystorePassword == null -> "missing store password"
+        releaseKeyAlias == null -> "missing key alias"
+        else -> "missing key password"
+    }
+    logger.warn("LibreOmi: release builds will be signed with the DEBUG key - $reason. See docs/08-dev-workflow.md §7.")
 }
 
 android {
@@ -29,11 +89,29 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            // The names below are the SigningConfig properties; the values come from the
+            // `release*` vals above, because an unqualified `keyAlias` inside this block would
+            // resolve to the property itself and silently assign null.
+            create("release") {
+                storeFile = keystoreFile
+                storePassword = keystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Signed with the real release key when one is configured above; otherwise the
+            // debug key, so that a release build still succeeds without the secret.
+            signingConfig = if (hasReleaseSigning) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             // v1 keeps R8 off: minifying would need keep rules for the sherpa-onnx and opus JNI
             // entry points, and a stripped native path fails silently at runtime. See docs/04 §7.
             isMinifyEnabled = false
