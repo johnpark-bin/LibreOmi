@@ -22,8 +22,10 @@ After public launch, issues from outside contributors may be in any language; ma
   local checkout cannot drift apart. Analyze runs with `--no-fatal-infos --no-fatal-warnings`:
   errors fail the job, while the warnings and infos inherited from upstream do not. Clearing those
   is out of scope for LO-04 and is not filed as a backlog item yet. The debug APK is a compile
-  check and is not uploaded — release
-  artifacts are LO-63.
+  check and is not uploaded — release artifacts come from `.github/workflows/release.yml`
+  (LO-63), which runs on `v*` tags only. Neither workflow currently executes: GitHub Actions
+  is disabled on this account for billing reasons, so both are validated with `actionlint` and
+  by running the same commands locally.
 - One branch per backlog item: `lo-12-ble-mtu`. One PR per branch, squash-merged.
 - PR template (Korean) asks for: 목적, 변경 내용, 테스트 방법(에뮬레이터 불가 항목은 실기기 명시), 스크린샷/로그, 관련 이슈 (`Closes #n`).
 - Every PR that touches `device/`, `audio/`, `session/`, or `platform/` must include a
@@ -83,9 +85,88 @@ adb shell dumpsys deviceidle whitelist | grep libreomi
   tests use fakes.
 - For agents running on a laptop, `sqflite_common_ffi` is used in tests so no device DB is needed.
 
-## 7. Release checklist (M6)
+## 7. Releases (LO-63)
 
-1. Bump `version:` in `pubspec.yaml`; update `CHANGELOG.md` (English).
-2. `flutter build apk --split-per-abi --release` with signing env vars.
-3. Run the smoke checklist on two phones.
-4. Tag `vX.Y.Z`; GitHub Release with APKs and the Korean + English notes.
+### 7.1 Versioning
+
+`pubspec.yaml` holds `version: <name>+<code>`. LibreOmi restarts at `0.1.0+1`; upstream
+omibutfree's `2.1.0` does not describe this fork and is not continued.
+
+- `<name>` is semver, and is what the `vX.Y.Z` tag and the GitHub Release are named after.
+- `<code>` becomes the Android `versionCode` and **only ever increases**, including across
+  a version-name downgrade — Android and Play both refuse an update whose code went backwards.
+  Bump it on every build that leaves this machine, not only on every version name.
+- With `--split-per-abi` the Flutter Gradle plugin adds `1000 * ABI_VERSION` to the code per
+  APK, so the arm64 and armeabi APKs of one build get distinct, ordered codes automatically.
+
+### 7.2 Signing key
+
+The key is the owner's, is never committed, and cannot be regenerated: **if it is lost, no
+future build can update an installed app.** Back the keystore and its passwords up somewhere
+that is not this repository and not this laptop alone.
+
+Create it once:
+
+```bash
+keytool -genkey -v -keystore ~/libreomi-release.jks \
+  -keyalg RSA -keysize 4096 -validity 10000 -alias libreomi
+```
+
+Then point the build at it with `android/key.properties` (git-ignored, and `.gitignore` also
+covers `*.jks` / `*.keystore` so the keystore itself cannot be added by accident):
+
+```properties
+storeFile=/absolute/path/to/libreomi-release.jks
+storePassword=<store password>
+keyAlias=libreomi
+keyPassword=<key password>
+```
+
+`android/app/build.gradle.kts` resolves signing material in this order:
+
+1. the `LIBREOMI_KEYSTORE_PATH`, `LIBREOMI_KEYSTORE_PASSWORD`, `LIBREOMI_KEYSTORE_ALIAS` and
+   `LIBREOMI_KEY_PASSWORD` environment variables — how CI injects the key from secrets;
+2. `android/key.properties`;
+3. neither: the release build falls back to the **debug** key and logs a Gradle warning
+   naming the missing piece. This keeps `flutter build apk --release` working for contributors
+   and for the CI compile check. A debug-signed APK must never be published.
+
+`flutter build` filters Gradle's own output, so that warning is only visible under a direct
+Gradle invocation (`cd android && ./gradlew :app:signingReport`). **Treat the signing
+certificate as the authoritative check, never the absence of a warning.** `scripts/release.sh`
+prints it on every run, and refuses to create a GitHub Release from debug-signed artifacts.
+
+Check which key actually signed an APK — `scripts/release.sh` prints this, and warns loudly
+when it sees `CN=Android Debug`:
+
+```bash
+# newest installed build-tools, the same one release.yml picks (release.sh prefers an
+# apksigner already on PATH, then falls back to this)
+"$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n1)" \
+  verify --print-certs build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+```
+
+For CI, the same keystore goes into repository secrets as `LIBREOMI_KEYSTORE_BASE64`
+(`base64 -i ~/libreomi-release.jks`), `LIBREOMI_KEYSTORE_PASSWORD`, `LIBREOMI_KEYSTORE_ALIAS`
+and `LIBREOMI_KEY_PASSWORD`.
+
+### 7.3 Release checklist
+
+1. Draft the notes: `scripts/changelog_draft.py --tag vX.Y.Z` prints a Keep a Changelog
+   section from the merged PRs. Rewrite the (Korean) PR titles into English user-facing lines
+   and paste them into `CHANGELOG.md`. Individual PRs deliberately do **not** touch
+   `CHANGELOG.md`: parallel PRs would conflict in it on every merge.
+2. Bump `version:` in `pubspec.yaml` per §7.1 and merge that with the changelog edit.
+3. `scripts/release.sh --dry-run` — builds `app-arm64-v8a-release.apk`,
+   `app-armeabi-v7a-release.apk` and `app-release.aab`, prints sizes, sha256 and the signing
+   certificate, and uploads nothing. Confirm the certificate is *not* the debug key.
+4. Install the arm64 APK on a phone and run the smoke checklist (§5) on two devices.
+5. `git tag vX.Y.Z && git push origin vX.Y.Z`. That tag push is what
+   `.github/workflows/release.yml` reacts to; while Actions is disabled on this account, run
+   `scripts/release.sh` (without `--dry-run`) locally instead — it creates the same draft
+   release with the same three artifacts attached.
+6. Edit the draft release on GitHub: Korean notes plus the one-line English summary, per §1.
+   Publish it.
+7. Play internal testing takes `app-release.aab` and is out of scope for this repository's
+   automation; upload it by hand via the Play Console
+   (<https://support.google.com/googleplay/android-developer/answer/9859152>).

@@ -1,0 +1,183 @@
+# Release build for LibreOmi (LO-63). See docs/08-dev-workflow.md §7.
+#
+# Triggered by pushing a `v*` tag. The steps mirror `scripts/release.sh` so that a tag push
+# and a laptop produce the same artifacts; the script stays the definition, this file only
+# adds the runner, the toolchain and the injected signing key.
+#
+# Like ci.yml, the Flutter and JDK versions are parsed out of `mise.toml` rather than repeated
+# here, because a second copy of a version pin is exactly the drift these jobs exist to prevent.
+#
+# NOTE: this workflow has never executed. GitHub Actions is disabled on this account for
+# billing reasons, so it was validated with `actionlint` only. The artifacts it is meant to
+# produce were verified by running `scripts/release.sh --dry-run` locally (LO-63).
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# The job uploads the artifacts to a GitHub Release, which needs write access to contents.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: split APKs + App Bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Read toolchain versions from mise.toml
+        id: toolchain
+        run: |
+          set -euo pipefail
+          flutter_version="$(sed -n 's/^flutter[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' mise.toml | head -n1)"
+          java_version="$(sed -n 's/^java[[:space:]]*=[[:space:]]*"temurin-\([^"]*\)".*/\1/p' mise.toml | head -n1)"
+          if [ -z "$flutter_version" ] || [ -z "$java_version" ]; then
+            echo "::error file=mise.toml::could not parse the flutter and/or temurin version out of mise.toml"
+            exit 1
+          fi
+          {
+            echo "flutter-version=$flutter_version"
+            echo "java-version=$java_version"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ steps.toolchain.outputs.java-version }}
+
+      - name: Set up Flutter
+        id: flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.toolchain.outputs.flutter-version }}
+          channel: stable
+          cache: true
+          pub-cache: true
+
+      - name: Verify the installed Flutter matches mise.toml
+        env:
+          PINNED: ${{ steps.toolchain.outputs.flutter-version }}
+          RESOLVED: ${{ steps.flutter.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PINNED:-}" ] || [ "${RESOLVED:-}" != "${PINNED:-}" ]; then
+            echo "::error file=mise.toml::flutter-action installed ${RESOLVED:-<empty>} but mise.toml pins ${PINNED:-<empty>}"
+            exit 1
+          fi
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      # The tag is the source of truth for what is being released, so it must agree with the
+      # version that will actually be compiled into the APK.
+      - name: Check the tag against pubspec.yaml
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          pubspec_version="$(sed -n 's/^version:[[:space:]]*\([^[:space:]#]*\).*/\1/p' pubspec.yaml | head -n1)"
+          build_name="${pubspec_version%%+*}"
+          if [ "$REF_NAME" != "v$build_name" ]; then
+            echo "::error file=pubspec.yaml::tag $REF_NAME does not match pubspec.yaml version $build_name"
+            exit 1
+          fi
+          echo "releasing $build_name as $REF_NAME"
+
+      # The keystore is stored as a base64 blob in a repository secret because Actions secrets
+      # are text. It is written outside the workspace so it can never be picked up by a build
+      # step, an artifact upload or a `git add`.
+      - name: Restore the signing keystore
+        id: keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.LIBREOMI_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.LIBREOMI_KEYSTORE_PASSWORD }}
+          KEYSTORE_ALIAS: ${{ secrets.LIBREOMI_KEYSTORE_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.LIBREOMI_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # All four are required: a missing password or alias does not fail the build, it
+          # silently drops the release signing config and the APK comes out debug-signed.
+          # Only emptiness is reported - never the value.
+          missing=""
+          [ -n "${KEYSTORE_BASE64:-}" ] || missing="$missing LIBREOMI_KEYSTORE_BASE64"
+          [ -n "${KEYSTORE_PASSWORD:-}" ] || missing="$missing LIBREOMI_KEYSTORE_PASSWORD"
+          [ -n "${KEYSTORE_ALIAS:-}" ] || missing="$missing LIBREOMI_KEYSTORE_ALIAS"
+          [ -n "${KEY_PASSWORD:-}" ] || missing="$missing LIBREOMI_KEY_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::missing repository secret(s):$missing - refusing to publish a debug-signed release"
+            exit 1
+          fi
+          keystore_path="$RUNNER_TEMP/libreomi-release.jks"
+          # umask before the redirect: the file must never be group- or world-readable, which
+          # matters on a self-hosted runner where $RUNNER_TEMP is not a throwaway VM.
+          (umask 077 && printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$keystore_path")
+          echo "path=$keystore_path" >> "$GITHUB_OUTPUT"
+
+      # scripts/release.sh is the shared definition of a release build. --dry-run because the
+      # upload is done by the step below, which already has the tag and a token.
+      - name: Build the release artifacts
+        env:
+          LIBREOMI_KEYSTORE_PATH: ${{ steps.keystore.outputs.path }}
+          LIBREOMI_KEYSTORE_PASSWORD: ${{ secrets.LIBREOMI_KEYSTORE_PASSWORD }}
+          LIBREOMI_KEYSTORE_ALIAS: ${{ secrets.LIBREOMI_KEYSTORE_ALIAS }}
+          LIBREOMI_KEY_PASSWORD: ${{ secrets.LIBREOMI_KEY_PASSWORD }}
+        run: ./scripts/release.sh --dry-run
+
+      # scripts/release.sh only enforces this when it is the thing creating the release; here
+      # the upload is a separate step, so the same fact has to be re-checked before it runs.
+      - name: Refuse to upload a debug-signed build
+        run: |
+          set -euo pipefail
+          apksigner="$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n1)"
+          if [ -z "$apksigner" ]; then
+            echo "::error::apksigner not found under $ANDROID_HOME/build-tools"
+            exit 1
+          fi
+          # Capture first: inside an `if` condition `set -e` is suspended, so piping apksigner
+          # straight into grep would treat "apksigner failed" as "not debug-signed" and upload
+          # anyway. The assignment aborts the step when apksigner exits non-zero.
+          certs="$("$apksigner" verify --print-certs \
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk)"
+          if printf '%s' "$certs" | grep -q 'CN=Android Debug'; then
+            echo "::error::the release artifacts are signed with the debug key; not uploading"
+            exit 1
+          fi
+
+      - name: Remove the keystore
+        if: ${{ always() }}
+        env:
+          KEYSTORE_PATH: ${{ steps.keystore.outputs.path }}
+        run: rm -f "$KEYSTORE_PATH"
+
+      # A draft, not a published release: the owner adds the Korean + English notes from
+      # CHANGELOG.md and runs the device checklist (docs/08 §5) before making it public.
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release create "$REF_NAME" \
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk \
+            build/app/outputs/bundle/release/app-release.aab \
+            --draft \
+            --title "LibreOmi ${REF_NAME#v}" \
+            --notes "See CHANGELOG.md. Draft created by .github/workflows/release.yml; edit the notes before publishing."
+
+      # The App Bundle is what goes to Play internal testing. Keeping it as a job artifact as
+      # well means it survives even if the draft release is deleted and recreated.
+      - name: Upload the App Bundle as a job artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-aab
+          path: build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 30

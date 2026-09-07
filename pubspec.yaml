@@ -16,7 +16,10 @@ publish_to: "none" # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 2.1.0+1
+# LibreOmi restarts versioning at 0.1.0 for its first public build; upstream omibutfree's
+# 2.1.0 does not describe this fork. Version rules live in docs/08-dev-workflow.md §7:
+# semver for the name, and the `+build` number (Android versionCode) only ever increases.
+version: 0.1.0+1
 
 environment:
   sdk: ^3.9.2
