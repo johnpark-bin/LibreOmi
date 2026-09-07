@@ -96,6 +96,15 @@ dependencies:
   awesome_notifications: ^0.10.1
   share_plus: ^10.1.4
   path_provider: ^2.1.1
+  # File chooser for the LO-61 "Import from Backup" flow; pinned exactly per
+  # docs/08-dev-workflow.md §3 (no caret ranges on plugins). Pinned to 11.0.3
+  # rather than the newest 12.x: file_picker >=12.0.0 requires win32 ^6.3.0
+  # via windows_file_picker, which conflicts with win32 ^5.x required by
+  # share_plus 10.1.4 and (transitively, via win32_registry) device_info_plus
+  # ^11.2.0 -- forcing win32 to 6.x with a dependency_override compiles but
+  # breaks win32_registry's API usage and crashes `flutter test`. 11.0.3 is
+  # the newest version that stays on win32 ^5.9.0 and resolves cleanly.
+  file_picker: 11.0.3
 
 dev_dependencies:
   flutter_test:

@@ -1,10 +1,14 @@
 /// Settings page for API keys and app configuration
 import 'dart:convert';
 import 'dart:io';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
+
+import '../data/export_import.dart';
 import '../controllers/device_controller.dart';
 import '../controllers/library_controller.dart';
 import '../device/omi_device.dart';
@@ -794,6 +798,22 @@ class _SettingsPageState extends State<SettingsPage> {
                   leading: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
+                      color: const Color(0xFF0984e3).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.upload_file, color: Color(0xFF0984e3)),
+                  ),
+                  title: const Text('Import from Backup', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text('Restore conversations, memories & tasks from a JSON file',
+                    style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 13)),
+                  trailing: Icon(Icons.arrow_forward_ios, size: 16, color: theme.colorScheme.onSurface.withValues(alpha: 0.3)),
+                  onTap: () => _importAllData(context),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
                       color: const Color(0xFF6C5CE7).withOpacity(0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -1189,17 +1209,16 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       // Get all data
       final data = await context.read<LibraryController>().exportAllData();
-      final jsonString = const JsonEncoder.withIndent('  ').convert(data);
-      
+      final jsonString = await compute(_encodeExportJson, data);
+
       // Save to temp file
       final tempDir = await getTemporaryDirectory();
-      final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-').split('.').first;
-      final file = File('${tempDir.path}/omi_backup_$timestamp.json');
+      final file = File('${tempDir.path}/${exportFileName(DateTime.now())}');
       await file.writeAsString(jsonString);
-      
+
       // Close loading dialog
       navigator.pop();
-      
+
       // Share the file with proper origin for iPad
       await Share.shareXFiles(
         [XFile(file.path)],
@@ -1209,11 +1228,190 @@ class _SettingsPageState extends State<SettingsPage> {
     } catch (e) {
       // Close loading dialog if open
       navigator.pop();
-      
+
       scaffoldMessenger.showSnackBar(
         SnackBar(content: Text('Export failed: $e')),
       );
     }
+  }
+
+  /// Lets the user pick a `.json` backup, confirm what it contains and how to
+  /// apply it, then restores it through [LibraryController.importAllData].
+  ///
+  /// Every branch pops the loading dialog exactly once: the two `try` blocks
+  /// below each have exactly one success path and one catch path, and neither
+  /// pops before the dialog is known to be showing.
+  Future<void> _importAllData(BuildContext context) async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+    );
+    if (result == null) return;
+    final path = result.files.single.path;
+    if (path == null) return;
+    if (!context.mounted) return;
+
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+    Map<String, dynamic> document;
+    try {
+      final contents = await File(path).readAsString();
+      final decoded = await compute(_decodeImportJson, contents);
+      if (decoded is! Map<String, dynamic>) {
+        throw const FormatException('The file is not a JSON object.');
+      }
+      document = decoded;
+    } catch (e) {
+      scaffoldMessenger.showSnackBar(
+        SnackBar(content: Text('Could not read backup file: $e')),
+      );
+      return;
+    }
+
+    if (!context.mounted) return;
+    final counts = summarize(document);
+    final mode = await _confirmImportMode(context, document, counts);
+    if (mode == null) return;
+
+    if (!context.mounted) return;
+    final navigator = Navigator.of(context);
+
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Restoring backup...'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      final report = await context
+          .read<LibraryController>()
+          .importAllData(document, mode: mode);
+
+      // Close loading dialog
+      navigator.pop();
+
+      final summary =
+          'Imported ${report.inserted} new, updated ${report.updated}, '
+          'skipped ${report.skipped}.';
+      scaffoldMessenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            report.skipped > 0
+                ? '$summary See the skipped rows for details.'
+                : summary,
+          ),
+        ),
+      );
+    } on ImportFormatException catch (e) {
+      // Close loading dialog if open
+      navigator.pop();
+
+      scaffoldMessenger.showSnackBar(
+        SnackBar(content: Text('Import failed: ${e.message}')),
+      );
+    } catch (e) {
+      // Close loading dialog if open
+      navigator.pop();
+
+      scaffoldMessenger.showSnackBar(
+        SnackBar(content: Text('Import failed: $e')),
+      );
+    }
+  }
+
+  /// Confirms what to import and how. Returns `null` when the user cancels
+  /// at either the summary dialog or the replace-mode warning.
+  Future<ImportMode?> _confirmImportMode(
+    BuildContext context,
+    Map<String, dynamic> document,
+    Map<String, int> counts,
+  ) async {
+    final exportedAt = document['exported_at'];
+    final appVersion = document['app_version'];
+
+    final mode = await showDialog<ImportMode>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Restore Backup'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Conversations: ${counts['conversations'] ?? 0}'),
+            Text('Memories: ${counts['memories'] ?? 0}'),
+            Text('Tasks: ${counts['tasks'] ?? 0}'),
+            Text('Chat messages: ${counts['chat_messages'] ?? 0}'),
+            if (exportedAt is String) ...[
+              const SizedBox(height: 8),
+              Text('Exported: $exportedAt'),
+            ],
+            if (appVersion is String) Text('App version: $appVersion'),
+            const SizedBox(height: 12),
+            const Text(
+              'Merge adds these on top of what you have. Replace deletes '
+              'everything currently stored first.',
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(ImportMode.merge),
+            child: const Text('Merge'),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(ImportMode.replace),
+            child: const Text('Replace'),
+          ),
+        ],
+      ),
+    );
+
+    if (mode != ImportMode.replace) return mode;
+    if (!context.mounted) return null;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Replace All Data?'),
+        content: const Text(
+          'This deletes every conversation, memory, task and chat message '
+          'currently stored before restoring the file. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Delete & Replace'),
+          ),
+        ],
+      ),
+    );
+
+    return confirmed == true ? ImportMode.replace : null;
   }
 }
 
@@ -1225,3 +1423,10 @@ class _SettingsPageState extends State<SettingsPage> {
 /// and that layer has no business formatting UI strings.
 String _installedMegabytes(ModelSpec spec) =>
     (spec.installedBytes / (1024 * 1024)).round().toString();
+
+/// Runs off the UI isolate via [compute]; must be top-level or static.
+String _encodeExportJson(Map<String, dynamic> data) =>
+    const JsonEncoder.withIndent('  ').convert(data);
+
+/// Runs off the UI isolate via [compute]; must be top-level or static.
+Object? _decodeImportJson(String contents) => jsonDecode(contents);
