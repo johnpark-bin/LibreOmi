@@ -166,6 +166,9 @@ ${conversation.transcript}
 ''';
 
       expect(await repo.contextText(), expected);
+      // The interpolation above would still pass if the transcript format
+      // changed under it, and this string is what goes to the LLM verbatim.
+      expect(await repo.contextText(), contains('Speaker 0: hi'));
     });
   });
 }

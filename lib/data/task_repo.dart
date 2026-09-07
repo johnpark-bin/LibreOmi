@@ -1,6 +1,6 @@
 /// Instance repository for the `tasks` table (LO-35).
 ///
-/// Reproduces `DatabaseService`'s task statics exactly, against an
+/// Reproduces the pre-LO-35 monolith's task statics exactly, against an
 /// already-open [Database] instead of the process-wide singleton.
 library;
 

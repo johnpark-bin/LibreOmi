@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'package:libreomi/controllers/library_controller.dart';
+import 'package:libreomi/data/chat_repo.dart';
 import 'package:libreomi/data/conversation_repo.dart';
 import 'package:libreomi/data/memory_repo.dart';
 import 'package:libreomi/data/task_repo.dart';
@@ -179,13 +180,32 @@ void main() {
       Memory(id: 'm1', content: 'x', category: 'fact', createdAt: DateTime(2026, 1, 1)),
     );
     await TaskRepo(db).save(Task(id: 't1', title: 'x', createdAt: DateTime(2026, 1, 1)));
+    await ChatRepo(db).save(ChatMessage(
+      id: 'cm1',
+      text: 'what do I drink',
+      isUser: true,
+      createdAt: DateTime(2026, 1, 1),
+    ));
 
     final export = await controller.exportAllData();
 
     expect(export['app_version'], '2.1.0');
+    expect(export['export_date'], isA<String>());
     expect(export['conversations'], hasLength(1));
     expect(export['memories'], hasLength(1));
     expect(export['tasks'], hasLength(1));
-    expect(export['chat_messages'], isEmpty);
+    // Chat history is exported too: it was the collection LO-35 added last, so
+    // an export that silently drops it is the plausible regression here.
+    expect(export['chat_messages'], hasLength(1));
+    expect(
+      (export['chat_messages'] as List).single,
+      containsPair('text', 'what do I drink'),
+    );
+    // The persisted reminder id has to survive an export/import round trip, or
+    // a restored task would schedule under a different id.
+    expect(
+      (export['tasks'] as List).single,
+      containsPair('notification_id', isA<int>()),
+    );
   });
 }

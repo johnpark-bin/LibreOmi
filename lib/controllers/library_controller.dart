@@ -2,8 +2,8 @@
 /// 1 of the pre-LO-34 monolith's split, `docs/06-roadmap.md`).
 ///
 /// Talks to `ConversationRepo`, `MemoryRepo`, `TaskRepo` and `ChatRepo`
-/// directly -- never through `services/database_service.dart` -- so this
-/// controller does not depend on the `DatabaseService` facade the old monolith used.
+/// directly, which is what let LO-64 delete the static database facade the old
+/// monolith used.
 library;
 
 import 'package:flutter/foundation.dart';

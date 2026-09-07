@@ -43,6 +43,26 @@ void main() {
       expect(all.single.conversationId, 'c1');
     });
 
+    test('round trips an assistant message with no conversation', () async {
+      // The other half of the row mapping: `is_user` is an INTEGER column and
+      // `conversation_id` is nullable, so a reply about the whole library has
+      // to come back as `isUser: false` with a null id rather than defaulting.
+      final db = await openTestDb();
+      final repo = ChatRepo(db);
+
+      await repo.save(makeMessage(
+        id: 'msg1',
+        createdAt: DateTime.fromMillisecondsSinceEpoch(1000),
+        text: 'you said you drink tea',
+        isUser: false,
+      ));
+
+      final restored = (await repo.all()).single;
+      expect(restored.isUser, isFalse);
+      expect(restored.conversationId, isNull);
+      expect(restored.text, 'you said you drink tea');
+    });
+
     test('orders oldest first, using id as a tiebreaker', () async {
       final db = await openTestDb();
       final repo = ChatRepo(db);
