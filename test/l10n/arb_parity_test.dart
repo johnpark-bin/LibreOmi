@@ -82,6 +82,12 @@ void main() {
       // A bare `S{speaker}` speaker tag (e.g. "S1"): no natural-language
       // content to translate.
       'home_connected_speakerLabel',
+      // Model-family proper nouns and an acronym, left untranslated in
+      // Korean UI copy per docs/08's Korean style (same treatment as
+      // "Whisper"/"Sherpa" elsewhere and "LLM"/"BLE"/"API").
+      'models_kindWhisper',
+      'models_kindSenseVoice',
+      'models_kindVad',
     };
     for (final key in _messageKeys(en)) {
       if (sameInBothLanguages.contains(key)) continue;

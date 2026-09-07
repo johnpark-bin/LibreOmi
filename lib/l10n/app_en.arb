@@ -808,5 +808,616 @@
   "home_batteryPrompt_guidanceAction": "Guidance",
   "@home_batteryPrompt_guidanceAction": {
     "description": "SnackBar action that opens the manufacturer-specific battery guidance page"
+  },
+  "sdcard_sync_title": "SD Card Sync",
+  "@sdcard_sync_title": {
+    "description": "App bar title of the SD-card sync page"
+  },
+  "sdcard_sync_syncedSnackbar": "Audio synced! Tap the file to process it.",
+  "@sdcard_sync_syncedSnackbar": {
+    "description": "SnackBar shown after a sync from the SD card finishes"
+  },
+  "sdcard_sync_processNowAction": "Process Now",
+  "@sdcard_sync_processNowAction": {
+    "description": "SnackBar action that immediately processes the just-synced file"
+  },
+  "sdcard_sync_deleteFileTitle": "Delete File",
+  "@sdcard_sync_deleteFileTitle": {
+    "description": "Title of the confirmation dialog for deleting one synced file"
+  },
+  "sdcard_sync_deleteFileConfirm": "Delete \"{fileName}\"?\n\nThis cannot be undone.",
+  "@sdcard_sync_deleteFileConfirm": {
+    "description": "Body of the confirmation dialog for deleting one synced file",
+    "placeholders": {
+      "fileName": { "type": "String" }
+    }
+  },
+  "sdcard_sync_deleteButton": "Delete",
+  "@sdcard_sync_deleteButton": {
+    "description": "Button/tooltip that deletes a single synced file"
+  },
+  "sdcard_sync_fileDeletedSnackbar": "File deleted",
+  "@sdcard_sync_fileDeletedSnackbar": {
+    "description": "SnackBar shown after a single synced file is deleted"
+  },
+  "sdcard_sync_deleteAllTitle": "Delete All Files",
+  "@sdcard_sync_deleteAllTitle": {
+    "description": "Title of the confirmation dialog for deleting every synced file"
+  },
+  "sdcard_sync_deleteAllConfirm": "Delete all {count} synced files?\n\nThis cannot be undone.",
+  "@sdcard_sync_deleteAllConfirm": {
+    "description": "Body of the confirmation dialog for deleting every synced file",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "sdcard_sync_deleteAllButton": "Delete All",
+  "@sdcard_sync_deleteAllButton": {
+    "description": "Button that deletes every synced file"
+  },
+  "sdcard_sync_deletedCountSnackbar": "Deleted {count} files",
+  "@sdcard_sync_deletedCountSnackbar": {
+    "description": "SnackBar shown after bulk-deleting synced files",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "sdcard_sync_clearStorageTitle": "Clear Device Storage",
+  "@sdcard_sync_clearStorageTitle": {
+    "description": "Title of the confirmation dialog for clearing the device's SD-card storage, and the button that opens it"
+  },
+  "sdcard_sync_clearStorageConfirm": "Clear all data from your Omi device's SD card?\n\nThis will delete all unsynced recordings on the device. This cannot be undone.",
+  "@sdcard_sync_clearStorageConfirm": {
+    "description": "Body of the confirmation dialog for clearing the device's SD-card storage"
+  },
+  "sdcard_sync_clearStorageButton": "Clear Storage",
+  "@sdcard_sync_clearStorageButton": {
+    "description": "Confirming action inside the clear-device-storage dialog"
+  },
+  "sdcard_sync_storageCleared": "Device storage cleared",
+  "@sdcard_sync_storageCleared": {
+    "description": "SnackBar shown after the device's SD-card storage is cleared"
+  },
+  "sdcard_sync_noSupportTitle": "SD Card Not Supported",
+  "@sdcard_sync_noSupportTitle": {
+    "description": "Title shown when the connected device has no SD-card storage"
+  },
+  "sdcard_sync_notConnectedTitle": "Device Not Connected",
+  "@sdcard_sync_notConnectedTitle": {
+    "description": "Title shown when no Omi device is connected"
+  },
+  "sdcard_sync_noSupportBody": "Your Omi device doesn't have SD card storage.\n\nThis feature requires an Omi DevKit 2 or newer with SD card hardware and firmware v2.0+.",
+  "@sdcard_sync_noSupportBody": {
+    "description": "Body shown when the connected device has no SD-card storage"
+  },
+  "sdcard_sync_notConnectedBody": "Connect to your Omi device first to check for SD card storage.",
+  "@sdcard_sync_notConnectedBody": {
+    "description": "Body shown when no Omi device is connected"
+  },
+  "sdcard_sync_connectDeviceButton": "Connect Device",
+  "@sdcard_sync_connectDeviceButton": {
+    "description": "Button that returns to the previous page to connect a device"
+  },
+  "sdcard_sync_goBackButton": "Go Back",
+  "@sdcard_sync_goBackButton": {
+    "description": "Button that returns to the previous page when SD-card sync is unsupported"
+  },
+  "sdcard_sync_statusSyncing": "Syncing...",
+  "@sdcard_sync_statusSyncing": {
+    "description": "Status-card title while a sync is in progress"
+  },
+  "sdcard_sync_statusProcessing": "Processing...",
+  "@sdcard_sync_statusProcessing": {
+    "description": "Status-card title while a synced file is being processed"
+  },
+  "sdcard_sync_statusDataAvailable": "Data Available",
+  "@sdcard_sync_statusDataAvailable": {
+    "description": "Status-card title when there is pending data on the device's SD card"
+  },
+  "sdcard_sync_statusAllSynced": "All Synced",
+  "@sdcard_sync_statusAllSynced": {
+    "description": "Status-card title when there is nothing left to sync"
+  },
+  "sdcard_sync_clearingProgress": "Clearing device storage...",
+  "@sdcard_sync_clearingProgress": {
+    "description": "Progress-card label while device storage is being cleared"
+  },
+  "sdcard_sync_syncingProgress": "Syncing from SD card...",
+  "@sdcard_sync_syncingProgress": {
+    "description": "Progress-card label while files are syncing from the SD card"
+  },
+  "sdcard_sync_audioRecordingLabel": "Audio Recording",
+  "@sdcard_sync_audioRecordingLabel": {
+    "description": "Label on the pending-data card for the audio recording waiting on the device"
+  },
+  "sdcard_sync_syncAndProcessButton": "Sync & Process",
+  "@sdcard_sync_syncAndProcessButton": {
+    "description": "Button that starts syncing the pending recording and processing it"
+  },
+  "sdcard_sync_allCaughtUpTitle": "All Caught Up!",
+  "@sdcard_sync_allCaughtUpTitle": {
+    "description": "Title shown when there is no pending data on the device"
+  },
+  "sdcard_sync_noPendingAudio": "No pending audio on your Omi's SD card",
+  "@sdcard_sync_noPendingAudio": {
+    "description": "Body shown when there is no pending data on the device"
+  },
+  "sdcard_sync_checkAgainButton": "Check Again",
+  "@sdcard_sync_checkAgainButton": {
+    "description": "Button that re-checks the device for pending SD-card data"
+  },
+  "sdcard_sync_transcribingProgress": "Transcribing {fileName}...",
+  "@sdcard_sync_transcribingProgress": {
+    "description": "Progress label for a synced file currently being transcribed",
+    "placeholders": {
+      "fileName": { "type": "String" }
+    }
+  },
+  "sdcard_sync_summarizingProgress": "Saved — waiting for the summary...",
+  "@sdcard_sync_summarizingProgress": {
+    "description": "Progress label for a transcribed file waiting on its summary"
+  },
+  "sdcard_sync_unknownError": "Unknown error",
+  "@sdcard_sync_unknownError": {
+    "description": "Fallback error text when a failed file's process state carries no error message"
+  },
+  "sdcard_sync_transcriptionFailedTitle": "Transcription failed",
+  "@sdcard_sync_transcriptionFailedTitle": {
+    "description": "Heading of the failed-file card"
+  },
+  "sdcard_sync_retryButton": "Retry",
+  "@sdcard_sync_retryButton": {
+    "description": "Button that retries processing a failed synced file"
+  },
+  "sdcard_sync_transcriptFallbackTitle": "Transcript",
+  "@sdcard_sync_transcriptFallbackTitle": {
+    "description": "Fallback heading for a transcript card with no conversation title yet"
+  },
+  "sdcard_sync_transcriptCopiedSnackbar": "Transcript copied",
+  "@sdcard_sync_transcriptCopiedSnackbar": {
+    "description": "SnackBar shown after copying a transcript to the clipboard"
+  },
+  "sdcard_sync_summaryPending": "Summary pending",
+  "@sdcard_sync_summaryPending": {
+    "description": "Note on a transcript card while its summary has not finished yet"
+  },
+  "sdcard_sync_viewInHistoryButton": "View in History",
+  "@sdcard_sync_viewInHistoryButton": {
+    "description": "Button that opens the finished conversation in the conversations list"
+  },
+  "sdcard_sync_syncedFilesHeader": "Synced Files",
+  "@sdcard_sync_syncedFilesHeader": {
+    "description": "Header of the list of files already synced to the phone"
+  },
+  "sdcard_sync_syncedFilesSummary": "{count, plural, one{{count} file} other{{count} files}} • {size} on your phone",
+  "@sdcard_sync_syncedFilesSummary": {
+    "description": "Subtitle of the synced-files section: how many files and how much space they use",
+    "placeholders": {
+      "count": { "type": "int" },
+      "size": { "type": "String" }
+    }
+  },
+  "sdcard_sync_processTooltip": "Process & Transcribe",
+  "@sdcard_sync_processTooltip": {
+    "description": "Tooltip on the button that processes and transcribes a synced file"
+  },
+  "sdcard_sync_deviceStorageHeader": "Device Storage",
+  "@sdcard_sync_deviceStorageHeader": {
+    "description": "Header of the danger-zone section for clearing device SD-card storage"
+  },
+  "sdcard_sync_deviceStorageBody": "Clear all unsynced data from your Omi device. Use this if you want to start fresh without syncing.",
+  "@sdcard_sync_deviceStorageBody": {
+    "description": "Explanation of the clear-device-storage action"
+  },
+  "sdcard_sync_aboutHeader": "About SD Card Sync",
+  "@sdcard_sync_aboutHeader": {
+    "description": "Header of the informational section explaining what SD-card sync does"
+  },
+  "sdcard_sync_aboutBody": "When your Omi device records audio while disconnected from your phone, it stores the data on its SD card. Use this feature to:\n\n• Download offline recordings\n• Transcribe and save to your history\n• Clear storage for new recordings",
+  "@sdcard_sync_aboutBody": {
+    "description": "Body of the informational section explaining what SD-card sync does"
+  },
+  "sdcard_sync_etaSeconds": "{seconds}s remaining",
+  "@sdcard_sync_etaSeconds": {
+    "description": "Sync ETA under a minute",
+    "placeholders": {
+      "seconds": { "type": "int" }
+    }
+  },
+  "sdcard_sync_etaMinutes": "{minutes}m {seconds}s remaining",
+  "@sdcard_sync_etaMinutes": {
+    "description": "Sync ETA of a minute or more",
+    "placeholders": {
+      "minutes": { "type": "int" },
+      "seconds": { "type": "int" }
+    }
+  },
+  "permissionsRationale_collectsHeader": "What LibreOmi collects",
+  "@permissionsRationale_collectsHeader": {
+    "description": "Play Store prominent-disclosure screen: section header. Wording is pinned to docs/08-dev-workflow.md §8 and must not be reworded."
+  },
+  "permissionsRationale_collectsBody": "Audio captured from your Omi wearable or your phone's microphone while a capture is running, and the transcripts, conversations, memories and tasks derived from it.",
+  "@permissionsRationale_collectsBody": {
+    "description": "Play Store prominent-disclosure screen: what data the app collects. Wording is pinned to docs/08-dev-workflow.md §8 and must not be reworded."
+  },
+  "permissionsRationale_whereGoesHeader": "Where it goes",
+  "@permissionsRationale_whereGoesHeader": {
+    "description": "Play Store prominent-disclosure screen: section header. Wording is pinned to docs/08-dev-workflow.md §8 and must not be reworded."
+  },
+  "permissionsRationale_whereGoesBody": "There is no LibreOmi server and no account. Speech is transcribed either entirely on your phone (on-device model) or, if you enter a Deepgram API key, by sending audio to Deepgram. Conversation text is sent to the LLM endpoint you configure only when you supply a key for it. With no keys entered, no capture is sent to any service.",
+  "@permissionsRationale_whereGoesBody": {
+    "description": "Play Store prominent-disclosure screen: where captured data is sent. Wording is pinned to docs/08-dev-workflow.md §8 and must not be reworded."
+  },
+  "permissionsRationale_whereStoredHeader": "Where it is stored",
+  "@permissionsRationale_whereStoredHeader": {
+    "description": "Play Store prominent-disclosure screen: section header. Wording is pinned to docs/08-dev-workflow.md §8 and must not be reworded."
+  },
+  "permissionsRationale_whereStoredBody": "Conversations, memories, tasks and chat history live in a SQLite database in the app's private storage. Recordings synced from the wearable's SD card are kept as audio files alongside it until you delete them. API keys are stored encrypted, under a key that never leaves the Android keystore.\n\nAndroid's automatic backup is left on, so the database and any synced recordings are included in your Google account backup. Your API keys and the downloaded speech models are excluded from it.",
+  "@permissionsRationale_whereStoredBody": {
+    "description": "Play Store prominent-disclosure screen: where data is stored, and what automatic backup covers. Wording is pinned to docs/08-dev-workflow.md §8 and must not be reworded."
+  },
+  "permissionsRationale_yourControlHeader": "Your control",
+  "@permissionsRationale_yourControlHeader": {
+    "description": "Play Store prominent-disclosure screen: section header. Wording is pinned to docs/08-dev-workflow.md §8 and must not be reworded."
+  },
+  "permissionsRationale_yourControlBody": "Settings → Data → Export All Data writes your conversations, memories, tasks and chat history to a JSON file; Import from Backup reads one back. Deleting the app, or clearing its data in Android settings, removes everything on the device, audio files included.",
+  "@permissionsRationale_yourControlBody": {
+    "description": "Play Store prominent-disclosure screen: how the user exports, imports or erases their data. Wording is pinned to docs/08-dev-workflow.md §8 and must not be reworded."
+  },
+  "permissionsRationale_permissionsHeader": "Permissions",
+  "@permissionsRationale_permissionsHeader": {
+    "description": "Play Store prominent-disclosure screen: section header over the per-permission cards"
+  },
+  "permissionsRationale_bluetoothTitleLegacy": "Bluetooth (location permission)",
+  "@permissionsRationale_bluetoothTitleLegacy": {
+    "description": "Permission-row title on Android 11 and older, where Bluetooth scanning requires the location permission"
+  },
+  "permissionsRationale_bluetoothTitle": "Bluetooth",
+  "@permissionsRationale_bluetoothTitle": {
+    "description": "Permission-row title on Android 12 and newer"
+  },
+  "permissionsRationale_bluetoothDescriptionLegacy": "Finds and connects to your Omi wearable. LibreOmi scans only for Omi devices and never uses Bluetooth to determine your location. Android 11 and older require the location permission for any Bluetooth scan; LibreOmi does not read your location.",
+  "@permissionsRationale_bluetoothDescriptionLegacy": {
+    "description": "Bluetooth permission-row explanation on Android 11 and older. Wording is pinned to docs/08-dev-workflow.md §8 and must not be reworded."
+  },
+  "permissionsRationale_bluetoothDescription": "Finds and connects to your Omi wearable. LibreOmi scans only for Omi devices and never uses Bluetooth to determine your location.",
+  "@permissionsRationale_bluetoothDescription": {
+    "description": "Bluetooth permission-row explanation on Android 12 and newer. Wording is pinned to docs/08-dev-workflow.md §8 and must not be reworded."
+  },
+  "permissionsRationale_microphoneTitle": "Microphone",
+  "@permissionsRationale_microphoneTitle": {
+    "description": "Permission-row title for microphone access"
+  },
+  "permissionsRationale_microphoneDescription": "Records audio only while you have started a capture with the phone microphone as the source. Nothing is recorded when the app is idle.",
+  "@permissionsRationale_microphoneDescription": {
+    "description": "Microphone permission-row explanation. Wording is pinned to docs/08-dev-workflow.md §8 and must not be reworded."
+  },
+  "permissionsRationale_notificationsTitle": "Notifications",
+  "@permissionsRationale_notificationsTitle": {
+    "description": "Permission-row title for notifications"
+  },
+  "permissionsRationale_notificationsDescription": "Shows the ongoing capture notification Android requires for background recording, and alerts when a conversation is saved.",
+  "@permissionsRationale_notificationsDescription": {
+    "description": "Notifications permission-row explanation. Wording is pinned to docs/08-dev-workflow.md §8 and must not be reworded."
+  },
+  "permissionsRationale_foregroundServiceTitle": "Foreground service",
+  "@permissionsRationale_foregroundServiceTitle": {
+    "description": "Permission-row title for the foreground service, which has no runtime permission of its own"
+  },
+  "permissionsRationale_foregroundServiceDescription": "Keeps capture and transcription running while the screen is off. Android grants this from the manifest and never asks.",
+  "@permissionsRationale_foregroundServiceDescription": {
+    "description": "Foreground-service permission-row explanation. Wording is pinned to docs/08-dev-workflow.md §8 and must not be reworded."
+  },
+  "permissionsRationale_foregroundServiceChip": "Declared in the manifest",
+  "@permissionsRationale_foregroundServiceChip": {
+    "description": "Fixed status chip for the foreground-service row, which has no runtime status to check"
+  },
+  "permissionsRationale_exactAlarmsTitle": "Exact alarms",
+  "@permissionsRationale_exactAlarmsTitle": {
+    "description": "Permission-row title for exact alarm scheduling"
+  },
+  "permissionsRationale_exactAlarmsDescription": "Optional, and off unless you turn on exact task reminders in Settings. Without it a reminder still arrives, just at an approximate time chosen by Android.",
+  "@permissionsRationale_exactAlarmsDescription": {
+    "description": "Exact-alarms permission-row explanation. Wording is pinned to docs/08-dev-workflow.md §8 and must not be reworded."
+  },
+  "permissionsRationale_batteryTitle": "Battery optimisation exemption",
+  "@permissionsRationale_batteryTitle": {
+    "description": "Permission-row title for the battery-optimisation exemption"
+  },
+  "permissionsRationale_batteryDescription": "Optional. Without it some phones stop LibreOmi's background capture after a few minutes.",
+  "@permissionsRationale_batteryDescription": {
+    "description": "Battery-optimisation permission-row explanation. Wording is pinned to docs/08-dev-workflow.md §8 and must not be reworded."
+  },
+  "permissionsRationale_closingNote": "This page never asks for a permission — each one is requested at the moment the feature that needs it is first used.",
+  "@permissionsRationale_closingNote": {
+    "description": "Closing note under the permission cards, clarifying that this page never requests anything itself. Wording is pinned to docs/08-dev-workflow.md §8 and must not be reworded."
+  },
+  "permissionsRationale_continueButton": "Continue",
+  "@permissionsRationale_continueButton": {
+    "description": "First-run gate button that dismisses the disclosure screen and proceeds into the app"
+  },
+  "permissionsRationale_chipGranted": "Granted",
+  "@permissionsRationale_chipGranted": {
+    "description": "Status chip: the permission is currently granted"
+  },
+  "permissionsRationale_chipNotGranted": "Not granted",
+  "@permissionsRationale_chipNotGranted": {
+    "description": "Status chip: the permission has not been granted yet"
+  },
+  "permissionsRationale_chipDeniedOpenSettings": "Denied — open settings",
+  "@permissionsRationale_chipDeniedOpenSettings": {
+    "description": "Status chip: the permission was permanently denied and can only be changed from system settings"
+  },
+  "permissionsRationale_chipNotRequired": "Not required on this Android version",
+  "@permissionsRationale_chipNotRequired": {
+    "description": "Status chip: this Android version does not require a runtime grant for this permission"
+  },
+  "permissionsRationale_chipNotApplicable": "Not applicable",
+  "@permissionsRationale_chipNotApplicable": {
+    "description": "Status chip: this row does not apply to the current device or OS version"
+  },
+  "permissionsRationale_chipUnknown": "Unknown",
+  "@permissionsRationale_chipUnknown": {
+    "description": "Status chip: the current status could not be read"
+  },
+  "permissionsRationale_openSettingsButton": "Open settings",
+  "@permissionsRationale_openSettingsButton": {
+    "description": "Button on a permission row that opens the relevant system settings screen"
+  },
+  "stats_title": "Statistics",
+  "@stats_title": {
+    "description": "App bar title of the statistics dashboard page"
+  },
+  "stats_headerTitle": "Your Omi Stats",
+  "@stats_headerTitle": {
+    "description": "Heading at the top of the statistics dashboard"
+  },
+  "stats_headerSubtitle": "Insights from your conversations",
+  "@stats_headerSubtitle": {
+    "description": "Subtitle under the statistics dashboard heading"
+  },
+  "stats_conversationsLabel": "Conversations",
+  "@stats_conversationsLabel": {
+    "description": "Stat card label: total number of conversations"
+  },
+  "stats_memoriesLabel": "Memories",
+  "@stats_memoriesLabel": {
+    "description": "Stat card label: total number of memories"
+  },
+  "stats_tasksLabel": "Tasks",
+  "@stats_tasksLabel": {
+    "description": "Stat card label: completed vs total tasks"
+  },
+  "stats_thisWeekLabel": "This Week",
+  "@stats_thisWeekLabel": {
+    "description": "Stat card label: conversations recorded in the last 7 days"
+  },
+  "stats_totalsHeader": "Totals",
+  "@stats_totalsHeader": {
+    "description": "Header of the detailed totals card"
+  },
+  "stats_wordsCapturedLabel": "Words Captured",
+  "@stats_wordsCapturedLabel": {
+    "description": "Detail row label: total word count across all conversations"
+  },
+  "stats_recordingTimeLabel": "Recording Time",
+  "@stats_recordingTimeLabel": {
+    "description": "Detail row label: total recorded duration"
+  },
+  "stats_firstConversationLabel": "First Conversation",
+  "@stats_firstConversationLabel": {
+    "description": "Detail row label: date of the earliest saved conversation"
+  },
+  "stats_notAvailable": "N/A",
+  "@stats_notAvailable": {
+    "description": "Value shown for the first-conversation date when there are no conversations yet"
+  },
+  "stats_memorySourcesHeader": "Memory Sources",
+  "@stats_memorySourcesHeader": {
+    "description": "Header of the memory-sources breakdown card"
+  },
+  "stats_autoExtractedLabel": "Auto-extracted",
+  "@stats_autoExtractedLabel": {
+    "description": "Detail row label: memories the app extracted automatically"
+  },
+  "stats_manuallyAddedLabel": "Manually Added",
+  "@stats_manuallyAddedLabel": {
+    "description": "Detail row label: memories the user added by hand"
+  },
+  "stats_apiCostsHeader": "API Costs (Estimated)",
+  "@stats_apiCostsHeader": {
+    "description": "Header of the estimated API cost breakdown card"
+  },
+  "stats_usageStatsResetSnackbar": "Usage stats reset",
+  "@stats_usageStatsResetSnackbar": {
+    "description": "SnackBar shown after resetting usage stats from the API-costs card"
+  },
+  "stats_resetButton": "Reset",
+  "@stats_resetButton": {
+    "description": "Short button that resets usage/cost tracking, used both on the API-costs card and inside the reset-all confirmation dialog"
+  },
+  "stats_deepgramLabel": "Deepgram ({minutes} min)",
+  "@stats_deepgramLabel": {
+    "description": "Detail row label: estimated Deepgram transcription cost, with minutes used",
+    "placeholders": {
+      "minutes": { "type": "String" }
+    }
+  },
+  "stats_llmLabel": "LLM ({tokens} tokens)",
+  "@stats_llmLabel": {
+    "description": "Detail row label: estimated LLM cost, with tokens used",
+    "placeholders": {
+      "tokens": { "type": "String" }
+    }
+  },
+  "stats_totalEstimatedLabel": "Total Estimated",
+  "@stats_totalEstimatedLabel": {
+    "description": "Detail row label: total estimated API cost across services"
+  },
+  "stats_modelLabel": "Model: {model}",
+  "@stats_modelLabel": {
+    "description": "Caption showing the configured LLM model id under the cost breakdown",
+    "placeholders": {
+      "model": { "type": "String" }
+    }
+  },
+  "stats_noPriceSetHint": "No price set for this model — add one in Settings → LLM → Pricing.",
+  "@stats_noPriceSetHint": {
+    "description": "Hint shown when the configured LLM model has no entry in the pricing table"
+  },
+  "stats_resetAllButton": "Reset All Statistics",
+  "@stats_resetAllButton": {
+    "description": "Button that opens the confirmation dialog to reset every usage statistic"
+  },
+  "stats_resetAllTitle": "Reset All Statistics?",
+  "@stats_resetAllTitle": {
+    "description": "Title of the confirmation dialog for resetting every usage statistic"
+  },
+  "stats_resetAllConfirm": "This will reset all API usage tracking (Deepgram minutes, OpenAI tokens, and estimated costs). This cannot be undone.",
+  "@stats_resetAllConfirm": {
+    "description": "Body of the confirmation dialog for resetting every usage statistic"
+  },
+  "stats_allStatisticsResetSnackbar": "All statistics reset",
+  "@stats_allStatisticsResetSnackbar": {
+    "description": "SnackBar shown after confirming the reset-all-statistics dialog"
+  },
+  "stats_durationHoursMinutes": "{hours}h {minutes}m",
+  "@stats_durationHoursMinutes": {
+    "description": "Formatted recording duration of an hour or more",
+    "placeholders": {
+      "hours": { "type": "int" },
+      "minutes": { "type": "int" }
+    }
+  },
+  "stats_durationMinutesSeconds": "{minutes}m {seconds}s",
+  "@stats_durationMinutesSeconds": {
+    "description": "Formatted recording duration of a minute or more but under an hour",
+    "placeholders": {
+      "minutes": { "type": "int" },
+      "seconds": { "type": "int" }
+    }
+  },
+  "stats_durationSeconds": "{seconds}s",
+  "@stats_durationSeconds": {
+    "description": "Formatted recording duration under a minute",
+    "placeholders": {
+      "seconds": { "type": "int" }
+    }
+  },
+  "models_title": "Manage models",
+  "@models_title": {
+    "description": "App bar title of the on-device speech models management page"
+  },
+  "models_readFailedMessage": "Could not read installed models: {error}",
+  "@models_readFailedMessage": {
+    "description": "SnackBar shown when the model store cannot be read at all",
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "models_otherFilesHeader": "OTHER FILES",
+  "@models_otherFilesHeader": {
+    "description": "Section header over installed files with no matching catalog entry"
+  },
+  "models_deleteConfirmTitle": "Delete {title}?",
+  "@models_deleteConfirmTitle": {
+    "description": "Title of the confirmation dialog for deleting a model or unrecognised file",
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+  "models_deleteConfirmBody": "This removes the downloaded model from your device. You can download it again later.",
+  "@models_deleteConfirmBody": {
+    "description": "Body of the confirmation dialog for deleting a model"
+  },
+  "models_deleteButton": "Delete",
+  "@models_deleteButton": {
+    "description": "Button/tooltip that deletes a downloaded model or unrecognised file"
+  },
+  "models_deleteSpecFailedMessage": "Could not delete {name}: {error}",
+  "@models_deleteSpecFailedMessage": {
+    "description": "SnackBar shown when deleting a catalog model fails",
+    "placeholders": {
+      "name": { "type": "String" },
+      "error": { "type": "String" }
+    }
+  },
+  "models_deleteUnknownFailedMessage": "Could not delete {id}: {error}",
+  "@models_deleteUnknownFailedMessage": {
+    "description": "SnackBar shown when deleting an unrecognised installed file fails",
+    "placeholders": {
+      "id": { "type": "String" },
+      "error": { "type": "String" }
+    }
+  },
+  "models_installedSizeLabel": "{mb} MB installed",
+  "@models_installedSizeLabel": {
+    "description": "Size line for an installed model",
+    "placeholders": {
+      "mb": { "type": "String" }
+    }
+  },
+  "models_downloadSizeLabel": "Download {archiveMb} MB · {installedMb} MB on disk",
+  "@models_downloadSizeLabel": {
+    "description": "Size line for a not-yet-installed model: download size and installed size",
+    "placeholders": {
+      "archiveMb": { "type": "String" },
+      "installedMb": { "type": "String" }
+    }
+  },
+  "models_downloadButton": "Download",
+  "@models_downloadButton": {
+    "description": "Button that starts downloading a model"
+  },
+  "models_unknownSizeLabel": "{mb} MB · unrecognised",
+  "@models_unknownSizeLabel": {
+    "description": "Size line for an installed file with no matching catalog entry",
+    "placeholders": {
+      "mb": { "type": "String" }
+    }
+  },
+  "models_kindStreaming": "Streaming",
+  "@models_kindStreaming": {
+    "description": "Model-kind label: a streaming ASR model"
+  },
+  "models_kindWhisper": "Whisper",
+  "@models_kindWhisper": {
+    "description": "Model-kind label: the Whisper model family. Proper noun, left untranslated in every locale."
+  },
+  "models_kindSenseVoice": "SenseVoice",
+  "@models_kindSenseVoice": {
+    "description": "Model-kind label: the SenseVoice model family. Proper noun, left untranslated in every locale."
+  },
+  "models_kindVad": "VAD",
+  "@models_kindVad": {
+    "description": "Model-kind label: voice activity detection. Acronym, left untranslated in every locale."
+  },
+  "models_progressWithTotal": "{received} / {total} MB ({percent}%)",
+  "@models_progressWithTotal": {
+    "description": "Download progress line once the total size is known",
+    "placeholders": {
+      "received": { "type": "String" },
+      "total": { "type": "String" },
+      "percent": { "type": "int" }
+    }
+  },
+  "models_progressDownloaded": "{received} MB downloaded",
+  "@models_progressDownloaded": {
+    "description": "Download progress line before the total size is known",
+    "placeholders": {
+      "received": { "type": "String" }
+    }
+  },
+  "models_progressExtracting": "Extracting…",
+  "@models_progressExtracting": {
+    "description": "Install progress label while the downloaded archive is being extracted"
+  },
+  "models_progressVerifying": "Verifying…",
+  "@models_progressVerifying": {
+    "description": "Install progress label while the extracted model is being verified"
+  },
+  "models_progressDone": "Done",
+  "@models_progressDone": {
+    "description": "Install progress label once installation has finished"
   }
 }

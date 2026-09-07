@@ -12,6 +12,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../l10n/l10n.dart';
 import '../platform/battery_optimization.dart';
 import '../platform/battery_optimization_gateway.dart' show batteryOptimization;
 import '../platform/exact_alarm.dart';
@@ -196,6 +197,7 @@ class _PermissionsRationalePageState extends State<PermissionsRationalePage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = L10n.of(context);
     final sdkInt = _sdkInt;
     final bleLegacy = sdkInt != null && sdkInt < 31;
     final bleStatus = _aggregate(
@@ -247,7 +249,7 @@ class _PermissionsRationalePageState extends State<PermissionsRationalePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Permissions & privacy'),
+        title: Text(l10n.common_permissionsPrivacyLabel),
         automaticallyImplyLeading: !widget.isFirstRun,
       ),
       body: !_loaded
@@ -295,6 +297,7 @@ class _RationaleView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = L10n.of(context);
     final theme = Theme.of(context);
     final bodyStyle = TextStyle(
       color: theme.colorScheme.onSurface.withOpacity(0.7),
@@ -303,105 +306,73 @@ class _RationaleView extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        _buildSectionHeader(context, 'What LibreOmi collects'),
+        _buildSectionHeader(context, l10n.permissionsRationale_collectsHeader),
         Text(
-          'Audio captured from your Omi wearable or your phone\'s microphone '
-          'while a capture is running, and the transcripts, conversations, '
-          'memories and tasks derived from it.',
+          l10n.permissionsRationale_collectsBody,
           style: bodyStyle,
         ),
         const SizedBox(height: 20),
-        _buildSectionHeader(context, 'Where it goes'),
+        _buildSectionHeader(context, l10n.permissionsRationale_whereGoesHeader),
         Text(
-          'There is no LibreOmi server and no account. Speech is transcribed '
-          'either entirely on your phone (on-device model) or, if you enter a '
-          'Deepgram API key, by sending audio to Deepgram. Conversation text is '
-          'sent to the LLM endpoint you configure only when you supply a key '
-          'for it. With no keys entered, no capture is sent to any service.',
+          l10n.permissionsRationale_whereGoesBody,
           style: bodyStyle,
         ),
         const SizedBox(height: 20),
-        _buildSectionHeader(context, 'Where it is stored'),
+        _buildSectionHeader(context, l10n.permissionsRationale_whereStoredHeader),
         Text(
-          'Conversations, memories, tasks and chat history live in a SQLite '
-          'database in the app\'s private storage. Recordings synced from the '
-          'wearable\'s SD card are kept as audio files alongside it until you '
-          'delete them. API keys are stored encrypted, under a key that never '
-          'leaves the Android keystore.\n\n'
-          'Android\'s automatic backup is left on, so the database and any '
-          'synced recordings are included in your Google account backup. Your '
-          'API keys and the downloaded speech models are excluded from it.',
+          l10n.permissionsRationale_whereStoredBody,
           style: bodyStyle,
         ),
         const SizedBox(height: 20),
-        _buildSectionHeader(context, 'Your control'),
+        _buildSectionHeader(context, l10n.permissionsRationale_yourControlHeader),
         Text(
-          'Settings → Data → Export All Data writes your conversations, '
-          'memories, tasks and chat history to a JSON file; Import from Backup '
-          'reads one back. Deleting the app, or clearing its data in Android '
-          'settings, removes everything on the device, audio files included.',
+          l10n.permissionsRationale_yourControlBody,
           style: bodyStyle,
         ),
         const SizedBox(height: 24),
-        _buildSectionHeader(context, 'Permissions'),
+        _buildSectionHeader(context, l10n.permissionsRationale_permissionsHeader),
         _PermissionRow(
-          title: bleLegacy ? 'Bluetooth (location permission)' : 'Bluetooth',
+          title: bleLegacy
+              ? l10n.permissionsRationale_bluetoothTitleLegacy
+              : l10n.permissionsRationale_bluetoothTitle,
           description: bleLegacy
-              ? 'Finds and connects to your Omi wearable. LibreOmi scans only '
-                    'for Omi devices and never uses Bluetooth to determine your '
-                    'location. Android 11 and older require the location '
-                    'permission for any Bluetooth scan; LibreOmi does not read '
-                    'your location.'
-              : 'Finds and connects to your Omi wearable. LibreOmi scans only '
-                    'for Omi devices and never uses Bluetooth to determine your '
-                    'location.',
+              ? l10n.permissionsRationale_bluetoothDescriptionLegacy
+              : l10n.permissionsRationale_bluetoothDescription,
           status: bleStatus,
           onOpenSettings: onOpenSettings,
         ),
         _PermissionRow(
-          title: 'Microphone',
-          description:
-              'Records audio only while you have started a capture with the '
-              'phone microphone as the source. Nothing is recorded when the '
-              'app is idle.',
+          title: l10n.permissionsRationale_microphoneTitle,
+          description: l10n.permissionsRationale_microphoneDescription,
           status: microphoneStatus,
           onOpenSettings: onOpenSettings,
         ),
         _PermissionRow(
-          title: 'Notifications',
-          description:
-              'Shows the ongoing capture notification Android requires for '
-              'background recording, and alerts when a conversation is saved.',
+          title: l10n.permissionsRationale_notificationsTitle,
+          description: l10n.permissionsRationale_notificationsDescription,
           status: notificationStatus,
           onOpenSettings: notificationStatus == _RowStatus.notRequired
               ? null
               : onOpenSettings,
         ),
         _PermissionRow(
-          title: 'Foreground service',
-          description:
-              'Keeps capture and transcription running while the screen is '
-              'off. Android grants this from the manifest and never asks.',
+          title: l10n.permissionsRationale_foregroundServiceTitle,
+          description: l10n.permissionsRationale_foregroundServiceDescription,
           status: null,
-          fixedChipText: 'Declared in the manifest',
+          fixedChipText: l10n.permissionsRationale_foregroundServiceChip,
           onOpenSettings: null,
         ),
         _PermissionRow(
-          title: 'Exact alarms',
-          description:
-              'Optional, and off unless you turn on exact task reminders in '
-              'Settings. Without it a reminder still arrives, just at an '
-              'approximate time chosen by Android.',
+          title: l10n.permissionsRationale_exactAlarmsTitle,
+          description: l10n.permissionsRationale_exactAlarmsDescription,
           status: exactAlarmStatus,
           onOpenSettings: exactAlarmStatus == _RowStatus.notApplicable
               ? null
               : onOpenAlarmSettings,
         ),
         _PermissionRow(
-          title: 'Battery optimisation exemption',
-          description:
-              'Optional. Without it some phones stop LibreOmi\'s background '
-              'capture after a few minutes.',
+          title: l10n.permissionsRationale_batteryTitle,
+          description: l10n.permissionsRationale_batteryDescription,
           status: batteryStatus,
           onOpenSettings: batteryStatus == _RowStatus.notApplicable
               ? null
@@ -409,15 +380,14 @@ class _RationaleView extends StatelessWidget {
         ),
         const SizedBox(height: 20),
         Text(
-          'This page never asks for a permission — each one is requested at '
-          'the moment the feature that needs it is first used.',
+          l10n.permissionsRationale_closingNote,
           style: bodyStyle.copyWith(fontStyle: FontStyle.italic),
         ),
         if (isFirstRun) ...[
           const SizedBox(height: 24),
           ElevatedButton(
             onPressed: onContinue,
-            child: const Text('Continue'),
+            child: Text(l10n.permissionsRationale_continueButton),
           ),
         ],
       ],
@@ -458,23 +428,23 @@ class _PermissionRow extends StatelessWidget {
   final String? fixedChipText;
   final Future<void> Function()? onOpenSettings;
 
-  String _chipText() {
+  String _chipText(AppLocalizations l10n) {
     if (fixedChipText != null) {
       return fixedChipText!;
     }
     switch (status!) {
       case _RowStatus.granted:
-        return 'Granted';
+        return l10n.permissionsRationale_chipGranted;
       case _RowStatus.notGranted:
-        return 'Not granted';
+        return l10n.permissionsRationale_chipNotGranted;
       case _RowStatus.permanentlyDenied:
-        return 'Denied — open settings';
+        return l10n.permissionsRationale_chipDeniedOpenSettings;
       case _RowStatus.notRequired:
-        return 'Not required on this Android version';
+        return l10n.permissionsRationale_chipNotRequired;
       case _RowStatus.notApplicable:
-        return 'Not applicable';
+        return l10n.permissionsRationale_chipNotApplicable;
       case _RowStatus.unknown:
-        return 'Unknown';
+        return l10n.permissionsRationale_chipUnknown;
     }
   }
 
@@ -511,6 +481,7 @@ class _PermissionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = L10n.of(context);
     final theme = Theme.of(context);
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -539,7 +510,7 @@ class _PermissionRow extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    _chipText(),
+                    _chipText(l10n),
                     style: TextStyle(
                       color: _chipColor(context),
                       fontWeight: FontWeight.w600,
@@ -562,7 +533,7 @@ class _PermissionRow extends StatelessWidget {
                 alignment: Alignment.centerLeft,
                 child: OutlinedButton(
                   onPressed: onOpenSettings,
-                  child: const Text('Open settings'),
+                  child: Text(l10n.permissionsRationale_openSettingsButton),
                 ),
               ),
             ],

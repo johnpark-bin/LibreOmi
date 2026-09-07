@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../controllers/library_controller.dart';
+import '../l10n/l10n.dart';
 import '../services/settings_service.dart';
 
 
@@ -16,22 +17,23 @@ class _StatsPageState extends State<StatsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = L10n.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Statistics'),
+        title: Text(l10n.stats_title),
       ),
       body: Consumer<LibraryController>(
         builder: (context, provider, _) {
           final conversations = provider.conversations;
           final memories = provider.memories;
           final tasks = provider.tasks;
-          
+
           // Calculate stats
           final totalConversations = conversations.length;
           final totalMemories = memories.length;
           final totalTasks = tasks.length;
           final completedTasks = tasks.where((t) => t.isCompleted).length;
-          
+
           // Word count across all conversations
           int totalWords = 0;
           Duration totalDuration = Duration.zero;
@@ -41,27 +43,27 @@ class _StatsPageState extends State<StatsPage> {
             }
             totalDuration += conv.duration;
           }
-          
+
           // Recent activity (last 7 days)
           final now = DateTime.now();
           final weekAgo = now.subtract(const Duration(days: 7));
           final recentConversations = conversations.where((c) => c.createdAt.isAfter(weekAgo)).length;
-          
+
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
               // Header
-              const Text(
-                'Your Omi Stats',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              Text(
+                l10n.stats_headerTitle,
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               Text(
-                'Insights from your conversations',
+                l10n.stats_headerSubtitle,
                 style: TextStyle(color: Colors.grey.shade400),
               ),
               const SizedBox(height: 24),
-              
+
               // Main stats grid
               GridView.count(
                 crossAxisCount: 2,
@@ -73,33 +75,33 @@ class _StatsPageState extends State<StatsPage> {
                 children: [
                   _StatCard(
                     icon: Icons.chat_bubble_outline,
-                    label: 'Conversations',
+                    label: l10n.stats_conversationsLabel,
                     value: '$totalConversations',
                     color: const Color(0xFF6C5CE7),
                   ),
                   _StatCard(
                     icon: Icons.psychology_outlined,
-                    label: 'Memories',
+                    label: l10n.stats_memoriesLabel,
                     value: '$totalMemories',
                     color: const Color(0xFF00b894),
                   ),
                   _StatCard(
                     icon: Icons.check_circle_outline,
-                    label: 'Tasks',
+                    label: l10n.stats_tasksLabel,
                     value: '$completedTasks / $totalTasks',
                     color: const Color(0xFFfdcb6e),
                   ),
                   _StatCard(
                     icon: Icons.history,
-                    label: 'This Week',
+                    label: l10n.stats_thisWeekLabel,
                     value: '$recentConversations',
                     color: const Color(0xFF74b9ff),
                   ),
                 ],
               ),
-              
+
               const SizedBox(height: 24),
-              
+
               // Detailed stats
               Card(
                 child: Padding(
@@ -107,37 +109,37 @@ class _StatsPageState extends State<StatsPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Totals',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      Text(
+                        l10n.stats_totalsHeader,
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 16),
                       _DetailRow(
                         icon: Icons.text_fields,
-                        label: 'Words Captured',
+                        label: l10n.stats_wordsCapturedLabel,
                         value: _formatNumber(totalWords),
                       ),
                       const Divider(),
                       _DetailRow(
                         icon: Icons.timer_outlined,
-                        label: 'Recording Time',
-                        value: _formatDuration(totalDuration),
+                        label: l10n.stats_recordingTimeLabel,
+                        value: _formatDuration(totalDuration, l10n),
                       ),
                       const Divider(),
                       _DetailRow(
                         icon: Icons.calendar_today,
-                        label: 'First Conversation',
-                        value: conversations.isNotEmpty 
+                        label: l10n.stats_firstConversationLabel,
+                        value: conversations.isNotEmpty
                             ? _formatDate(conversations.last.createdAt)
-                            : 'N/A',
+                            : l10n.stats_notAvailable,
                       ),
                     ],
                   ),
                 ),
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               // Memory categories
               if (memories.isNotEmpty)
                 Card(
@@ -146,29 +148,29 @@ class _StatsPageState extends State<StatsPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Memory Sources',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        Text(
+                          l10n.stats_memorySourcesHeader,
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 16),
                         _DetailRow(
                           icon: Icons.auto_awesome,
-                          label: 'Auto-extracted',
+                          label: l10n.stats_autoExtractedLabel,
                           value: '${memories.where((m) => m.category != 'manual').length}',
                         ),
                         const Divider(),
                         _DetailRow(
                           icon: Icons.edit,
-                          label: 'Manually Added',
+                          label: l10n.stats_manuallyAddedLabel,
                           value: '${memories.where((m) => m.category == 'manual').length}',
                         ),
                       ],
                     ),
                   ),
                 ),
-              
+
               const SizedBox(height: 16),
-              
+
               // API Costs
               Card(
                 child: Padding(
@@ -179,32 +181,32 @@ class _StatsPageState extends State<StatsPage> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text(
-                            'API Costs (Estimated)',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          Text(
+                            l10n.stats_apiCostsHeader,
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                           ),
                           TextButton(
                             onPressed: () {
                               SettingsService.resetUsageStats();
                               setState(() {});
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Usage stats reset')),
+                                SnackBar(content: Text(l10n.stats_usageStatsResetSnackbar)),
                               );
                             },
-                            child: const Text('Reset'),
+                            child: Text(l10n.stats_resetButton),
                           ),
                         ],
                       ),
                       const SizedBox(height: 8),
                       _DetailRow(
                         icon: Icons.graphic_eq,
-                        label: 'Deepgram (${SettingsService.deepgramMinutesUsed.toStringAsFixed(1)} min)',
+                        label: l10n.stats_deepgramLabel(SettingsService.deepgramMinutesUsed.toStringAsFixed(1)),
                         value: '\$${SettingsService.deepgramCost.toStringAsFixed(4)}',
                       ),
                       const Divider(),
                       _DetailRow(
                         icon: Icons.smart_toy_outlined,
-                        label: 'LLM (${_formatTokens(SettingsService.openaiInputTokens + SettingsService.openaiOutputTokens)} tokens)',
+                        label: l10n.stats_llmLabel(_formatTokens(SettingsService.openaiInputTokens + SettingsService.openaiOutputTokens)),
                         value: SettingsService.llmCost == null
                             ? '—'
                             : '\$${SettingsService.llmCost!.toStringAsFixed(4)}',
@@ -212,14 +214,14 @@ class _StatsPageState extends State<StatsPage> {
                       const Divider(),
                       _DetailRow(
                         icon: Icons.attach_money,
-                        label: 'Total Estimated',
+                        label: l10n.stats_totalEstimatedLabel,
                         value: SettingsService.totalApiCost == null
                             ? '—'
                             : '\$${SettingsService.totalApiCost!.toStringAsFixed(4)}',
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Model: ${SettingsService.openaiModel}',
+                        l10n.stats_modelLabel(SettingsService.openaiModel),
                         style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
                       ),
                       // "—" above means the configured model has no row in the
@@ -227,22 +229,22 @@ class _StatsPageState extends State<StatsPage> {
                       // deliberately do not assume a default price for it.
                       if (SettingsService.llmCost == null)
                         Text(
-                          'No price set for this model — add one in Settings → LLM → Pricing.',
+                          l10n.stats_noPriceSetHint,
                           style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
                         ),
                     ],
                   ),
                 ),
               ),
-              
+
               const SizedBox(height: 32),
-              
+
               // Reset All Stats
               Center(
                 child: OutlinedButton.icon(
                   onPressed: () => _showResetConfirmation(context),
                   icon: const Icon(Icons.delete_outline, color: Colors.red),
-                  label: const Text('Reset All Statistics', style: TextStyle(color: Colors.red)),
+                  label: Text(l10n.stats_resetAllButton, style: const TextStyle(color: Colors.red)),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Colors.red),
                   ),
@@ -257,15 +259,16 @@ class _StatsPageState extends State<StatsPage> {
   }
 
   void _showResetConfirmation(BuildContext context) {
+    final l10n = L10n.of(context);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Reset All Statistics?'),
-        content: const Text('This will reset all API usage tracking (Deepgram minutes, OpenAI tokens, and estimated costs). This cannot be undone.'),
+        title: Text(l10n.stats_resetAllTitle),
+        content: Text(l10n.stats_resetAllConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(l10n.common_cancelButton),
           ),
           TextButton(
             onPressed: () {
@@ -273,10 +276,10 @@ class _StatsPageState extends State<StatsPage> {
               setState(() {});
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('All statistics reset')),
+                SnackBar(content: Text(l10n.stats_allStatisticsResetSnackbar)),
               );
             },
-            child: const Text('Reset', style: TextStyle(color: Colors.red)),
+            child: Text(l10n.stats_resetButton, style: const TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -301,13 +304,13 @@ class _StatsPageState extends State<StatsPage> {
     return num.toString();
   }
 
-  String _formatDuration(Duration d) {
+  String _formatDuration(Duration d, AppLocalizations l10n) {
     if (d.inHours > 0) {
-      return '${d.inHours}h ${d.inMinutes % 60}m';
+      return l10n.stats_durationHoursMinutes(d.inHours, d.inMinutes % 60);
     } else if (d.inMinutes > 0) {
-      return '${d.inMinutes}m ${d.inSeconds % 60}s';
+      return l10n.stats_durationMinutesSeconds(d.inMinutes, d.inSeconds % 60);
     }
-    return '${d.inSeconds}s';
+    return l10n.stats_durationSeconds(d.inSeconds);
   }
 
   String _formatDate(DateTime date) {
