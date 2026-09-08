@@ -56,12 +56,14 @@ upstream code.
 | 06 | [docs/06-roadmap.md](docs/06-roadmap.md) | Milestones, work items, acceptance criteria, ordering |
 | 07 | [docs/07-backlog.ko.md](docs/07-backlog.ko.md) | GitHub issue backlog (Korean), one entry per work item |
 | 08 | [docs/08-dev-workflow.md](docs/08-dev-workflow.md) | Branching, language policy, PR flow, device test checklist, AI-agent usage |
+| 09 | [docs/09-device-verification.md](docs/09-device-verification.md) | On-device verification runbook for the owner (Korean): every owner-check from PRs #40–#86, in walkthrough order |
 | — | [SUMMARY.ko.md](SUMMARY.ko.md) | Korean summary for the project owner: decisions, rationale, what only you can do |
 | — | [AGENTS.md](AGENTS.md) | Conventions for AI coding agents working in this repo |
 
 ## Language policy
 
-- Code, identifiers, comments, commit messages, and `docs/`: **English**.
+- Code, identifiers, comments, commit messages, and `docs/`: **English** — the one exception is
+  `docs/09-device-verification.md`, a runbook written for the project owner alone.
 - GitHub issues and pull requests during the bootstrap phase: **Korean** (see `docs/08-dev-workflow.md`).
 
 ## License
