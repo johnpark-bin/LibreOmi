@@ -491,3 +491,95 @@ mise exec -- flutter run --release -d <device-id>   # BLE only works on a real p
 mise exec -- flutter build apk --split-per-abi --release
 mise exec -- flutter build appbundle --release
 ```
+
+## 13. iOS: kept buildable (LO-65)
+
+iOS is not a supported target — `docs/02-tech-stack-decision.md` §"iOS is kept buildable, not
+supported" is the decision this section implements. The only promise is that the tree keeps
+compiling for iOS so the port never rots into a rewrite. Nothing here is verified on a device.
+
+### 13.1 Prerequisites (once per machine)
+
+```bash
+brew install cocoapods                     # Flutter shells out to `pod`; there is no fallback
+xcodebuild -downloadPlatform iOS           # ~8.5 GB; without it every device build fails (below)
+mise exec -- flutter precache --ios
+```
+
+A fresh Xcode install ships the iOS **SDK** but not the iOS **platform**, and `xcodebuild
+-showsdks` listing `iphoneos26.5` is not proof that the platform is there. The tell is
+`flutter doctor` reporting `Unable to get list of installed Simulator runtimes`, and a build
+that dies before it compiles anything:
+
+```
+xcodebuild: error: Could not configure request to show build settings: Unable to find a
+destination matching the provided destination specifier: { generic:1, platform:iOS }
+  Ineligible destinations: { ... name:Any iOS Device, error:iOS <ver> is not installed. }
+No Xcode build settings have been found.
+```
+
+`flutter build ios --config-only` fails the same way — it reads build settings too — so there is
+no lighter check that skips the download.
+
+### 13.2 Build command
+
+```bash
+mise exec -- flutter build ios --no-codesign --debug
+```
+
+`--no-codesign` is what makes this runnable without the owner's signing team; it is the
+re-verification build, not a shippable artefact. Installing on a device additionally needs a
+team in `Runner.xcodeproj` and is the owner's step.
+
+### 13.3 Minimum iOS version
+
+One number, in three places that must agree: `ios/Podfile` (`platform :ios`),
+`ios/Runner.xcodeproj` (`IPHONEOS_DEPLOYMENT_TARGET`), and whatever `flutter_additional_ios_build_settings`
+pushes into each pod. The number is **15.0**, and it is Flutter's floor, not ours: Flutter 3.47
+rewrites `project.pbxproj` to 15.0 on the first build ("Updating minimum iOS deployment target
+to 15.0"). Every plugin in `pubspec.yaml` asks for 13.0 or less — the highest are
+`opus_flutter_ios`, `sherpa_onnx_ios`, `path_provider_foundation` and
+`shared_preferences_foundation` at 13.0 — so no dependency is driving it up.
+
+The tree inherited from upstream disagreed with itself: `Podfile` said 16.0, the Xcode project
+said 13.0, and a `post_install` hook forced every pod to 14.0 — pods built for a floor *above*
+the app target. LO-65 deleted the `post_install` override and set the Podfile to 15.0. Do not
+re-add a per-pod `IPHONEOS_DEPLOYMENT_TARGET`; raising the floor means editing the Podfile
+platform and letting the podhelper propagate it.
+
+### 13.4 Migrations Flutter applies on first build
+
+Flutter 3.47 rewrites parts of `ios/` by itself the first time it builds, and the result is
+committed rather than fought:
+
+- **Swift Package Manager integration** — `Runner.xcodeproj` gains a local
+  `FlutterGeneratedPluginSwiftPackage` reference. CocoaPods stays in the loop for the plugins
+  without SPM support (`awesome_notifications`, `opus_flutter_ios`, `permission_handler_apple`,
+  `sherpa_onnx_ios`); Flutter warns that this becomes an error in a future release, which is a
+  future upstream-plugin problem, not something this repo can fix.
+- **UIScene lifecycle** — `Info.plist` gains `UIApplicationSceneManifest` and `AppDelegate.swift`
+  moves `GeneratedPluginRegistrant.register` into `didInitializeImplicitFlutterEngine`.
+- **Deployment target** — §13.3.
+
+### 13.5 What does not work on iOS
+
+`lib/platform/` resolves these to no-ops on non-Android, so they compile and silently do
+nothing. This is intended; making them work is out of scope (`docs/02`).
+
+| Capability | Android | iOS |
+|------------|---------|-----|
+| Foreground service keeping the session alive (§4) | `flutter_foreground_task` | `NoopBackgroundRunner`; `flutter_foreground_task`'s iOS setup is deliberately **not** wired into `AppDelegate` |
+| Exact alarms (§6) | `AndroidScheduleMode.exactAllowWhileIdle` | inexact delivery; `ExactAlarmGateway` returns early |
+| Battery-optimisation exemption (§11) | `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | `BatteryOptimizationGateway` returns early |
+| Runtime permission sequencing (§3) | modelled per API level | iOS prompts on first use, driven by the plugins; `PermissionGateway` returns early |
+
+`Info.plist` already carries what the app does use: `NSBluetoothAlwaysUsageDescription`,
+`NSBluetoothPeripheralUsageDescription`, `NSMicrophoneUsageDescription`, and
+`UIBackgroundModes` = `audio`, `bluetooth-central`, `bluetooth-peripheral`. `file_picker` here
+only opens documents (`FileType.custom`) and `share_plus` only shares files the app wrote, so
+neither needs a photo-library or contacts key.
+
+`flutter_secure_storage` (`lib/services/secret_store.dart`) is the one item a `--no-codesign`
+build cannot prove: the Keychain refuses writes (`-34018`) in an app whose entitlements were
+never applied, and entitlements are only applied when signed. Whether the owner's signed build
+needs the Keychain Sharing capability has to be answered on a device, not here.
