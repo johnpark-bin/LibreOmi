@@ -6,6 +6,7 @@
 |----------|----------|-----|
 | Source code, identifiers, comments, docstrings | English | ecosystem default; agents produce better Dart with English context |
 | `docs/`, `README.md`, `AGENTS.md`, CHANGELOG | English | future contributors |
+| `docs/09-device-verification.md` (the one exception) | **Korean** | it is a runbook the owner reads phone-in-hand while walking a device through the checks; nobody else executes it (LO-88) |
 | Commit messages | English, Conventional Commits (`feat(ble): request MTU 512 on Android`) | tooling, changelog generation |
 | GitHub issues and pull requests (bootstrap phase) | **Korean** title + body; PR body ends with a one-line English summary | project owner reads/writes Korean; the English line keeps history greppable |
 | In-app strings | English and Korean, through `lib/l10n/*.arb` (LO-62) | `app_en.arb` is the template every new string is added to first; `app_ko.arb` translates it in the same PR, and `test/l10n/arb_parity_test.dart` fails the build if it does not |
@@ -56,6 +57,13 @@ drives M1 and M2 on hardware because those milestones are dominated by device-sp
 behaviour and permission dialogs that must be observed by a human.
 
 ## 5. Device smoke checklist (copy into PR)
+
+This is the short form that goes into **every PR** touching `device/`, `audio/`, `session/`
+or `platform/`. The long form — every owner-verification step from PRs #40–#86, deduplicated
+and reordered into a single walkthrough, with expected values, what to capture and where to
+paste it — is **[`09-device-verification.md`](09-device-verification.md)** (Korean). Run that
+one when doing a batch verification session; use the checklist below per PR. If the two ever
+disagree, fix both in the same PR.
 
 ```
 기기: <제조사/모델/Android 버전>   펌웨어: <Omi firmware>   빌드: <commit>
